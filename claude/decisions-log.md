@@ -64979,3 +64979,30 @@ Faults injected by hand: 2; 1 caught.
   event about another" check, which overlapped with it, was removed.
 
 Coverage: 17,228 of 31,900 cards (+3 over D1282's 17,225), 39,967 of 59,888 lines (+5).
+
+## D1284 — "Enters with X +1/+1 counters on it, where X is …"
+
+"Prime Speaker Zegana enters with X +1/+1 counters on it, where X is the greatest power among other
+creatures you control", "Custodi Soulbinders … where X is the number of other creatures you
+control", and the other wording: "~ enters with a number of +1/+1 counters on it equal to the number
+of creature cards in your graveyard" (Drakestown Forgotten, Rhizome Lurcher). D1047 read "… with a
++1/+1 counter on it for each <thing>" as one counter per thing counted (`entersWith.per`). The
+announced form is the same count in the other grammar and is now read the same way, through
+`whereXCount`. It has the same guard: only a count the arriving permanent cannot itself be in
+(other creatures, graveyards, deaths, opponents' permanents), because the arrival pass runs with it
+already on the battlefield (CR 614.1c).
+
+Read whole now: Prime Speaker Zegana, Custodi Soulbinders, Drakestown Forgotten, Rhizome Lurcher,
+Boss's Chauffeur, Stag Beetle, Undergrowth Scavenger.
+
+**Tests.** 3 engine tests:
+- Both forms read; "where X is the number of creatures you control", which would count itself,
+  stays unread.
+- Two creature cards in the graveyard give two counters.
+- Two other creatures give two counters, the entering creature not counted.
+
+Faults injected by hand: 2, all caught.
+- The guard removed.
+- The count dropped, one counter placed.
+
+Coverage: 17,235 of 31,900 cards (+7 over D1283's 17,228), 39,976 of 59,888 lines (+9).
