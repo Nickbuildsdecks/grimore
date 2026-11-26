@@ -16988,14 +16988,20 @@ function selfEffect(
     stack at the next end step, acting only on the object as it is now (CR 400.7). After a card
     target "it" is that card, never the source.
   */
-  const delayedSelf = new RegExp(`^(sacrifice|exile|destroy) (?:(it)|${self}|this (?:creature|artifact|permanent|enchantment)) at the beginning of (the|your) next end step$`, 'i').exec(text);
+  /*
+    And "at end of combat" (D1277): "When Crumbling Colossus attacks, sacrifice it at end of combat"
+    (Fog Elemental, Mardu Blazebringer, Runaway Carriage, Stoic Ephemera). The same delayed ability at
+    the end-of-combat step, which is this combat's: the basilisks' timing (D969).
+  */
+  const delayedSelf = new RegExp(`^(sacrifice|exile|destroy) (?:(it)|${self}|this (?:creature|artifact|permanent|enchantment)) (?:at the beginning of (the|your) next end step|(at end of combat))$`, 'i').exec(text);
   if (delayedSelf !== null && !(delayedSelf[2] !== undefined && earlierCardTarget)) {
     const verb = delayedSelf[1]!.toLowerCase() as 'sacrifice' | 'exile' | 'destroy';
-    const of = delayedSelf[3]!.toLowerCase() === 'your' ? 'you' as const : 'any' as const;
+    const combat = delayedSelf[4] !== undefined;
+    const of = !combat && delayedSelf[3]!.toLowerCase() === 'your' ? 'you' as const : 'any' as const;
     return {
       effect: (c) => (c.state.instances[c.source]?.zone !== 'battlefield' ? c.state : scheduleDelayed(c.state, {
-        source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of,
-        subject: c.source, builtin: verb, description: `${verb} ${name}`,
+        source: c.source, controller: c.controller, abilityIndex: -1, step: combat ? 'end-combat' : 'end', of,
+        subject: c.source, builtin: verb, description: `${verb} ${name}${combat ? ' at end of combat' : ''}`,
       })),
     };
   }

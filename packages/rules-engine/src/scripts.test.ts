@@ -46602,6 +46602,55 @@ describe('finality counters: exiled instead of going to a graveyard (D1276)', ()
   });
 });
 
+describe('"sacrifice it at end of combat" (D1277)', () => {
+  /*
+    Crumbling Colossus, Mardu Blazebringer, Fog Elemental: the sacrifice is a delayed ability at this
+    combat's end-of-combat step, so the creature deals its combat damage first.
+  */
+  const C = (name: string, text: string, power: string, toughness: string) => ({
+    name, type_line: 'Creature — Golem', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power, toughness,
+  });
+  const COLOSSUS = C('Test Colossus', 'Whenever Test Colossus attacks or blocks, sacrifice it at end of combat.', '5', '5');
+  const BEAR = C('Test Bear', '', '2', '2');
+  const deck = customDeck({ id: 'd1277', name: 'Crumbling', entries: [{ name: 'Test Colossus', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Mountain', count: 52 }], data: [COLOSSUS, BEAR] as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(COLOSSUS as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('attacks, deals its damage, and is sacrificed at end of combat, not before', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1277', 1: 'd1277' }, deckSpecs: { d1277: deck.deck },
+      battlefield: { 0: ['Test Colossus'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const colossus = find(s, 0, 'battlefield', 'Test Colossus');
+    const before = life(s, 1);
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: colossus, defender: 1 }] } as Action), 20);
+    s = advanceTo(s, 'combat-damage');
+    expect(s.instances[colossus]!.zone).toBe('battlefield');
+    s = drain(passBoth(advanceTo(s, 'end-combat')), 20);
+    s = advanceTo(s, 'postcombat-main');
+    expect(life(s, 1)).toBe(before - 5);
+    expect(s.instances[colossus]!.zone).toBe('graveyard');
+  });
+
+  it('a blocker goes too', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1277', 1: 'd1277' }, deckSpecs: { d1277: deck.deck },
+      battlefield: { 0: ['Test Bear'], 1: ['Test Colossus'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const colossus = find(s, 1, 'battlefield', 'Test Colossus');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] } as Action), 20);
+    s = advanceTo(s, 'declare-blockers');
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: colossus, attacker: bear }] } as Action), 20);
+    s = advanceTo(s, 'postcombat-main');
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(s.instances[colossus]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
