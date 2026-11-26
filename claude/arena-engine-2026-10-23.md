@@ -48368,3 +48368,40 @@ Faults injected by hand: 2, both caught.
 No rules-engine change, so the coverage line below is unchanged.
 
 Coverage: 17,322 of 31,900 cards (+0 over D1304's 17,322), 40,104 of 59,888 lines (+0).
+
+## D1306 — Two mana of any one color, granted to a land
+
+Gift of Paradise, Grafted Growth and New Horizons give the enchanted land "{T}: Add two mana of any
+one color." The line reader knew "one mana of any color" and the D697 runs ("two mana in any
+combination") but not a run of one chosen colour, so all three cards stopped on that line. The
+mana-choice reader in `lineScriptFor` now reads "add two (three, four, five) mana of any one color"
+as one ability per colour that makes that many of it. The player sees five rows on the land.
+
+Granting the ability exposed two places that pay for a land as a whole:
+
+- **`manaSources` folds every usable tap row into one source.** On a Forest that meant its own
+  {G} plus five runs of two. The D697 runs branch needs every row the same length, so the mixed
+  rows were merged into one flat choice of one mana, and the land paid one where it can pay two.
+  Now, when the longest rows are runs of one colour and every shorter row's colours are among
+  them, only the longest rows make the source. Two of a colour is never worse than one of it, and
+  every row is still offered to the player.
+- **`potentialMana` added up every tap ability's mana,** so the Forest counted three green. A
+  permanent's tap abilities now count the most of each kind any one of them makes, because one
+  tap pays for one ability. Abilities that don't tap are still added up. Across different kinds
+  the count stays optimistic, as before.
+
+**Tests.** 2 tests:
+- The Aura compiles whole.
+- On the enchanted Forest:
+  - there is one source, a run of two from all five colours;
+  - two blue and two green are reachable;
+  - at least six activations are still offered.
+
+Faults injected by hand: 2, both caught.
+- The longest-run fold dropped. The first version of the test missed this, because the old fold
+  also gave one source; the test now checks the source's shape.
+- Tap abilities added up again.
+
+Compile pins: 1791 of 1791 pass.
+
+Coverage: 17,330 of 31,900 cards (+8 over D1305's 17,322), 40,114 of 59,888 lines (+10).
