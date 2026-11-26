@@ -49100,3 +49100,32 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6449 of 6449 pass.
 
 Coverage: 17,454 of 31,900 cards (+3 over D1323's 17,451), 40,265 of 59,888 lines (+3).
+
+## D1325 — The en-Kor redirects
+
+The en-Kor cycle (Lancers, Nomads, Outrider, Spirit, Warrior) prints "{0}: The next 1 damage that
+would be dealt to ~ this turn is dealt to target creature you control instead." Daughter of Autumn
+prints it the other way round: "… dealt to target white creature this turn is dealt to ~ instead."
+Neither read.
+
+Each is a redirecting prevention shield (CR 615.9), which `preventDamage` has built since the
+pool's first redirection card. It goes on the protected creature, takes the next N points dealt to
+it this turn, and `dealDamage` deals them to the other creature as a damage event of its own. Each
+activation is its own shield, so two activations take two points.
+
+Still unread: Shaman en-Kor's and Jade Monolith's "the next time a source of your choice would
+deal damage …", which need a source chosen, as the Circles of Protection do.
+
+**Tests.** 3 tests:
+- Both fixtures read whole.
+- The Lancers, activated twice at the Bears and then dealt three: the Lancers have one damage, the
+  Bears two.
+- The Daughter, activated at the Bears, which are then dealt two: one each.
+
+Faults injected by hand: 2, both caught.
+- Prevented, not redirected.
+- The Daughter's way round reversed.
+
+The scripts tests, compile tests and pins: 6452 of 6452 pass.
+
+Coverage: 17,461 of 31,900 cards (+7 over D1324's 17,454), 40,273 of 59,888 lines (+8).
