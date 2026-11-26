@@ -6234,14 +6234,23 @@ function askOrFinish(
     // "With mana value X or less" (D686): bounded by the X this spell was cast with.
     // And "equal to 1 plus the sacrificed creature's mana value" (D1265), off what the cost sacrificed.
     const climb = !isCountersDecision(spec) ? spec.manaValueSacrificedPlus : undefined;
+    /*
+      And off the first answer that named a card, for a sacrifice made by the effect (D1292): it is
+      still on the battlefield. The first, not `answers[0]`: a "you may" asks its yes-or-no ahead of
+      the sacrifice, and that answer names no card.
+    */
+    const firstNamed = answers.find((a) => a.ids.length > 0)?.ids[0];
+    const climbBase = !isCountersDecision(spec) && spec.climbFromFirstAnswer === true
+      ? (firstNamed === undefined ? undefined : state.cardDefs[state.instances[firstNamed]?.defKey ?? '']?.cmc)
+      : object.sacrificedStats?.manaValue;
     const bounded = !isCountersDecision(spec) && (spec.manaValueAtMostX === true || climb !== undefined)
       ? {
         ...spec,
         filter: (s: GameState, id: string, chooser: SeatIndex) => (spec.filter === undefined || spec.filter(s, id, chooser))
           && (spec.manaValueAtMostX !== true
             || (s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc ?? Infinity) <= Math.max(0, object.x ?? 0))
-          && (climb === undefined || (object.sacrificedStats !== undefined
-            && s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc === object.sacrificedStats.manaValue + climb)),
+          && (climb === undefined || (climbBase !== undefined
+            && s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc === climbBase + climb)),
       }
       : spec;
     // Stranglehold and Aven Mindcensor (D1232): what this searcher may find at all.

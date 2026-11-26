@@ -2124,6 +2124,14 @@ export interface CardsDecisionSpec {
    */
   readonly manaValueSacrificedPlus?: number;
   /**
+   * The same climb when the sacrifice is part of the effect (D1292): "you may sacrifice another
+   * enchantment. If you do, search your library for a creature card with mana value equal to 1 plus
+   * the sacrificed enchantment's mana value" (Enigmatic Incarnation, Vivien on the Hunt). Measured
+   * from the first card an answer of this resolution named, the one about to be sacrificed; with
+   * that answer empty, no card qualifies.
+   */
+  readonly climbFromFirstAnswer?: true;
+  /**
    * Which cards the engine's own opponent picks, written by the card.
    *
    * The twin of `ChoiceDecisionSpec.best` and here for the same reason: only the card knows what

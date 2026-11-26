@@ -2364,7 +2364,7 @@ function searchClause(text: string, name: string): ReadEffect | null {
     bound is carried as a flag for the engine to apply as it asks, as the X bound is.
   */
   const climb = sacrificeInCost
-    ? /^(.+?) with mana value equal to (\w+) plus the sacrificed (?:creature|artifact|permanent)'s mana value$/i.exec(quantity.singular)
+    ? /^(.+?) with mana value equal to (\w+) plus the sacrificed (?:creature|artifact|enchantment|permanent)'s mana value$/i.exec(quantity.singular)
     : null;
   const climbBy = climb === null ? null : countFrom(climb[2]!);
   if (climb !== null && climbBy === null) return null;
@@ -24435,7 +24435,25 @@ function optionalEffect(
         },
       };
     }
-    const y = reader(yText);
+    /*
+      **A sacrifice, then a search one mana value up from it** (D1292): "you may sacrifice another
+      enchantment. If you do, search your library for a creature card with mana value equal to 1
+      plus the sacrificed enchantment's mana value, …" (Enigmatic Incarnation, Vivien on the Hunt).
+      X asks which permanent, and Y asks too, which the rule below refuses because Y's question
+      cannot be held back on X's answer. This one needs no holding back: the search's candidates
+      are measured from X's answer, so an empty answer leaves nothing to find, and Y's effect is
+      still run only if X happened. Read with the cost-sacrifice flag on for the climb alone: a Y
+      that names the sacrificed permanent anywhere else is not read this way.
+    */
+    const sacrificedOnce = /^sacrifice\b/i.test(xText) && (x?.decisions ?? []).length === 1
+      && (yText.match(/\bsacrificed\b/gi) ?? []).length === 1;
+    const climbed = sacrificedOnce ? withSacrificeInCost(true, () => reader(yText)) : null;
+    const climbs = climbed !== null && (climbed.targets ?? []).length === 0
+      && (climbed.decisions ?? []).length > 0
+      && climbed.decisions!.every((d) => 'manaValueSacrificedPlus' in d && d.manaValueSacrificedPlus !== undefined);
+    const y = climbs
+      ? { ...climbed, decisions: climbed.decisions!.map((d) => (typeof d === 'function' || !isCardsDecision(d) ? d : { ...d, climbFromFirstAnswer: true as const })) }
+      : reader(yText);
     if (x === null || y === null) return null;
     const xAsks = (x.decisions ?? []).length;
     const yAsks = (y.decisions ?? []).length;
@@ -24447,7 +24465,7 @@ function optionalEffect(
     */
     if ((y.targets ?? []).length > 0 && xAsks > 0) return null;
     if (xAsks > 1) return null;
-    if (xAsks === 1 && yAsks > 0) return null;
+    if (xAsks === 1 && yAsks > 0 && !climbs) return null;
     const xEffect = x.immediate ?? x.effect;
     return {
       prompt: `${xText} — ${yText}`,
@@ -24468,7 +24486,8 @@ function optionalEffect(
             must not happen either (CR 608.2c). An X that acted always returns a new board.
           */
           const did = xAsks === 0 ? after !== c.state : chosenCards(c).length > 0;
-          return did ? y.effect({ ...c, state: after }) : after;
+          // A Y that asks too (D1292) reads its own answers, which come after X's one.
+          return did ? y.effect({ ...c, state: after, ...(yAsks > 0 ? { decisions: c.decisions.slice(xAsks) } : {}) }) : after;
         },
       },
     };

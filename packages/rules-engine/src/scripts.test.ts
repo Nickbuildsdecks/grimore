@@ -45933,11 +45933,11 @@ describe('Birthing Pod: a creature one mana value up from the one sacrificed (D1
     return passBoth(s);
   };
 
-  it('reads the cost-paid forms, and leaves the effect-paid one unread', () => {
+  // The effect-paid form was pinned unread here; D1292 reads it, off the answer that named the sacrifice.
+  it('reads the cost-paid forms, and the effect-paid one (D1292)', () => {
     expect(deck.unknown).toEqual([]);
     for (const r of [POD, BIRTHING, VANNIFAR, BAY]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
-    const vivien = compileCard(VIVIEN as never);
-    expect(vivien.ok && vivien.unread.length).toBeGreaterThan(0);
+    expect(compileCard(VIVIEN as never)).toMatchObject({ ok: true, unread: [] });
     // With nothing sacrificed at all, there is no mana value to add 1 to.
     const bare = compileCard({ ...VIVIEN, oracle_text: "Search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put it onto the battlefield, then shuffle." } as never);
     expect(bare.ok && bare.unread.length).toBeGreaterThan(0);
@@ -47296,6 +47296,77 @@ describe('Neoform: one mana value up, with an additional +1/+1 counter (D1291)',
     expect(s.instances[pick]!.zone).toBe('battlefield');
     expect(s.instances[pick]!.counters['+1/+1']).toBe(1);
     expect(s.instances[victim]!.zone).toBe('graveyard');
+  });
+});
+
+describe('a sacrifice made by the effect, then a search one mana value up: Enigmatic Incarnation (D1292)', () => {
+  const C = (name: string, cmc: number) => ({
+    name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: `{${cmc}}`, cmc, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const INC = { name: 'Test Incarnation', type_line: 'Enchantment Creature — Spirit', oracle_text: "At the beginning of your end step, you may sacrifice another enchantment. If you do, search your library for a creature card with mana value equal to 1 plus the sacrificed enchantment's mana value, put that card onto the battlefield, then shuffle.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' };
+  const CHARM = { name: 'Test Charm', type_line: 'Enchantment', oracle_text: 'Flash', mana_cost: '{2}', cmc: 2, colors: ['G'], layout: 'normal' };
+  const ROWS = [INC, CHARM, C('Test Two', 2), C('Test Three', 3), C('Test Four', 4)];
+  const deck = customDeck({ id: 'd1292', name: 'Incarnation', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }], data: ROWS as never[] });
+  const nameOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  const table = (mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1292', 1: 'd1292' }, deckSpecs: { d1292: deck.deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** To the end step, with the trigger's first question pending. */
+  const atEnd = (s: GameState) => {
+    let t = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action);
+    t = advanceTo(t, 'end');
+    for (let i = 0; i < 6 && !t.pendingDecision; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(INC as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  /** Answers the pending question: an option word, or the cards. */
+  const answer = (s: GameState, pick: { option?: string; cards?: readonly string[] }) => {
+    let t = apply(s, { type: 'auto:decide', by: 0, cards: [...(pick.cards ?? [])], ...(pick.option === undefined ? {} : { option: pick.option }) } as Action);
+    for (let j = 0; j < 3 && !t.pendingDecision && t.step === 'end'; j++) t = passBoth(t);
+    return t;
+  };
+
+  it('the sacrificed 2 offers only the threes; the one picked enters, and the enchantment is in the graveyard', () => {
+    let s = atEnd(table(['Test Incarnation', 'Test Charm']));
+    const charm = find(s, 0, 'battlefield', 'Test Charm');
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = answer(s, { option: 'Yes' });
+    const offered = s.pendingDecision!.candidates;
+    expect(offered.length).toBeGreaterThan(0);
+    expect(new Set(offered.map((id) => nameOf(s, id)))).toEqual(new Set(['Test Three']));
+    s = answer(s, { cards: [offered[0]!] });
+    expect(s.instances[offered[0]!]!.zone).toBe('battlefield');
+    expect(s.instances[charm]!.zone).toBe('graveyard');
+  });
+
+  it('"No" sacrifices nothing and finds nothing', () => {
+    let s = atEnd(table(['Test Incarnation', 'Test Charm']));
+    const charm = find(s, 0, 'battlefield', 'Test Charm');
+    const before = ids(s, 0, 'battlefield').length;
+    s = answer(s, { option: 'No' });
+    expect(s.instances[charm]!.zone).toBe('battlefield');
+    expect(ids(s, 0, 'battlefield').length).toBe(before);
+  });
+
+  it('with no other enchantment, "Yes" sacrifices nothing, so nothing is offered or found', () => {
+    let s = atEnd(table(['Test Incarnation']));
+    const before = ids(s, 0, 'battlefield').length;
+    s = answer(s, { option: 'Yes' });
+    expect(s.pendingDecision?.from === 'library' ? s.pendingDecision.candidates : []).toEqual([]);
+    expect(ids(s, 0, 'battlefield').length).toBe(before);
+  });
+
+  it('Vivien on the Hunt\'s +2 reads the same way; a Y that names the sacrificed creature\'s power is not read this way', () => {
+    const line = (text: string) => compileCard({ name: 'Test Vivien', type_line: 'Legendary Planeswalker — Vivien', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', loyalty: '4' } as never);
+    expect(line("+2: You may sacrifice a creature. If you do, search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put it onto the battlefield, then shuffle.")).toMatchObject({ ok: true, unread: [] });
+    const powered = line("+2: You may sacrifice a creature. If you do, search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put it onto the battlefield, then shuffle. You gain life equal to the sacrificed creature's power.");
+    expect(powered.ok && powered.unread.length).toBeGreaterThan(0);
   });
 });
 
