@@ -47352,3 +47352,26 @@ Faults injected by hand: 2, all caught.
 - Sacrificed at once.
 
 Coverage: 17,213 of 31,900 cards (+8 over D1276's 17,205), 39,946 of 59,888 lines (+10).
+
+## D1278 — "A Blood token": a subtype before "token"
+
+"Sacrifice a Blood token", "… a Map token": the subtype is the noun, and "token" says what kind of
+object it is. `permanentDescribed` read "token" first and, with no card type before it, put
+"permanent" in its place. The subtype branch then took that "permanent" off instead of the
+subtype, and the phrase read as nothing. A capitalised subtype before "token" is now left for the
+subtype branch, which reads it as a token with that subtype.
+
+Read whole now: Bloodcrazed Socialite, Wedding Security, and other lines that sacrifice, bounce or
+count "a <Subtype> token".
+
+**A process note.** While D1277 was gating I edited `scripts.ts` with this change by mistake. The
+edit was reverted within a minute, the finisher stopped, and D1277 gated again from the start. So
+D1277's commit is exactly what its gate ran on, and this change went through its own gate here.
+
+**Tests.** 1 engine test:
+- It reads, and offers only the two Blood tokens: not a Food, not a creature token.
+
+Faults injected by hand: 1, caught.
+- The old order of the two branches restored.
+
+Coverage: 17,215 of 31,900 cards (+2 over D1277's 17,213), 39,948 of 59,888 lines (+2).
