@@ -48445,6 +48445,46 @@ describe('"White spells you cast cost {W} more to cast" (D1313)', () => {
   });
 });
 
+describe('"Then if it has three or more +1/+1 counters on it, …": the Ordeals (D1314)', () => {
+  const ORDEAL = { name: 'Test Ordeal', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'Enchant creature\nWhenever enchanted creature attacks, put a +1/+1 counter on it. Then if it has three or more +1/+1 counters on it, sacrifice Test Ordeal.\nWhen you sacrifice Test Ordeal, you gain 10 life.' };
+  const deck = customDeck({ id: 'd1314', name: 'Ordeal', entries: [{ name: 'Test Ordeal', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 52 }], data: [ORDEAL] as never[] });
+  const attackWith = (counters: number): { s: GameState; bears: string; ordeal: string; before: number } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1314', 1: 'd1314' }, deckSpecs: { d1314: deck.deck },
+      hands: { 0: ['Test Ordeal'] }, battlefield: { 0: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const ordeal = find(s, 0, 'hand', 'Test Ordeal');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: ordeal, targets: [{ kind: 'card', id: bears }] } as Action)), 10);
+    if (counters > 0) s = addCounters(s, bears, '+1/+1', counters);
+    const before = s.seats[0]!.life;
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] } as Action);
+    s = drain(s, 6);
+    return { s, bears, ordeal, before };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ORDEAL as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the third counter sacrifices it, and its sacrifice gains 10 life', () => {
+    const { s, bears, ordeal, before } = attackWith(2);
+    expect(s.instances[bears]!.counters['+1/+1']).toBe(3);
+    expect(s.instances[ordeal]!.zone).toBe('graveyard');
+    expect(s.seats[0]!.life).toBe(before + 10);
+  });
+
+  it('with fewer it stays, and only the counter is put', () => {
+    const { s, bears, ordeal, before } = attackWith(0);
+    expect(s.instances[bears]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[ordeal]!.zone).toBe('battlefield');
+    expect(s.seats[0]!.life).toBe(before);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

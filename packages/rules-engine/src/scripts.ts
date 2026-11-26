@@ -32318,6 +32318,14 @@ function clausesOf(line: string): readonly string[] {
       You may discard a card. If you do, draw a card." One question and its consequence, read by
       `optionalEffect` from `composeEffects`; cut apart, "If you do" has nothing to refer to.
     */
+    /*
+      "… Then if it has three or more +1/+1 counters on it, sacrifice ~." (D1314, the Ordeals): the
+      trailing form of the same condition, which a trigger reads (D1026). A leading "if" in a trigger
+      is taken as intervening, and this one is not: it follows another sentence (CR 603.4), so it is
+      asked as the sentence resolves.
+    */
+    .replace(/\.\s+Then if (it has [^,.]+ counters on it), ([^.]+)/gi,
+      (whole: string, condition: string, then: string) => (/ if /i.test(then) ? whole : `. ${then} if ${condition}`))
     .replace(/(^|\.\s+)(you may [^.;]+)\.\s+(If you do, [^.]+)/gi, (_m, lead: string, may: string, then: string) => `${lead}${may}\u0009${then}`)
     // "Clash with an opponent. If you win, Y. [Otherwise, Z.]" (D1071): one clash and its outcome.
     .replace(/(^|\.\s+)(clash with an opponent)\.\s+(If you win, [^.]+)(?:\.\s+(Otherwise, [^.]+))?/gi,
@@ -39486,6 +39494,18 @@ function interveningConditionRows(
     (D1015): the counters the permanent had as it left, which the event carries for both asks of an
     intervening-if (CR 603.4, 603.10a) — Undying's own reason. "Counters" with no kind is any counter.
   */
+  /*
+    "If it has three or more +1/+1 counters on it" (D1314): the Ordeals. Live, on "it" as the clause
+    reads it (`itMeans`): the creature the trigger is about, else the source.
+  */
+  const has = /^it has (\w+) or more ([+-]\d+\/[+-]\d+|[a-z]+) counters on it$/i.exec(text);
+  if (has !== null) {
+    const least = countFrom(has[1]!);
+    const kind = has[2]!.toLowerCase();
+    if (least !== null && least > 0) {
+      return (c) => (c.state.instances[itMeans(undefined, c)]?.counters[kind] ?? 0) >= least;
+    }
+  }
   const had = /^it had (?:(no|one or more|an?) )?(?:([+-]\d+\/[+-]\d+|[a-z]+) )?counters? on it$/i.exec(text);
   if (had !== null) {
     const kind = had[2];
