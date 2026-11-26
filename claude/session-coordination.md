@@ -233,3 +233,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1313 pushed in 6a0e52f. D1314 the Ordeals ("then if it has N or more counters on it"): scripts.ts condition row and clause rewrite.
 - D1314 pushed in b898a3c. D1315 "becomes the color of your choice / a named colour until end of turn" (scripts.ts readEffect).
 - D1315 pushed in 8aab076. D1316 "becomes the creature type of your choice until end of turn" (scripts.ts readEffect).
+- D1316 pushed with the D1316 checkpoint in 97f9fa1. D1317 endure N (scripts.ts selfEffect).

@@ -17052,6 +17052,34 @@ function selfEffect(
     };
   }
 
+  /*
+    **Endure N** (D1317, CR 701.63): "When this creature enters, it endures 3", "Anafenza endures 2".
+    Put N +1/+1 counters on it, or create an N/N white Spirit creature token; its controller chooses.
+    A permanent no longer on the battlefield can only make the Spirit (CR 701.63b), and the question
+    is not asked then. A fixed N only: "endures X, where X is …" stays unread.
+  */
+  const endures = new RegExp(`^(?:(${self}|this creature)|it) endures (\\d+|one|two|three|four|five)$`, 'i').exec(text);
+  if (endures !== null) {
+    const n = /^\d+$/.test(endures[2]!) ? Number(endures[2]) : countFrom(endures[2]!) ?? 0;
+    const spirit = n > 0 ? readEffect(`create a ${n}/${n} white Spirit creature token`, name, where) : null;
+    if (spirit !== null && (spirit.targets ?? []).length === 0 && (spirit.decisions ?? []).length === 0) {
+      const named = endures[1] === undefined || /^this creature$/i.test(endures[1]) ? undefined : endures[1];
+      return {
+        decisions: [{
+          who: 'controller', prompt: `Endure ${n}: +1/+1 counters, or a ${n}/${n} Spirit?`, options: ['Counters', 'Spirit'],
+          // Not asked of a creature that has left: it can only make the Spirit.
+          askOnlyIf: (state, _controller, source) => state.instances[source]?.zone === 'battlefield',
+          best: () => 'Counters',
+        }],
+        effect: (c) => {
+          const id = named === undefined && endures[1] !== undefined ? c.source : itMeans(named, c);
+          const here = c.state.instances[id]?.zone === 'battlefield';
+          return here && chosenOption(c) !== 'Spirit' ? addCounters(c.state, id, '+1/+1', n) : spirit.effect(c);
+        },
+      };
+    }
+  }
+
   // Incubate (D1155, CR 701.53a): see `incubate` and the `INCUBATOR` token.
   const incubated = /^incubate (\d+|one|two|three|four|five)$/i.exec(text);
   if (incubated !== null) {

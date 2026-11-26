@@ -48552,6 +48552,56 @@ describe('"becomes the creature type of your choice until end of turn" (D1316)',
   });
 });
 
+describe('endure N (D1317, CR 701.63)', () => {
+  const GUARD = { name: 'Test Kin-Guard', type_line: 'Creature — Dog Warrior', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'When this creature enters, it endures 2.' };
+  const deck = customDeck({ id: 'd1317', name: 'Endure', entries: [{ name: 'Test Kin-Guard', count: 4 }, { name: 'Plains', count: 56 }], data: [GUARD] as never[] });
+  const entering = (): { s: GameState; guard: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1317', 1: 'd1317' }, deckSpecs: { d1317: deck.deck },
+      hands: { 0: ['Test Kin-Guard'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const guard = find(s, 0, 'hand', 'Test Kin-Guard');
+    // The spell resolves; its enters trigger waits on the stack.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: guard } as Action));
+    return { s, guard };
+  };
+  const spirits = (s: GameState): string[] => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) !== 'Test Kin-Guard' && characteristicsOf(s, s.instances[id]!).isCreature);
+
+  it('reads whole, and leaves an X unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(GUARD as never)).toMatchObject({ ok: true, unread: [] });
+    const x = compileCard({ ...GUARD, name: 'Test Initiate', oracle_text: '{X}, {T}: This creature endures X.' } as never);
+    expect(x.ok && x.unread.length).toBe(1);
+  });
+
+  it('two +1/+1 counters when asked for them', () => {
+    let { s, guard } = entering();
+    s = passBoth(s);
+    expect(s.pendingDecision?.options).toEqual(['Counters', 'Spirit']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Counters' } as Action), 4);
+    expect(s.instances[guard]!.counters['+1/+1']).toBe(2);
+    expect(spirits(s)).toEqual([]);
+  });
+
+  it('or a 2/2 white Spirit', () => {
+    let { s, guard } = entering();
+    s = drain(apply(passBoth(s), { type: 'auto:decide', by: 0, cards: [], option: 'Spirit' } as Action), 4);
+    expect(s.instances[guard]!.counters['+1/+1'] ?? 0).toBe(0);
+    const made = spirits(s);
+    expect(made.length).toBe(1);
+    expect(characteristicsOf(s, s.instances[made[0]!]!)).toMatchObject({ power: 2, toughness: 2, colors: ['W'] });
+  });
+
+  it('a creature gone before it resolves makes the Spirit, unasked', () => {
+    let { s, guard } = entering();
+    s = relocate(s, s.instances[guard]!, 'graveyard', 0, 'top');
+    s = drain(passBoth(s), 4);
+    expect(s.pendingDecision).toBeNull();
+    expect(spirits(s).length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
