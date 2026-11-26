@@ -48746,3 +48746,36 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6416 of 6416 pass. Web: typecheck clean, 279 of 279.
 
 Coverage: 17,376 of 31,900 cards (+6 over D1312's 17,370), 40,165 of 59,888 lines (+6).
+
+## D1314 — "Then if it has three or more +1/+1 counters on it": the Ordeals
+
+The five Ordeals print "Whenever enchanted creature attacks, put a +1/+1 counter on it. Then if it
+has three or more +1/+1 counters on it, sacrifice ~." Two things were missing:
+- the condition;
+- a leading "if" in a trigger, which the reader takes as intervening (CR 603.4) and asks as the
+  trigger happens. This one follows another sentence, so it is not intervening.
+
+**The condition.** "It has N or more <kind> counters on it" is now read live, on "it" as the clause
+reads it (`itMeans`): the enchanted creature the attack is about, not the Aura.
+
+**The sentence.** The clause splitter rewrites ". Then if it has … counters on it, Y" to the
+trailing form "Y if it has … counters on it". A trigger already reads the trailing form, asked as
+the sentence resolves (D1026). The rewrite is kept to this condition, and skipped when Y has its own
+" if ".
+
+The Ordeals' third line, "When you sacrifice ~, …", already read.
+
+**Tests.** 3 tests:
+- The fixture Ordeal reads whole.
+- A creature with two counters attacks: it gets its third, the Ordeal is sacrificed, and its
+  controller gains 10.
+- With none: one counter, the Ordeal stays, and no life is gained.
+
+Faults injected by hand: 3, all caught.
+- "Or more" read as "more than".
+- The condition asked of the Aura, not the creature.
+- The rewrite off.
+
+The scripts tests, compile tests and pins: 6419 of 6419 pass.
+
+Coverage: 17,381 of 31,900 cards (+5 over D1313's 17,376), 40,172 of 59,888 lines (+7).
