@@ -48531,3 +48531,69 @@ The scripts tests, compile tests and pins: 6403 of 6403 pass. Deck coverage pass
 field listed as compiler-only.
 
 Coverage: 17,358 of 31,900 cards (+10 over D1307's 17,348), 40,144 of 59,888 lines (+11).
+
+## D1309 — "You may choose not to untap ~": the controller answers
+
+D1041 answered "You may choose not to untap ~ during your untap step" (CR 502.3) for its
+controller: kept tapped while the permanent holds a "for as long as ~ remains tapped" control change,
+untapped otherwise. That is right for Vedalken Shackles. It is wrong for a storage land, which is
+kept tapped so that "At the beginning of your upkeep, if ~ is tapped, put a storage counter on it"
+charges it. D1041 left a pin saying a storage land must stay unread until that choice was a real
+question. D1307 held back five lands for the same reason: Dwarven Hold, Bottomless Vault, Hollow
+Trees, Icatian Store and Sand Silos.
+
+**The answer is now the player's, given ahead of the step.** The choice is made in the untap step,
+where nobody has priority and nothing is asked, so the table takes a standing answer:
+- `auto:keepTapped {card, keep}` sets or clears `CardInstance.keepTapped` on a permanent of the
+  seat's whose card says it;
+- every untap step of its controller's after that leaves it tapped, until they say otherwise;
+- like `auto:stops`, it is a setting: no priority needed, none passed;
+- it is refused on someone else's permanent and on one whose card doesn't say it;
+- a zone change clears it (CR 400.7).
+
+It is not a `LegalPlay`, on purpose. The table's auto-pass stops at any seat with a non-mana play,
+so a toggle offered at every priority would have stopped it, every time, for anyone with a Shackles
+or a storage land.
+
+**The view.** It sends `mayStayTapped` on such a permanent (printed, so public). `keepTapped` goes
+to its controller only.
+
+**The web table.**
+- The card's sheet shows a "Keep ~ tapped in your untap step" toggle on the viewer's own such
+  permanent. Its test id is outside the `play-` prefix the browser driver reads as plays.
+- A kept permanent shows a "kept tapped" badge.
+
+With the choice real, the five storage lands read whole: D1307's exclusion in `compile.ts` is gone,
+and D1041's pin now says the land reads whole.
+
+**Not done.** The bot never sets the answer, so it keeps none of these tapped. It doesn't press
+storage mana either, since that is never an auto-payer source (D1307), so a storage land is a land
+it doesn't use.
+
+**Tests.** 3 new tests, and two pins updated:
+- A tapped Bottomless Vault, kept tapped:
+  - after a round it is still tapped, with one storage counter;
+  - released, it untaps at the next untap step;
+  - its one counter then makes one black.
+- Untouched, it untaps as usual, gains nothing, and the choice is not among the plays.
+- Refusals:
+  - on the opponent's Vault;
+  - on a Swamp.
+- Visibility:
+  - the controller's view shows both fields;
+  - the opponent's view shows only `mayStayTapped`.
+- A zone change clears it.
+- D1041's storage pin and D1307's compile test now expect the land whole.
+- 1 web test: the "kept tapped" badge.
+
+Faults injected by hand: 6, all caught.
+- The flag not read by the untap step.
+- The flag not set.
+- The flag kept on a zone change.
+- The flag shown to every seat.
+- Any permanent accepted.
+- The web badge dropped.
+
+The scripts tests, compile tests and pins: 6406 of 6406 pass. Web: typecheck clean, 279 of 279.
+
+Coverage: 17,363 of 31,900 cards (+5 over D1308's 17,358), 40,149 of 59,888 lines (+5).
