@@ -65948,3 +65948,52 @@ Faults injected by hand: 7, all caught.
 The scripts tests, compile tests and pins: 6400 of 6400 pass.
 
 Coverage: 17,348 of 31,900 cards (+18 over D1306's 17,330), 40,133 of 59,888 lines (+19).
+
+## D1308 — The Spheres: prevent some of the damage a kind of source deals you
+
+"If a red source would deal damage to you, prevent 2 of that damage" (the five Spheres) had no
+reader. Neither did its kin:
+- Urza's Armor's "a source";
+- "a source an opponent controls" (Guardian Seraph, Heart-Shaped Herb, Protection of the Hekma);
+- Orbs of Warding's "a creature";
+- Sphere of Purity's "an artifact".
+
+These are prevention effects with an amount (CR 615.7), each a static on a permanent.
+`CardScript.damageToYouReduced` holds the amount and the kind: a colour, a card type, or the
+opponents' sources.
+
+`dealDamage` applies it to each damage event dealt to the permanent's controller, after the
+prevent-all effects and before the prevention shields. Each permanent of that controller whose kind
+the source matches takes off its amount, and several add up. Damage that prevention can't touch
+(D1212) passes through.
+
+How the source is read:
+- its colour and type are read live from the source, so a spell on the stack is read from its card;
+- its controller is the one passed, otherwise the source permanent's, as `multipliedDamage` reads
+  it (D865).
+
+Damage to the controller's creatures is not reduced: these say "to you". Hedron-Field Purists' "to
+you or a creature you control" is on a leveler and stays unread. Heart-Shaped Herb's sacrifice line
+is unread as before.
+
+**Tests.** 3 tests:
+- Compile: the four readings, one of each kind.
+- Sphere of Law:
+  - three from a red creature is one;
+  - one is nothing;
+  - three from a green creature is three.
+- With Sphere of Law, Urza's Armor and Guardian Seraph:
+  - five from the opponent's red creature is one;
+  - five from your own red creature is two (the Seraph ignores it);
+  - the opponent's damage is not reduced by your Sphere.
+
+Faults injected by hand: 4, all caught.
+- Colour ignored.
+- Opponents ignored.
+- The largest taken instead of the sum.
+- The reduction not applied.
+
+The scripts tests, compile tests and pins: 6403 of 6403 pass. Deck coverage passes with the new
+field listed as compiler-only.
+
+Coverage: 17,358 of 31,900 cards (+10 over D1307's 17,348), 40,144 of 59,888 lines (+11).
