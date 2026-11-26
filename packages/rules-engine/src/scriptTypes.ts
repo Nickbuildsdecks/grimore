@@ -2752,6 +2752,8 @@ export interface AbilityCost {
     readonly count: number;
     readonly kind: 'land' | 'artifact' | 'creature' | 'enchantment';
     readonly subtype?: string;
+    /** A basic one (D1329): the Borderposts' "return a basic land you control". */
+    readonly basic?: true;
   };
   /**
    * "Exile this card from your graveyard:" — embalm's cost, and the second time the card itself is
@@ -4416,7 +4418,7 @@ export interface CardScript {
      * (D1252): Daze and Gush return Islands, Fireblast sacrifices two Mountains. Which lands is the
      * planner's answer, tapped ones first (see `landCostPlan`).
      */
-    readonly lands?: { readonly how: 'return' | 'sacrifice'; readonly count: number; readonly subtype: string };
+    readonly lands?: { readonly how: 'return' | 'sacrifice'; readonly count: number; readonly subtype: string; readonly basic?: true };
   };
   /**
    * "Shuffle ~ into its owner's library" as the last sentence of a spell (D687): Green Sun's

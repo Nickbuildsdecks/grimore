@@ -39156,6 +39156,16 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
  */
 function altCostFromLine(line: string): Partial<CardScript> | null {
   /*
+    The Borderposts (D1329): "You may pay {1} and return a basic land you control to its owner's hand
+    rather than pay this spell's mana cost." The mana, and then a basic land back, tapped ones first:
+    the one tapped for the {1} may be the one returned, which is the card.
+  */
+  const borderpost = /^you may pay ((?:\{[^}]+\})+) and return a basic land you control to its owner's hand rather than pay this spell's mana cost$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (borderpost !== null) {
+    return { altCost: { mana: borderpost[1]!, lands: { how: 'return', count: 1, subtype: '', basic: true } } };
+  }
+  /*
     And lands (D1252): "You may return an Island you control to its owner's hand" (Daze), "return
     two Islands you control to their owner's hand" (Gush), "sacrifice two Mountains" (Fireblast),
     "sacrifice a Mountain" (Crash's kin), each "rather than pay this spell's mana cost".

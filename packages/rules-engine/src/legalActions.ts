@@ -754,14 +754,14 @@ function payingFor(state: GameState, id: string, def: CardDef | undefined): Paym
  * first and then the cheapest. `null` when there are too few.
  */
 export function landCostPlan(
-  state: GameState, seat: SeatIndex, lands: { readonly count: number; readonly subtype: string },
+  state: GameState, seat: SeatIndex, lands: { readonly count: number; readonly subtype: string; readonly basic?: true },
 ): readonly string[] | null {
-  return bouncePlan(state, seat, { count: lands.count, kind: 'land', subtype: lands.subtype }, '');
+  return bouncePlan(state, seat, { count: lands.count, kind: 'land', subtype: lands.subtype, ...(lands.basic === true ? { basic: true as const } : {}) }, '');
 }
 
 export function altCostOpen(
   state: GameState, seat: SeatIndex,
-  alt: { readonly life?: number; readonly ifControl?: string; readonly lands?: { readonly count: number; readonly subtype: string } },
+  alt: { readonly life?: number; readonly ifControl?: string; readonly lands?: { readonly count: number; readonly subtype: string; readonly basic?: true } },
 ): boolean {
   if (alt.lands !== undefined && landCostPlan(state, seat, alt.lands) === null) return false;
   if (alt.ifControl !== undefined && !listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
@@ -1171,7 +1171,9 @@ export function bouncePlan(
     if (inst === undefined || isFaceDownPermanent(inst)) return false;
     const ch = characteristicsOf(state, inst);
     const kind = cost.kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, cost.kind);
-    return kind && (cost.subtype === undefined || hasSubtype(ch.typeLine, cost.subtype.toLowerCase()));
+    return kind && (cost.subtype === undefined || cost.subtype === '' || hasSubtype(ch.typeLine, cost.subtype.toLowerCase()))
+      // A basic one (D1329), by its supertype.
+      && (cost.basic !== true || ch.typeLine.supertypes.some((t) => /^basic$/i.test(t)));
   });
   if (fits.length < cost.count) return null;
   const rank = (id: string): number => (state.instances[id]!.tapped ? 0 : 1000)
@@ -2388,7 +2390,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         ...(script?.altCost === undefined || !altCostOpen(state, seat, script.altCost) ? [] : [{
           flag: 'altCast' as const,
           cost: script.altCost.mana ?? '{0}',
-          note: `alternative cost (${script.altCost.lands !== undefined
+          note: `alternative cost (${script.altCost.lands?.basic === true
+            // The Borderposts (D1329): the mana and the land.
+            ? `${script.altCost.mana === undefined ? '' : `${script.altCost.mana} and `}return a basic land you control`
+            : script.altCost.lands !== undefined
             ? `${script.altCost.lands.how} ${script.altCost.lands.count === 1 ? `a ${script.altCost.lands.subtype}` : `${script.altCost.lands.count} ${script.altCost.lands.subtype}s`}`
             : script.altCost.life === undefined ? script.altCost.mana ?? '{0}' : `${script.altCost.life} life`})`,
           specs: specsFor(script),

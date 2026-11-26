@@ -49057,6 +49057,40 @@ describe('"Morph—Reveal a blue card in your hand." (D1328)', () => {
   });
 });
 
+describe('the Borderposts: {1} and a basic land back, rather than the mana cost (D1329)', () => {
+  const POST = { name: 'Test Borderpost', type_line: 'Artifact', mana_cost: '{3}{W}{U}', cmc: 5, colors: ['W', 'U'], layout: 'normal',
+    oracle_text: "You may pay {1} and return a basic land you control to its owner's hand rather than pay this spell's mana cost.\nTest Borderpost enters tapped.\n{T}: Add {W} or {U}." };
+  const GROUNDS = { name: 'Test Grounds', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const deck = customDeck({ id: 'd1329', name: 'Borderposts', entries: [{ name: 'Test Borderpost', count: 4 }, { name: 'Test Grounds', count: 8 }, { name: 'Plains', count: 48 }], data: [POST, GROUNDS] as never[] });
+  const board = (lands: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1329', 1: 'd1329' }, deckSpecs: { d1329: deck.deck },
+    hands: { 0: ['Test Borderpost'] }, battlefield: { 0: [...lands] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(POST as never)).toMatchObject({ ok: true, unread: [], script: { altCost: { mana: '{1}', lands: { how: 'return', count: 1, basic: true } } } });
+  });
+
+  it('off one Plains: tapped for the {1}, then returned', () => {
+    let s = board(['Plains']);
+    const post = find(s, 0, 'hand', 'Test Borderpost');
+    const plains = find(s, 0, 'battlefield', 'Plains');
+    const play = legalActions(s, 0).plays.find((p) => p.card === post && p.altCast === true);
+    expect(play?.description).toMatch(/\{1\} and return a basic land you control/);
+    expect(play?.manaCost).toBe('{1}');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: post, altCast: true } as Action)), 4);
+    expect(s.instances[post]!.zone).toBe('battlefield');
+    expect(s.instances[plains]!.zone).toBe('hand');
+  });
+
+  it('a nonbasic land is not a basic one', () => {
+    const s = board(['Test Grounds']);
+    const post = find(s, 0, 'hand', 'Test Borderpost');
+    expect(legalActions(s, 0).plays.some((p) => p.card === post && p.altCast === true)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
