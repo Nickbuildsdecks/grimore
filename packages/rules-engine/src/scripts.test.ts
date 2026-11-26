@@ -46369,6 +46369,52 @@ describe('two counters in one sentence: "… on A and a … counter on B" (D1272
   });
 });
 
+describe('counters "for each": any counter kind, opponents dealt damage, two types in a graveyard (D1273)', () => {
+  const R = (name: string, text: string, type = 'Creature — Zombie') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    ...(type.includes('Creature') ? { power: '1', toughness: '1' } : {}),
+  });
+  const GHOUL = R('Test Ghoul', '{0}: Put a corpse counter on Test Ghoul for each creature card in your graveyard.');
+  const SPLITTER = R('Test Splitter', '{0}: Put a +1/+1 counter on Test Splitter for each opponent that was dealt damage this turn.');
+  const EEL = R('Test Eel', '{0}: Put a +1/+1 counter on Test Eel for each artifact and/or creature card in your graveyard.');
+  const TIMER = R('Test Timer', '{0}: Put a time counter on Test Timer for each creature you control.');
+  const ROCK = R('Test Rock', '', 'Artifact');
+  const BOLT = { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 1 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' };
+  const ROWS = [GHOUL, SPLITTER, EEL, ROCK, BOLT];
+  const deck = customDeck({ id: 'd1273', name: 'For each', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 45 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], yard: readonly string[] = [], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1273', 1: 'd1273' }, deckSpecs: { d1273: deck.deck },
+    battlefield: { 0: [...mine] }, graveyard: { 0: [...yard] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const activate = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0 } as Action)), 20);
+
+  it('reads the three; a time counter, which the rules give a meaning, stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [GHOUL, SPLITTER, EEL]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const timer = compileCard(TIMER as never);
+    expect(timer.ok && timer.unread.length).toBeGreaterThan(0);
+  });
+
+  it('corpse counters, one for each creature card in the graveyard', () => {
+    const s = activate(table(['Test Ghoul'], ['Test Ghoul', 'Test Splitter', 'Swamp']), 'Test Ghoul');
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Ghoul')]!.counters['corpse']).toBe(2);
+  });
+
+  it('an artifact and a creature in the graveyard count once each; a land does not', () => {
+    const s = activate(table(['Test Eel'], ['Test Rock', 'Test Ghoul', 'Swamp']), 'Test Eel');
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Eel')]!.counters['+1/+1']).toBe(2);
+  });
+
+  it('opponents dealt damage this turn: none, then one', () => {
+    let s = activate(table(['Test Splitter'], [], ['Test Bolt']), 'Test Splitter');
+    const splitter = find(s, 0, 'battlefield', 'Test Splitter');
+    expect(s.instances[splitter]!.counters['+1/+1'] ?? 0).toBe(0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
+    s = activate(s, 'Test Splitter');
+    expect(s.instances[splitter]!.counters['+1/+1']).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

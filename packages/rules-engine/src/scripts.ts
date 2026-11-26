@@ -42,7 +42,7 @@ import {
   createEmblem, addSeatCounters, canPayLife, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
-  putOntoBattlefield, tap, equipTo, moveAura, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
+  putOntoBattlefield, tap, equipTo, damagedThisTurn, moveAura, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, KICKED_FIRST, KICKED_SECOND, UNEARTHED, EXILED_ON_LEAVING, RENOWNED, MONSTROUS,
@@ -17486,14 +17486,17 @@ function selfEffect(
   */
   const perCount = / for each /i.test(text) ? countTailOf(text, name) : null;
   if (perCount !== null && perCount.grammar === 'per-thing') {
-    const each = new RegExp(`^put ([\\w]+) \\+1/\\+1 counters? on (?:(${self})|it)$`, 'i').exec(perCount.body);
+    // Any counter (D1273): "put a corpse counter on ~ for each creature that died this turn"
+    // (Scavenging Ghoul). Not a rules counter, whose meaning a count alone would not carry.
+    const each = new RegExp(`^put ([\\w]+) (${PT_COUNTER}|[a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(perCount.body);
     const rate = each === null ? null : countFrom(each[1]!);
-    if (each !== null && rate !== null) {
-      const named = each[2];
+    if (each !== null && rate !== null && !RULES_COUNTERS.includes(each[2]!.toLowerCase())) {
+      const kind = each[2]!.toLowerCase();
+      const named = each[3];
       return {
         effect: (c) => {
           const n = rate * perCount.counted(c);
-          return n > 0 ? addCounters(c.state, itMeans(named, c), '+1/+1', n) : c.state;
+          return n > 0 ? addCounters(c.state, itMeans(named, c), kind, n) : c.state;
         },
       };
     }
@@ -22773,6 +22776,22 @@ function countOfThing(
       .filter((id) => hasType(parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine), type)).length;
   }
   if (/^creatures? that died this turn$/i.test(text)) return (c) => c.state.creaturesDiedThisTurn ?? 0;
+  /*
+    D1273: "opponent that was dealt damage this turn" (Furious Spinesplitter), any damage, from
+    `damagedThisTurn`; and two card types joined by "and/or" in your graveyard ("artifact and/or
+    creature card", Ceti Eel), a card of either type counted once.
+  */
+  if (/^opponents? (?:that|who) (?:was|were) dealt damage this turn$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller).filter((seat) => damagedThisTurn(c.state, seat) > 0).length;
+  }
+  const eitherInGraveyard = /^(artifact|creature|enchantment|land|instant|sorcery|planeswalker) and\/or (artifact|creature|enchantment|land|instant|sorcery|planeswalker) cards? in your graveyard$/i.exec(text);
+  if (eitherInGraveyard !== null) {
+    const types = [eitherInGraveyard[1]!.toLowerCase(), eitherInGraveyard[2]!.toLowerCase()];
+    return (c) => listAt(c.state, zoneKey(c.controller, 'graveyard')).filter((id) => {
+      const line = parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine);
+      return types.some((type) => hasType(line, type));
+    }).length;
+  }
   if (/^creatures? that attacked this turn$/i.test(text)) return (c) => (c.state.attackersThisTurn ?? []).length;
   if (/^attacking creatures? you control$/i.test(text)) {
     return (c) => c.state.combat.attacks.filter(({ attacker }) => c.state.instances[attacker]?.zoneSeat === c.controller).length;
