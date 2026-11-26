@@ -65526,3 +65526,79 @@ Faults injected by hand: 4, all caught.
 No rules-engine change, so the coverage line below is unchanged.
 
 Coverage: 17,255 of 31,900 cards (+0 over D1296's 17,255), 40,008 of 59,888 lines (+0).
+
+## D1298 — Rooms
+
+A Room (CR 709.5) is a split enchantment with two doors. Casting one door unlocks it as the Room
+enters. A locked door can be unlocked later, as a sorcery, by paying its mana cost; that is a special
+action, with no stack. A locked door's abilities do nothing. Thirty legal cards, all from Duskmourn;
+D1294 refused every one.
+
+**The permanent's script** is both doors', each part scoped to its own door being unlocked. The
+model is D638's Class levels (`readClassLevels`), and `roomScript` is the same move:
+- activated abilities through `activateOnlyIf`;
+- triggers through `condition`;
+- statics through a new `while` kind, `source-door-unlocked`.
+A door with anything else (a grant, a cost rule, a replacement) refuses the whole Room, so a door
+whose rules could not be scoped is never active while locked. That refuses 3 of the 30.
+
+**The state** is `CardInstance.doors`, unlocked by face index:
+- A Room cast as a door arrives with that door unlocked, and its "When you unlock this door"
+  triggers then, which is why Bottomless Pool cast for {U} bounces a creature at once.
+- A Room arriving any other way has every door locked.
+- A Room that changes zone is a new object, locked again (CR 400.7).
+- Shown to every player in the view, as a Class's level is.
+
+**"When you unlock this door"** is a new trigger event, `door-unlocked`. It reads with no door, and
+the merge gives it the door it is printed on, so unlocking one door does not fire the other's.
+
+**Unlocking** is `auto:unlock` {card, door}, modelled on plot (D922):
+- Refused for a door the card does not have, a door already unlocked, a permanent you do not
+  control, and outside sorcery timing.
+- Pays the door's cost, unlocks it, raises the event, and settles.
+- Offered by `legalActions` for each locked door the seat can pay for.
+- The bot judges it like any other play.
+- The web table sends it, one row per door.
+
+"This Room" now refers to the card itself (`SELF_TYPE_WORDS`).
+
+Simplifications, stated:
+- A Room's name, mana value and colours on the battlefield are the whole card's. The rules use only
+  its unlocked doors' (CR 709.5d); a "mana value 3 or less" check on a Room reads the sum of both
+  doors.
+- "Fully unlock", which Eerie watches, is not raised yet.
+
+Of the legal split cards, 123 now compile (from 96) and 62 read whole (from 52). The legal-pool
+measure still cannot see split cards (D1295's note).
+
+**Tests.** 9 engine tests and 1 web test:
+- A Room compiles to one enchantment, the unlock trigger with its door and the static with its
+  `while`.
+- Cast as its first door: that door unlocked, its unlock trigger fires (3 life), the other door's
+  static does nothing, and only the other door is offered to unlock.
+- Unlocking the other door: paid, unlocked, its static applies, the first door's trigger does not
+  fire again, and unlocking it twice is refused.
+- A locked door's end-step trigger does nothing; unlocked, it fires.
+- Only as a sorcery (refused and not offered at the beginning of combat), and only a door the card
+  has.
+- Put onto the battlefield without being cast: both locked, both offered, and unlocking the first
+  fires its trigger.
+- The bot, with a locked Room and the mana, unlocks a door, and the engine takes every action it
+  sends.
+- A Room that leaves and comes back is locked.
+- A door with a grant, and a door with a rule of another kind, each refuse the Room.
+- Web: an unlock play is sent as `auto:unlock` naming its door.
+
+Faults injected by hand: 9 in the engine, all caught.
+- The cast door not unlocked on arrival.
+- Its trigger not raised on arrival.
+- Any door's unlock firing every door's trigger.
+- The door `while` always true.
+- A door's triggers not scoped.
+- A locked door still offered.
+- The sorcery-timing check dropped.
+- The zone change keeping the doors.
+- The key check dropped (it passed the grant fixture, which the statics check also refuses; the
+  Steaming Sauna fixture was added so that it fails).
+
+Coverage: 17,255 of 31,900 cards (+0 over D1297's 17,255), 40,008 of 59,888 lines (+0).
