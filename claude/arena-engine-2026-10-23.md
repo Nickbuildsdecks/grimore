@@ -47919,3 +47919,74 @@ Faults injected by hand: 5, all caught.
 - The split path dropped.
 
 Coverage: 17,255 of 31,900 cards (+0 over D1293's 17,255), 40,008 of 59,888 lines (+0).
+
+## D1295 — Fuse
+
+"Fuse (You may cast one or both halves of this card from your hand.)" Wear // Tear, Turn // Burn,
+Far // Away, Toil // Trouble. CR 702.102: from the hand, both halves may be cast as one spell, for
+both costs, with both halves' targets, the left half's instructions first.
+
+The whole card is exactly that spell: its cost is both halves' costs, its types both halves', and
+its mana value their sum (CR 702.102c and d). So a fused cast is the whole card cast with `fuse` on
+the action, and its script is the whole card's, built by `fusedScript` from the two halves:
+- targets: the left half's, then the right's;
+- questions: the left half's, then the right's;
+- on resolution: the left half's effect, then the right's, each with its own slice of the targets
+  (by position, from `targetSlots` when one has gone, D953's rule) and of the answers.
+
+The fused spell is one spell. It is countered only when every target it has is gone (CR 608.2b),
+which the engine already does for any spell. Otherwise each half runs with what it still has. The
+first draft skipped a half whose targets had all gone, so that its untargeted instructions would not
+happen. That is wrong: they still happen. The fault check that rule could not fail is what showed
+it, and the rule is gone.
+
+Refused, and the Fuse line left unread:
+- a half with anything beyond a spell's targets, questions and effect;
+- a divided quantity;
+- an "up to" target in the left half, which would move the right half's targets along;
+- a "target player …" question in one half when the other half can target a player too, because the
+  question finds its player among the whole spell's targets. A question about the caster ("Discard
+  a card") is not one of those. The first draft refused any question at all here; the narrower rule
+  reads Down // Dirty's shape.
+
+Offered from the hand only, and only as a plain cast from it. The cost shown is "{R}{G}", not the
+card's "{R} // {G}". The bot sends `fuse` with the play it picked.
+
+Of the legal split cards (D1294), 39 now read whole, up from 28: eleven fuse cards. A measuring
+note: this corpus carries no legality data for split cards, so the legal-pool measure filters all
+126 of them out, and D1294's and this increment's gains do not show in the coverage line below. The
+split-only figures are from compiling those 126 rows directly.
+
+**Tests.** 7 engine tests, and D1294's Fuse fixture changed to one whose halves do not compose:
+- The Fuse line reads when the halves compose. A plain split card is not fused. A clash (both halves
+  can aim at a player, and the right asks "target player") stays unread.
+- From the hand for "{R}{G}", the two effects in order: the creature destroyed, then 3 life.
+- Refused with a half named, on a card without fuse, and from the graveyard.
+- With its only target gone, the fused spell is countered whole, both halves.
+- Each half acts on its own target: one creature zapped, the other grows.
+- Each half reads its own answers: you discard for the left half, the opponent for the right.
+- With one half's target gone, the spell resolves, and the other half acts on its own target only.
+
+Faults injected by hand: 7, all caught.
+- The offer dropped.
+- The hand-only check dropped.
+- The right half given every target.
+- The left half given every target.
+- The halves' targets in the wrong order.
+- The right half given every answer.
+- The "target player" guard dropped.
+
+Two more from the drafts, not injected: the broad "any question" guard failed the answers test
+(the card did not fuse), and the "gone half" rule could not fail and was removed (above). The
+left-half and right-half target faults each passed the first version of the tests; the zap-and-grow
+fixture and the damage check were added so that they fail.
+
+The first gate failed on the deck-coverage test: `CardScript.fused` is a new script field, and the
+test lists every field no pool deck exercises. I had skipped that check before the gate. The field
+was added to the list with the test that drives it, and the gate run again before any push.
+A process slip on the re-run: the first finisher was still waiting on its coverage measure when the
+second started. It wrote its STOP into the second's log, and its exit resumed the paused sweep. The
+sweep was paused again and the second gate's own result is the one used; the coverage figure is the
+same either way, because only the test file changed between the two runs.
+
+Coverage: 17,255 of 31,900 cards (+0 over D1294's 17,255), 40,008 of 59,888 lines (+0).
