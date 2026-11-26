@@ -47164,3 +47164,29 @@ Faults injected by hand: 4, all caught.
 - The prompt left with the mark in it.
 
 Coverage: 17,162 of 31,900 cards (+8 over D1270's 17,154), 39,859 of 59,888 lines (+10).
+
+## D1272 — Two counters in one sentence
+
+"Put a +1/+1 counter on that creature and a +1/+1 counter on Juniper Order Ranger." `clausesOf`
+does not split on "and" (D387). `conjoinedEffect`, tried only when nothing reads the whole clause,
+splits it. The second half ("a +1/+1 counter on ~") had no verb and read as nothing. A later part
+that is only the next counter and where it goes now takes "put" back, as the next token takes
+"create" back (D810). Each half is then read on its own, and the composition is all or nothing.
+
+Read whole now: Juniper Order Ranger, Serrated Biskelion, Ich-Tekik, Salvage Splicer, X-23,
+Deadly Weapon, Evolutionary Escalation. Still unread:
+- Drillworks Mole: "up to one target commander creature you control".
+- Brokers Ascendancy and Ajani, the Greathearted: loyalty counters on each planeswalker.
+- Sagu Pummeler: two counter kinds before one "on".
+
+**Tests.** 4 engine tests:
+- Both test forms read.
+- A creature entering gets a counter, and so does the Ranger.
+- One counter on itself and one on the target.
+- Two targets in one sentence get three counters each, not six on one (Evolutionary Escalation).
+
+Faults injected by hand: 2, all caught.
+- The second half's destination rewritten to "it".
+- The verb restored only from the third part on.
+
+Coverage: 17,170 of 31,900 cards (+8 over D1271's 17,162), 39,868 of 59,888 lines (+9).
