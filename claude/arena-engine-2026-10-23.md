@@ -48405,3 +48405,80 @@ Faults injected by hand: 2, both caught.
 Compile pins: 1791 of 1791 pass.
 
 Coverage: 17,330 of 31,900 cards (+8 over D1305's 17,322), 40,114 of 59,888 lines (+10).
+
+## D1307 — Counters removed as an X: storage lands and mana batteries
+
+Some costs say "Remove any number of storage counters from ~" or "Remove X charge counters from ~".
+The cost reader takes a fixed count of counters, so it refused these, along with every line that
+printed one. That covered:
+- the storage lands (Mage-Ring Network, Fountain of Cho and the Mercadian lands);
+- the five mana batteries;
+- Kyren Toy;
+- Infused Arrows, Skullmane Baku, Chamber Sentry, Cruel Sadist, Arcbound Javelineer and Auntie
+  Blyte.
+
+**The cost.** `AbilityCost.removeXCounters` holds the counter's kind. The X is announced with the
+activation, in the same `x` an {X} cost uses (D789):
+- `activate` refuses an X larger than the counters the source has, and removes them as the cost is
+  paid;
+- the X is the ability's X on the stack, so "-X/-X" and "It deals X damage" read it. A line is now
+  X-payable when its cost removes X counters, not only when it has {X};
+- Talon of Pain and Chamber Sentry have both {X} and "Remove X", which is one X: `xMax` is the
+  smaller of what the mana pays and what the counters allow.
+
+**The mana.** Three printed forms make mana once for each counter removed, plus
+`AbilityDef.producesPerX` more:
+- "Add {R} for each storage counter removed this way" (0 more);
+- "Add {B}, then add an additional {B} for each charge counter removed this way" (1 more);
+- "Add an amount of {C} equal to X plus one" (1 more).
+
+Tap mana lines normally go to the mana-line parser, which doesn't take this cost. `compile.ts` now
+hands such a line to the general reader, as it does for Phyrexian Tower (D666). It keeps the result
+only if every ability that comes back removes X counters and has the count.
+
+How many to remove is the player's choice, so these abilities are never the auto-payer's:
+- `manaSources` skips them;
+- the table offers them with `xMax` equal to the counters held, and asks the X as it does for any
+  ability with one;
+- `potentialMana` counts them at their most, every counter removed.
+
+**Five storage lands are held back on purpose:** Dwarven Hold, Bottomless Vault, Hollow Trees,
+Icatian Store and Sand Silos. Each also says "You may choose not to untap ~ during your untap step"
+and charges only at an upkeep where it is still tapped. The untap step answers that choice by
+untapping it, unless it holds a control change (D1041), so read whole these lands would never
+charge. D1041's pin says exactly this. `compile.ts` therefore leaves their storage line unread
+until keeping a land tapped is a real question for its controller.
+
+**Still unread:**
+- "Add X mana in any combination of {W} and/or {U}" (Calciform Pools and five others). This is a
+  second choice on the activation, and an X doesn't answer it.
+- Petalmane Baku's "X mana of any one color".
+- Brain in a Jar's "Scry X". A scry asks a question, so it doesn't read with an {X} cost either.
+
+**Tests.** 4 tests:
+- Compile: Mercadian Bazaar, the battery, the toy, the Arrows and Cruel Sadist read whole. Only the
+  combination line on Calciform Pools and Dwarven Hold's storage line stay unread.
+- Mercadian Bazaar with three counters:
+  - it is offered with `xMax` 3, and is not a mana source;
+  - three red show on the pips;
+  - an X of 4 is refused;
+  - an X of 2 makes RR, leaves one counter and taps the land.
+- The battery with two counters makes RRR. Kyren Toy with none makes C. A battery is not an
+  auto-payer source.
+- Infused Arrows with three counters is offered `xMax` 3. An X of 2 removes two counters and its
+  -2/-2 kills Grizzly Bears.
+
+Faults injected by hand: 7, all caught.
+- The X ignored for the mana.
+- The counters not removed.
+- An X over the counters allowed.
+- The auto-payer given the battery.
+- No `xMax`.
+- The X not payable in the reader. The first version of the test missed this, because Infused
+  Arrows reads without it; Cruel Sadist's "It deals X damage" does not, and is now checked.
+- The kept-tapped land read whole (caught here and by D1041). The first gate run caught this one:
+  the first version read Dwarven Hold whole, and D1041's pin failed.
+
+The scripts tests, compile tests and pins: 6400 of 6400 pass.
+
+Coverage: 17,348 of 31,900 cards (+18 over D1306's 17,330), 40,133 of 59,888 lines (+19).
