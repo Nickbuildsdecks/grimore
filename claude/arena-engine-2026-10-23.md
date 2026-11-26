@@ -48685,3 +48685,25 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6411 of 6411 pass.
 
 Coverage: 17,368 of 31,900 cards (+0 over D1310's 17,368), 40,157 of 59,888 lines (+0).
+
+## D1312 — "Add X mana of any one color" for X counters removed
+
+D1307 read storage mana in three printed forms. A fourth is "Add X mana of any one color" beside a
+cost that removes X counters: Petalmane Baku's ki counters, and Haruspex's +1/+1 counters under
+its "Devouring Monster —" ability word. It is now one mana ability per colour. Each makes that
+colour once for each counter removed (`producesPerX` 0), as the runs of one colour are (D697).
+Like D1307's, it is pressed by the player with the X, never by the auto-payer.
+
+**Tests.** 2 tests:
+- Petalmane Baku reads whole, with five mana abilities.
+- With two ki counters, its blue row:
+  - is offered with `xMax` 2, as a mana ability;
+  - for X = 2 makes UU after its {1} and leaves no counters.
+
+Faults injected by hand: 2, both caught.
+- One mana too many.
+- The reader off.
+
+The scripts tests, compile tests and pins: 6413 of 6413 pass.
+
+Coverage: 17,370 of 31,900 cards (+2 over D1311's 17,368), 40,159 of 59,888 lines (+2).
