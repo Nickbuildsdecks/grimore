@@ -64950,3 +64950,32 @@ Faults injected by hand: 2, all caught.
   prologue, "that creature gains flying" read and would have done nothing.
 
 Coverage: 17,225 of 31,900 cards (+5 over D1281's 17,220), 39,962 of 59,888 lines (+6).
+
+## D1283 — "~ or another creature you control enters, that creature …"
+
+"Whenever Ambuscade Shaman or another creature you control enters, that creature gets +2/+2 until
+end of turn." D964 reads "that creature" as "it", the event's subject, only where every event is
+about another creature. The "~ or another" prologue is two events (D483), the card's own and
+another's, so the card's own event kept the clause unread. On an arrival or a death, "that
+creature" is the one that arrived or died either way. So the card's own event is now allowed on
+those two kinds. A block is still excluded, because there "that creature" is the other creature.
+
+Gruul Ragebeast now reads whole, and `compiled-vs-written` compares it for the first time. The
+compiled reading is two triggers (D483's shape) where the hand-written card is one trigger on any
+creature of yours. The same arrivals fire it and the creature that entered fights. Added to
+`DISAGREE` with that reason; the hand-written script is the one played.
+
+**Tests.** 3 engine tests:
+- It reads.
+- The Shaman entering pumps itself; a Bear entering later pumps the Bear and not the Shaman.
+- On a block, "that creature gets -1/-1" shrinks the attacker and not the blocker.
+
+Faults injected by hand: 2; 1 caught.
+- The card's own event refused again: caught.
+- The card's own event allowed on any kind, blocks included: not caught. On "Whenever ~ blocks a
+  creature" the block referent readers (D480's "that creature gets …", then D1282's borrow) take the
+  clause before this rewrite and aim it at the other creature, whatever this guard says. On a block,
+  "it" would be the blocker itself. The guard stays as the statement of the rule. A separate "at least one
+  event about another" check, which overlapped with it, was removed.
+
+Coverage: 17,228 of 31,900 cards (+3 over D1282's 17,225), 39,967 of 59,888 lines (+5).
