@@ -228,6 +228,12 @@ export interface CardInstance {
    */
   readonly doors?: readonly boolean[];
   /**
+   * Its controller's standing answer to "You may choose not to untap ~ during your untap step"
+   * (D1309, CR 502.3): keep it tapped. Set and cleared by `auto:keepTapped`; the untap step reads it.
+   * Cleared when the card changes zone (CR 400.7).
+   */
+  readonly keepTapped?: true;
+  /**
    * The turn an effect gave this card flashback "until end of turn" (D694): Snapcaster Mage,
    * Mission Briefing. The flashback cost is the card's mana cost. Cleared when the card changes
    * zone (CR 400.7), and only good for that turn.

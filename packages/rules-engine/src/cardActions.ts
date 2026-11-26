@@ -512,6 +512,8 @@ export function relocate(
     ...(toZone === 'stack' ? {} : { castAs: undefined }),
     // And a Room's doors (D1298): a Room that changes zone is a new object, all locked (CR 400.7).
     ...(inst.doors === undefined ? {} : { doors: undefined }),
+    // And a standing "keep it tapped" (D1309): the new object has none.
+    ...(inst.keepTapped === undefined ? {} : { keepTapped: undefined }),
     /*
       And a soulbond pair breaks as either member leaves (CR 702.95b).
 

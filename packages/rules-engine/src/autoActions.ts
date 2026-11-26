@@ -3821,6 +3821,34 @@ function decide(
  * asked twenty-five times a turn whether they still had nothing to do. How you want to be asked is
  * a preference, not a rule about the game.
  */
+/**
+ * A standing answer to "You may choose not to untap ~ during your untap step" (D1309, CR 502.3).
+ *
+ * The choice is made in the untap step, where nobody has priority and nothing asks, so the table
+ * takes it beforehand and keeps it: a storage land's controller says once to keep it tapped, and
+ * every untap step after that leaves it so until they say otherwise. Only on a permanent of theirs
+ * whose card says it; the untap step still honours it only while the card has its abilities.
+ */
+function setKeepTapped(state: GameState, action: { by: SeatIndex; card: string; keep: boolean }): Outcome {
+  requireAutomated(state);
+  assertSeatIndex(state, action.by, 'by');
+  const inst = requireInstance(state, action.card);
+  if (inst.zone !== 'battlefield' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that is not a permanent you control');
+  }
+  const name = state.cardDefs[inst.defKey]?.name ?? 'that permanent';
+  if (inst.faceDown || scriptForCard(state.cardDefs[inst.defKey])?.mayStayTapped !== true) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${name} untaps in your untap step like anything else`);
+  }
+  return {
+    state: withInstance(state, inst.id, { keepTapped: action.keep ? true : undefined }),
+    message: action.keep
+      ? `${seatName(state, action.by)} will keep ${name} tapped in their untap step`
+      : `${seatName(state, action.by)} will untap ${name} in their untap step`,
+    data: { card: inst.id, keep: action.keep },
+  };
+}
+
 function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }): Outcome {
   requireAutomated(state);
   assertSeatIndex(state, action.by, 'by');
@@ -4028,6 +4056,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:order': return orderDamage(state, action);
     case 'auto:discard': return discard(state, action);
     case 'auto:stops': return setStops(state, action);
+    case 'auto:keepTapped': return setKeepTapped(state, action);
     case 'auto:keep': return keepHand(state, action);
     case 'auto:choose': return chooseTargets(state, action);
     case 'auto:decide': return decide(state, action);

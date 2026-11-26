@@ -1292,6 +1292,10 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
   if (faces?.kind === "split" && faces.cards.some((door) => /\bRoom\b/.test(door.typeLine))) {
     faces.cards.forEach((door, i) => out.push(`${door.name} ${card.doors?.[i] === true ? "unlocked" : "locked"}`))
   }
+  // A permanent its controller keeps tapped in their untap step (D1309): only they are sent it.
+  if (card.keepTapped === true) {
+    out.push("kept tapped")
+  }
   /*
     Who it is paired with, for soulbond.
 

@@ -32,12 +32,18 @@ export interface PlaySheetProps {
   reason?: string | null
   onPlay: (play: LegalPlay) => void
   onDiscard: () => void
+  /**
+   * "You may choose not to untap ~ during your untap step" (D1309): set when this is the viewer's own
+   * permanent that says so. A standing setting rather than a play, so it never stops the table
+   * passing for them.
+   */
+  onKeepTapped?: (keep: boolean) => void
   /** The manual move menu, rendered under a disclosure. */
   manual: React.ReactNode
   onClose: () => void
 }
 
-export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard, manual, onClose }: PlaySheetProps) {
+export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard, onKeepTapped, manual, onClose }: PlaySheetProps) {
   const [showManual, setShowManual] = useState(false)
   const name = card.card?.name ?? "this card"
 
@@ -155,6 +161,21 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
             {reason ? <span data-testid="no-plays-reason">: {reason}</span> : null}.
           </p>
         )}
+
+        {onKeepTapped !== undefined && card.mayStayTapped === true ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="keep-tapped-toggle"
+            aria-pressed={card.keepTapped === true}
+            className="h-auto min-h-9 justify-start whitespace-normal py-1.5 text-left text-xs"
+            onClick={() => onKeepTapped(card.keepTapped !== true)}
+          >
+            {card.keepTapped === true
+              ? `Kept tapped in your untap step. Untap ${name} as usual instead`
+              : `Keep ${name} tapped in your untap step`}
+          </Button>
+        ) : null}
 
         <div className="flex flex-col gap-1.5 border-t border-white/10 pt-2">
           <Button

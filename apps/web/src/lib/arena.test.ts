@@ -1757,6 +1757,12 @@ describe("cardBadges", () => {
     expect(cardBadges(v, fire).some((b) => /locked/.test(b))).toBe(false)
   })
 
+  it("says a permanent is kept tapped in its controller's untap step (D1309)", () => {
+    const v = view({ automation: automation() })
+    expect(cardBadges(v, permanent({ mayStayTapped: true, keepTapped: true, tapped: true }))).toContain("kept tapped")
+    expect(cardBadges(v, permanent({ mayStayTapped: true, tapped: true }))).not.toContain("kept tapped")
+  })
+
   it("shows the current body, not the printed one", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ power: 5, toughness: 5 }))).toContain("5/5")

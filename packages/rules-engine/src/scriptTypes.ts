@@ -3308,9 +3308,9 @@ export interface CardScript {
   /**
    * "You may choose not to untap ~ during your untap step" (D1041, CR 502.3): Vedalken Shackles,
    * Helm of Possession, Willow Satyr. The untap step keeps it tapped while it holds a control change
-   * that lasts "for as long as ~ remains tapped" (D1040), and untaps it otherwise: the table
-   * answers the choice the way its controller wants it answered, since keeping one down for
-   * nothing has no use the engine models.
+   * that lasts "for as long as ~ remains tapped" (D1040), or while its controller has said to keep
+   * it tapped (D1309, `CardInstance.keepTapped`, set by `auto:keepTapped`): a storage land charging
+   * at its controller's upkeep. Otherwise it untaps.
    */
   readonly mayStayTapped?: true;
   /**

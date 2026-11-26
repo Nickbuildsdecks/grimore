@@ -2131,6 +2131,14 @@ export interface AutoPlotAction {
 export interface AutoUnlockAction {
   readonly type: 'auto:unlock'; readonly by: SeatIndex; readonly card: string; readonly door: number;
 }
+/**
+ * The answer to "You may choose not to untap ~ during your untap step" (D1309, CR 502.3), given
+ * ahead of the step: `keep` keeps that permanent of yours tapped in your untap steps until you say
+ * otherwise. A setting, like `auto:stops`: no priority needed and none passed.
+ */
+export interface AutoKeepTappedAction {
+  readonly type: 'auto:keepTapped'; readonly by: SeatIndex; readonly card: string; readonly keep: boolean;
+}
 
 export interface AutoForetellAction {
   readonly type: 'auto:foretell'; readonly by: SeatIndex; readonly card: string;
@@ -2268,13 +2276,13 @@ export type AutoAction =
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
   | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoPlotAction | AutoUnlockAction | AutoDredgeAction
-  | AutoDredgeStopsAction;
+  | AutoDredgeStopsAction | AutoKeepTappedAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
   'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend', 'auto:plot', 'auto:unlock',
-  'auto:dredge', 'auto:dredgeStops',
+  'auto:dredge', 'auto:dredgeStops', 'auto:keepTapped',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

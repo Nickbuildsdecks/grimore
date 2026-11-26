@@ -1446,12 +1446,10 @@ function compileSingle(row: CardDataRow): Compilation {
       const urza = /^\{T\}: Add \{[WUBRGC]\}\. If you control an? [^,]+ and an? [^,]+, add (?:\{[WUBRGC]\})+ instead\.?$/i.test(line.trim());
       /*
         And the storage lands and mana batteries (D1307): an X of counters the mana parser does not
-        take. Not on a land that also says "You may choose not to untap ~" (Dwarven Hold, Bottomless
-        Vault): it charges only while its controller keeps it tapped, and the untap step answers that
-        choice by untapping it (D1041), so read whole it would be a land that never charges.
+        take. Dwarven Hold and Bottomless Vault, which charge only while kept tapped, were held back
+        until their controller could keep them so (D1309, `auto:keepTapped`).
       */
-      const storage = /^[^:]*\bRemove (?:X|any number of) [^:,]+ counters from [^:,]+:/i.test(line.trim())
-        && !/\bYou may choose not to untap\b/i.test(row.oracle_text ?? '');
+      const storage = /^[^:]*\bRemove (?:X|any number of) [^:,]+ counters from [^:,]+:/i.test(line.trim());
       const sacrificing = urza || storage || /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
         ? lineScriptFor(line, def.name) : null;
       const makesMana = sacrificing !== null && Object.keys(sacrificing).every((key) => key === 'abilities')

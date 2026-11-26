@@ -1080,7 +1080,9 @@ function onEnterStep(state: GameState, step: Step): GameState {
         const inst = next.instances[id];
         return inst !== undefined && inst.tapped && !allAbilitiesLost(next, inst)
           && scriptForCard(next.cardDefs[inst.defKey])?.mayStayTapped === true
-          && next.effects.some((e) => e.source === id && (e.controlWhile?.tapped === true || e.lastsWhile?.tapped === true));
+          // Or its controller said to keep it tapped (D1309): a storage land charging.
+          && (inst.keepTapped === true
+            || next.effects.some((e) => e.source === id && (e.controlWhile?.tapped === true || e.lastsWhile?.tapped === true)));
       }));
       next = untapAll(next, next.activeSeat, { keep: untapLimited(next, next.activeSeat, keep) });
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.

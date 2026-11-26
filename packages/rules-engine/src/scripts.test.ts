@@ -28665,20 +28665,18 @@ describe('"you may choose not to untap ~" (D1041)', () => {
   });
 
   /*
-    A tripwire, not a feature. The table answers "you may choose not to untap" only for a control
-    change that needs it (see `CardScript.mayStayTapped`). A storage land keeps itself tapped to
-    gain counters, a choice the table cannot make for its controller, so it must stay flagged for a
-    human. Its storage mana ability is unread today; whoever reads it has to give this choice a real
-    question first.
+    Was a tripwire: a storage land keeps itself tapped to gain counters, a choice the table could
+    not make for its controller, so it had to stay flagged for a human. D1309 gave the choice a real
+    answer (`auto:keepTapped`), and the land reads whole; see the D1309 tests for the land charging.
   */
-  it('a storage land is not claimed: keeping it tapped is a choice the table cannot make', () => {
+  it('a storage land reads whole now that keeping it tapped is its controller\'s choice (D1309)', () => {
     const vault = compileCard({
       name: 'Bottomless Vault', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
       oracle_text: 'Bottomless Vault enters tapped.\nYou may choose not to untap Bottomless Vault during your untap step.\n'
         + 'At the beginning of your upkeep, if Bottomless Vault is tapped, put a storage counter on it.\n'
         + '{T}, Remove any number of storage counters from Bottomless Vault: Add {B} for each storage counter removed this way.',
     } as never);
-    expect(vault.ok && vault.unread.length).toBeGreaterThan(0);
+    expect(vault).toMatchObject({ ok: true, unread: [] });
   });
 
   it('with nothing held it untaps as usual', () => {
@@ -48136,13 +48134,14 @@ describe('counters removed as an X, for mana and otherwise (D1307)', () => {
     battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
   }), 'precombat-main');
 
-  it('reads the storage land, the battery and the toy whole, and leaves the any-combination pool and the kept-tapped land unread', () => {
+  it('reads the storage land, the battery and the toy whole, and leaves the any-combination pool unread', () => {
     expect(deck.unknown).toEqual([]);
     for (const card of [HOLD, BATTERY, TOY, ARROWS]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
     // And an X of counters is an X the effect may read, as an {X} in the cost is.
     const SADIST = { name: 'Cruel Sadist', type_line: 'Creature — Human Assassin', oracle_text: '{B}, {T}, Pay 1 life: Put a +1/+1 counter on Cruel Sadist.\n{2}{B}, {T}, Remove X +1/+1 counters from Cruel Sadist: It deals X damage to target creature.', mana_cost: '{B}', cmc: 1, colors: ['B'], power: '1', toughness: '1', layout: 'normal' };
     expect(compileCard(SADIST as never)).toMatchObject({ ok: true, unread: [] });
-    expect(compileCard(KEPT as never)).toMatchObject({ ok: true, unread: [{ line: KEPT.oracle_text.split('\n')[3] }] });
+    // Held back until D1309 let its controller keep it tapped; whole since.
+    expect(compileCard(KEPT as never)).toMatchObject({ ok: true, unread: [] });
     const pools = compileCard(POOLS as never);
     expect(pools.ok && pools.unread.map((u) => u.line)).toEqual(['{1}, Remove X storage counters from Calciform Pools: Add X mana in any combination of {W} and/or {U}.']);
   });
@@ -48234,6 +48233,66 @@ describe('"If a red source would deal damage to you, prevent 2 of that damage" (
     expect(life(dealDamage(s, you, 5, { source: mine, controller: 0 }), 0)).toBe(life(s, 0) - 2);
     // And the opponent is not shielded by your Sphere.
     expect(life(dealDamage(s, { kind: 'player', seat: 1 }, 3, { source: mine, controller: 0 }), 1)).toBe(life(s, 1) - 3);
+  });
+});
+
+describe('"you may choose not to untap ~", answered by its controller (D1309)', () => {
+  const VAULT = { name: 'Bottomless Vault', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: 'Bottomless Vault enters tapped.\nYou may choose not to untap Bottomless Vault during your untap step.\n'
+      + 'At the beginning of your upkeep, if Bottomless Vault is tapped, put a storage counter on it.\n'
+      + '{T}, Remove any number of storage counters from Bottomless Vault: Add {B} for each storage counter removed this way.' };
+  const deck = customDeck({ id: 'd1309', name: 'Vault', entries: [{ name: 'Bottomless Vault', count: 4 }, { name: 'Swamp', count: 56 }], data: [VAULT] as never[] });
+  const tappedVault = (): { s: GameState; vault: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1309', 1: 'd1309' }, deckSpecs: { d1309: deck.deck },
+      battlefield: { 0: ['Bottomless Vault', 'Swamp'], 1: ['Bottomless Vault'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const vault = find(s, 0, 'battlefield', 'Bottomless Vault');
+    s = { ...s, instances: { ...s.instances, [vault]: { ...s.instances[vault]!, tapped: true } } };
+    return { s, vault };
+  };
+
+  it('kept tapped, it charges at each of its controller\'s upkeeps and makes that many black', () => {
+    let { s, vault } = tappedVault();
+    s = apply(s, { type: 'auto:keepTapped', by: 0, card: vault, keep: true } as Action);
+    expect(s.instances[vault]!.keepTapped).toBe(true);
+    s = drain(nextTurn(nextTurn(s)), 10);
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[vault]!.tapped).toBe(true);
+    expect(s.instances[vault]!.counters['storage'] ?? 0).toBe(1);
+    // Untapped again on its controller's word, and then used: the one counter makes one black.
+    s = apply(s, { type: 'auto:keepTapped', by: 0, card: vault, keep: false } as Action);
+    s = drain(nextTurn(nextTurn(s)), 10);
+    expect(s.instances[vault]!.tapped).toBe(false);
+    expect(s.instances[vault]!.counters['storage'] ?? 0).toBe(1);
+    s = advanceTo(s, 'precombat-main');
+    const index = legalActions(s, 0).plays.find((p) => p.card === vault && p.isManaAbility)!.abilityIndex!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: vault, abilityIndex: index, x: 1 } as Action);
+    expect(poolOf(s, 0).B).toBe(1);
+  });
+
+  it('untaps as usual when nobody said otherwise, and the choice is not a play', () => {
+    let { s, vault } = tappedVault();
+    // A setting: nothing in the plays, so the table still passes for a seat with nothing to do.
+    expect(legalActions(s, 0).plays.some((p) => p.card === vault && !p.isManaAbility)).toBe(false);
+    s = drain(nextTurn(nextTurn(s)), 10);
+    expect(s.instances[vault]!.tapped).toBe(false);
+    expect(s.instances[vault]!.counters['storage'] ?? 0).toBe(0);
+  });
+
+  it('is only for its controller, on a permanent that says it, and is seen only by them', () => {
+    let { s, vault } = tappedVault();
+    const theirs = find(s, 1, 'battlefield', 'Bottomless Vault');
+    const swamp = find(s, 0, 'battlefield', 'Swamp');
+    expect(() => apply(s, { type: 'auto:keepTapped', by: 0, card: theirs, keep: true } as Action)).toThrow(/not a permanent you control/);
+    expect(() => apply(s, { type: 'auto:keepTapped', by: 0, card: swamp, keep: true } as Action)).toThrow(/untaps in your untap step like anything else/);
+    s = apply(s, { type: 'auto:keepTapped', by: 0, card: vault, keep: true } as Action);
+    expect(viewFor(s, 0).cards[vault]).toMatchObject({ mayStayTapped: true, keepTapped: true });
+    expect(viewFor(s, 1).cards[vault]!.mayStayTapped).toBe(true);
+    expect(viewFor(s, 1).cards[vault]!.keepTapped).toBeUndefined();
+    // And a new object forgets it (CR 400.7).
+    const bounced = relocate(s, s.instances[vault]!, 'hand', 0, 'bottom');
+    expect(bounced.instances[vault]!.keepTapped).toBeUndefined();
   });
 });
 

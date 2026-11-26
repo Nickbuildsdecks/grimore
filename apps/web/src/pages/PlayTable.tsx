@@ -2300,6 +2300,10 @@ function Board({ table }: { table: UseTable }) {
             act({ type: "auto:discard", card: picked.id })
             setPicked(null)
           }}
+          // "You may choose not to untap ~" (D1309): the viewer's own permanent only.
+          onKeepTapped={picked.zone === "battlefield" && picked.zoneSeat === seat
+            ? (keep: boolean) => act({ type: "auto:keepTapped", card: picked.id, keep })
+            : undefined}
           manual={
             <CardMenu
               card={picked}

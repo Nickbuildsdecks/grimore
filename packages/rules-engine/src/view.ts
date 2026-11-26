@@ -34,6 +34,7 @@ import {
 import { shieldOn } from './effects.js';
 import { legalActions, lookAtTopFor, topRevealedFor, type LegalActions } from './legalActions.js';
 import { scriptFor } from './scripts.js';
+import { scriptForCard } from './derive.js';
 import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
 import type { ManaPool } from './mana.js';
@@ -50,6 +51,13 @@ export const VIEW_LOG_ENTRIES = 60;
 export interface VisibleCard {
   /** A Room's doors (D1298): which are unlocked, by face index. */
   readonly doors?: readonly boolean[];
+  /**
+   * "You may choose not to untap ~ during your untap step" (D1309): set on such a permanent, face up
+   * on the battlefield, so its controller's table can offer the choice (`auto:keepTapped`).
+   */
+  readonly mayStayTapped?: true;
+  /** That choice, shown to its controller only: keep it tapped in their untap step (D1309). */
+  readonly keepTapped?: true;
   readonly id: string;
   readonly owner: SeatIndex;
   readonly zoneSeat: SeatIndex;
@@ -588,6 +596,10 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     ...(inst.pairedWith === undefined ? {} : { pairedWith: inst.pairedWith }),
     // A Room's doors (D1298): public, like a Class's level.
     ...(inst.doors === undefined ? {} : { doors: inst.doors }),
+    // "You may choose not to untap ~" (D1309): printed, so public; the answer is its controller's.
+    ...(inst.zone === 'battlefield' && !inst.faceDown && scriptForCard(state.cardDefs[inst.defKey])?.mayStayTapped === true
+      ? { mayStayTapped: true as const } : {}),
+    ...(inst.keepTapped === true && viewer === inst.zoneSeat ? { keepTapped: true as const } : {}),
     isToken: inst.isToken,
     isCommander: inst.isCommander,
   };
