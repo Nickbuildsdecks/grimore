@@ -66649,3 +66649,47 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6455 of 6455 pass. Web: typecheck clean, 279 of 279.
 
 Coverage: 17,484 of 31,900 cards (+23 over D1325's 17,461), 40,296 of 59,888 lines (+23).
+
+## D1327 — Ward paid by discarding a card
+
+"Ward—Discard a card." is printed on 15 legal lines (Forum Necroscribe, Spectral Snatcher, Sunset
+Saboteur …). D578 left it unread because the pending payment could charge mana and life but not
+a card, and a ward that cost nothing would have been worse than none.
+
+**The payment.** `pendingPayment.discard` is the number of cards owed. The payer chooses them:
+- `auto:pay` takes `discarded`, the card ids;
+- `payWard` refuses unless there are exactly that many, all different, all in the payer's hand;
+- it discards them as part of paying, a discard like any other, so madness and discard triggers
+  see it;
+- declining counters the spell as before;
+- a hand too small to pay is the automatic counter, as an unaffordable mana ward already is
+  (`settlePayment`).
+
+`paymentWords` says "discard a card", alone or after mana and life. The prompt reads "Discard a
+card or Test Shock is countered by …'s ward".
+
+**The table.** `mustPay.discard` tells the client to choose. The ward prompt shows one "Discard
+<card>" button per card in the viewer's hand, in place of the single Pay button.
+
+**The bot** pays with its least valuable cards by `cardWorth`, on both paths it answers from (a
+real seat's, and a simulated line's).
+
+**Tests.** 4 tests:
+- The fixture reads whole.
+- Shocking the warded creature:
+  - asks the caster for one card (`mustPay` says "discard a card");
+  - a Pay with no card is refused;
+  - paying with the Mountain discards it, and the Shock resolves for two.
+- Declined, the Shock is countered. With an empty hand, nothing is asked and it is countered.
+- The bot discards its {0} card rather than its land.
+
+Faults injected by hand: 4, all caught.
+- Nothing discarded.
+- The cards unchecked.
+- An empty hand asked.
+- The bot discarding its best card. The first try put this fault on the simulation path, where the
+  test does not look; on the real-seat path it is caught.
+
+The scripts tests, compile tests and pins: 6459 of 6459 pass. Web: typecheck clean, 279 of 279.
+
+Coverage: 17,490 of 31,900 cards (+6 over D1326's 17,484), 40,309 of 59,888 lines (+13).
