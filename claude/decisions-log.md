@@ -65059,3 +65059,55 @@ Faults injected by hand: 2, all caught.
 - The type read off the arriving creature instead of the Mimic.
 
 Coverage: 17,241 of 31,900 cards (+1 over D1285's 17,240), 39,985 of 59,888 lines (+1).
+
+## D1287 — "During each of your turns, you may cast a creature spell from your graveyard"
+
+Karador, Ghost Chieftain, Gisa and Geralf ("a Zombie creature spell"), and Danitha, New Benalia's
+Light ("Once during each of your turns … an Aura or Equipment spell") print the same permission:
+one spell a turn through each such permanent, of the kind it names, cast for its printed cost at
+its normal timing, on its controller's own turn. Nothing offered it before.
+
+- `CardScript.castsFromGraveyard {fits}`, read with the library search's card filter off the
+  printed type line. That reader covers "a creature card", "a Zombie creature card", "an Aura or
+  Equipment card", "a permanent card with mana value 2 or less".
+- `yardPermission(state, seat, id)` names the permanent letting this seat cast this card now: one of
+  the seat's own permanents whose kind fits and whose permission is unused this turn, on the seat's
+  own turn, the card in the seat's own graveyard.
+- `legalActions` lists those cards beside flashback, escape and retrace, and the play carries
+  `yardBy`. It takes retrace's path through every other question (no morph, no foretell, no printed
+  alternative cost) but not retrace's land card.
+- `autoActions` validates `yardBy` against `yardPermission` and records the use in
+  `GameState.yardCastsUsed`, by the permanent's id and the turn.
+- The bot sends `yardBy` with the cast.
+
+Read whole now: Karador, Ghost Chieftain, Gisa and Geralf, Danitha, New Benalia's Light. Still
+unread:
+- Lurrus: the Companion keyword.
+- Rivaz: its cast trigger.
+- Kess: the exile replacement.
+- Edgar, Overflow Submatrix: "enters tapped".
+- Exploration Broodship, Kotis, Maestros Ascendancy: an extra cost.
+- Muldrotha: one of each permanent type.
+
+A simplification, stated: the record is keyed by the permanent's id, so one that leaves and returns
+in the same turn is still counted as having used its permission. The rules make it a new object
+(CR 400.7) with a fresh one.
+
+**Tests.** 4 engine tests:
+- It reads.
+- The creature cards in the graveyard are offered, the instant is not. Cast one and it enters; no
+  second is offered, and a second sent anyway is refused.
+- Not on an opponent's turn, even for an instant permission while holding priority there; offered
+  on your own.
+- With nothing in hand the bot casts from the graveyard and names the permission; two turns later
+  it is offered again.
+
+Faults injected by hand: 5, all caught.
+- The own-turn check dropped. Caught only once the instant test was added: a creature cannot be
+  cast on an opponent's turn anyway.
+- The once-a-turn record ignored.
+- The kind not asked.
+- The use never recorded.
+- The bot not sending `yardBy`.
+
+Coverage: 17,244 of 31,900 cards (+3 over D1286's 17,241), 39,990 of 59,888 lines (+5).
