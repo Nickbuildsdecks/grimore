@@ -65493,3 +65493,36 @@ Faults injected by hand: 6, all caught.
 - The keyword not read.
 
 Coverage: 17,255 of 31,900 cards (+0 over D1295's 17,255), 40,008 of 59,888 lines (+0).
+
+## D1297 — The web table sends the cast flags it was dropping
+
+D113's bug again, five times. The table builds the action for a play from a fixed list of flags
+(`COST_FLAGS` in `apps/web/src/lib/arena.ts`). Five flags the engine puts on its plays were not on
+that list:
+- `impended` (D1097, an impending cost);
+- `altCast` (D1251, a printed mana or life alternative);
+- `fuse` (D1295);
+- `aftermath` (D1296);
+- `yardBy` (D1287, a graveyard permission), which is a string, so it gets its own line.
+
+So the engine offered each play, and the table sent back an action without the flag. The engine
+then refused it as a different cast ("choose which half", "not in your hand"), or, for an
+alternative or impending cost, would have charged the printed cost instead. Every engine test
+passed, because they build their actions by hand; the bot passes each flag itself. Found while
+reading how the table sends special actions, ahead of Rooms. A human tester would have hit it on
+the first Karador, fuse card or Snuff Out.
+
+A check of every true-or-false field on a legal play against the client found these five and two
+more, `fromHand` and `fromGraveyard`, which only say which row to draw an ability on.
+
+**Tests.** 1 web test: the five plays, each sent with its flag.
+
+Faults injected by hand: 4, all caught.
+- `fuse` dropped from the list.
+- `altCast` dropped.
+- `aftermath` dropped.
+- `yardBy` not sent.
+
+No rules-engine change, so the coverage line below is unchanged.
+
+Coverage: 17,255 of 31,900 cards (+0 over D1296's 17,255), 40,008 of 59,888 lines (+0).
