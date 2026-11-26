@@ -47375,3 +47375,30 @@ Faults injected by hand: 1, caught.
 - The old order of the two branches restored.
 
 Coverage: 17,215 of 31,900 cards (+2 over D1277's 17,213), 39,948 of 59,888 lines (+2).
+
+## D1279 — "Whenever you attack with one or more …"
+
+- "Whenever you attack with one or more creatures" is the declaration trigger. It is the third way
+  of writing "Whenever you attack", and the rules read that as one or more creatures declared as
+  attackers.
+- "Whenever you attack with one or more Elves" is D1261's subtype row ("Whenever one or more Elves
+  you control attack") in the other word order, sharing that row's plural-to-singular reading.
+
+Read whole now: Arboreal Alliance, Hermes, Overseer of Elpis, Hired Claw. The others printing the
+shape stop on something else: "that many" tails not read yet (Screaming Swarm, Varina, Rabble
+Rousing) and "legendary creatures".
+
+**Pin changed.** "Whenever you attack with one or more creatures" was among the D631 refusals, as a
+restriction the declaration event could not express. There is no such restriction. It moved to
+the "becomes the declaration trigger" table beside the other two spellings.
+
+**Tests.** 3 engine tests:
+- Both forms read.
+- An Elf attacking triggers both.
+- An Ox attacking triggers only the one about any creature.
+
+Faults injected by hand: 2, all caught.
+- The other word order's subtype group not read.
+- The plain form given a minimum of two attackers.
+
+Coverage: 17,218 of 31,900 cards (+3 over D1278's 17,215), 39,952 of 59,888 lines (+4).
