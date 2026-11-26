@@ -1284,6 +1284,15 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     .filter((name): name is string => name !== undefined)
   for (const name of held) out.push(`holding ${name}`)
   /*
+    A Room's doors (D1305): which are unlocked. The engine offers "Unlock …" for a locked door, and
+    the unlocked one is otherwise invisible, although it is the half whose abilities are working.
+    One badge per door, by its own name.
+  */
+  const faces = card.card?.faces
+  if (faces?.kind === "split" && faces.cards.some((door) => /\bRoom\b/.test(door.typeLine))) {
+    faces.cards.forEach((door, i) => out.push(`${door.name} ${card.doors?.[i] === true ? "unlocked" : "locked"}`))
+  }
+  /*
     Who it is paired with, for soulbond.
 
     Named rather than flagged, for the reason the Aura's host is named: the badge is on screen to

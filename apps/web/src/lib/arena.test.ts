@@ -1737,6 +1737,26 @@ describe("cardBadges", () => {
       ...over,
     }) as Parameters<typeof cardBadges>[1]
 
+  it("names a Room's doors, unlocked and locked (D1305)", () => {
+    const v = view({ automation: automation() })
+    const room = permanent({
+      isCreature: false, power: undefined, toughness: undefined, doors: [true, false],
+      card: {
+        name: "Test Hall // Test Den", typeLine: "Enchantment — Room", manaCost: "{W} // {1}{W}", cmc: 3, oracleText: "", colors: ["W"],
+        faces: { kind: "split", cards: [
+          { name: "Test Hall", typeLine: "Enchantment — Room", manaCost: "{W}", cmc: 1, oracleText: "", colors: ["W"] },
+          { name: "Test Den", typeLine: "Enchantment — Room", manaCost: "{1}{W}", cmc: 2, oracleText: "", colors: ["W"] },
+        ] },
+      },
+    })
+    const out = cardBadges(v, room)
+    expect(out).toContain("Test Hall unlocked")
+    expect(out).toContain("Test Den locked")
+    // A split card that is not a Room has no doors.
+    const fire = permanent({ card: { ...room.card!, typeLine: "Instant // Instant", faces: { kind: "split", cards: room.card!.faces!.cards.map((c) => ({ ...c, typeLine: "Instant" })) } } })
+    expect(cardBadges(v, fire).some((b) => /locked/.test(b))).toBe(false)
+  })
+
   it("shows the current body, not the printed one", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ power: 5, toughness: 5 }))).toContain("5/5")
