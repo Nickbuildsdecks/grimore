@@ -49260,3 +49260,29 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6462 of 6462 pass.
 
 Coverage: 17,495 of 31,900 cards (+5 over D1327's 17,490), 40,314 of 59,888 lines (+5).
+
+## D1329 — The Borderposts
+
+The five Alara Reborn Borderposts print "You may pay {1} and return a basic land you control to its
+owner's hand rather than pay this spell's mana cost." D1252's land alternative covered a land
+subtype (Daze's Island, Fireblast's Mountains), not "a basic land", and not with mana beside it.
+
+`altCost.lands.basic` (and `returnToHand.basic` beneath it) asks for the basic supertype.
+- The cast pays the {1} first, then returns the land, tapped ones first. So the Plains tapped for
+  the mana may be the one returned, which is how the card is played.
+- The play's note says "{1} and return a basic land you control".
+
+**Tests.** 3 tests:
+- The fixture reads whole, as `{1}` and one basic land returned.
+- With one Plains: offered at {1} with the right note; cast for it, the Borderpost is on the
+  battlefield and the Plains in hand.
+- With only a nonbasic land, the alternative is not offered.
+
+Faults injected by hand: 2, both caught.
+- Any land taken for a basic one.
+- The {1} dropped. The first version of the test missed this; the check on the play's mana cost
+  was added for it.
+
+The scripts tests, compile tests and pins: 6465 of 6465 pass.
+
+Coverage: 17,500 of 31,900 cards (+5 over D1328's 17,495), 40,319 of 59,888 lines (+5).
