@@ -2162,6 +2162,9 @@ function triggerMatches(
       }
       return isSubject;
     }
+    // "Whenever you fully unlock a Room" (D1299): yours, which is whoever unlocked it.
+    case 'room-fully-unlocked':
+      return actorSeat === sourceSeat;
     // A Room's door (D1298): its own permanent's, and the door this ability is printed on.
     case 'door-unlocked': {
       const door = (event as Extract<TriggerEvent, { kind: 'door-unlocked' }>).door;

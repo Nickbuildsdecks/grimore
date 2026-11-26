@@ -943,6 +943,11 @@ export type TriggerEvent =
    */
   | { readonly kind: 'door-unlocked'; readonly door?: number }
   /**
+   * "Whenever you fully unlock a Room" (D1299, Eerie): a Room you control has its last locked door
+   * unlocked. Seen by every permanent, and matched on whose Room it was.
+   */
+  | { readonly kind: 'room-fully-unlocked' }
+  /**
    * "When this creature transforms into ~" — a transforming double-faced card's own trigger
    * (CR 701.28, CR 603.2).
    *

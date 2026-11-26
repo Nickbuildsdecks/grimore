@@ -1697,6 +1697,8 @@ function unlockDoor(state: GameState, action: AutoUnlockAction): Outcome {
   const doors = def!.faces!.cards.map((_face, i) => i === action.door || inst.doors?.[i] === true);
   let next = withInstance(paid.state, inst.id, { doors });
   next = raise(next, { kind: 'door-unlocked', door: action.door }, action.by, inst.id);
+  // Its last locked door (D1299): the Room is fully unlocked, which Eerie watches.
+  if (doors.every((open) => open)) next = raise(next, { kind: 'room-fully-unlocked' }, action.by, inst.id);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,

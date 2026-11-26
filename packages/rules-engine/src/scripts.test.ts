@@ -8113,6 +8113,9 @@ describe('deck coverage', () => {
       // D1298: Rooms from card data; no pool deck plays one. Driven at runtime by
       // "Rooms: two doors, each unlocked on its own (D1298)".
       'trigger door-unlocked',
+      // D1299: Eerie, from card data; no pool deck plays one. Driven at runtime by
+      // "Eerie: an enchantment entering, and fully unlocking a Room (D1299)".
+      'trigger room-fully-unlocked',
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
@@ -47779,6 +47782,58 @@ describe('Rooms: two doors, each unlocked on its own (D1298)', () => {
     // And a door with a rule that is neither a trigger, an ability nor a static (Steaming Sauna's).
     const ruled = { ...ROOM, card_faces: [ROOM.card_faces[0]!, door('Test Sauna', '{3}{U}', 'You have no maximum hand size.')] };
     expect(compileCard(ruled as never)).toMatchObject({ ok: false });
+  });
+});
+
+describe('Eerie: an enchantment entering, and fully unlocking a Room (D1299)', () => {
+  const door = (name: string, cost: string, text: string) => ({ name, type_line: 'Enchantment — Room', mana_cost: cost, oracle_text: text, colors: ['W'] });
+  const ROOM = {
+    name: 'Test Hall', type_line: 'Enchantment — Room', oracle_text: '', mana_cost: '{W}', cmc: 0, colors: ['W'], layout: 'split',
+    card_faces: [door('Test Hall', '{W}', 'When you unlock this door, you gain 1 life.'), door('Test Den', '{W}', 'Creatures you control get +1/+0.')],
+  };
+  const LEECH = { name: 'Test Leech', type_line: 'Enchantment Creature — Leech', oracle_text: 'Eerie — Whenever an enchantment you control enters and whenever you fully unlock a Room, each opponent loses 1 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' };
+  const CHARM = { name: 'Test Charm', type_line: 'Enchantment', oracle_text: 'Flash', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' };
+  const WHOLE = 'Test Hall // Test Den';
+  const deck = customDeck({ id: 'd1299', name: 'Eerie', entries: [{ name: 'Test Hall', count: 4 }, { name: 'Test Leech', count: 4 }, { name: 'Test Charm', count: 4 }, { name: 'Plains', count: 48 }], data: [ROOM, LEECH, CHARM] as never[] });
+  const table = (opts: { hand?: string[]; mine?: string[]; theirs?: string[]; first?: SeatIndex }) => advanceTo(arena({
+    decks: { 0: 'd1299', 1: 'd1299' }, deckSpecs: { d1299: deck.deck },
+    hands: { 0: opts.hand ?? [] }, battlefield: { 0: ['Plains', 'Plains', 'Plains', ...(opts.mine ?? [])], 1: ['Plains', 'Plains', ...(opts.theirs ?? [])] },
+    turn: 3, firstSeat: opts.first ?? 0,
+  }), 'precombat-main');
+
+  it('reads whole, watching both moments', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(LEECH as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    // Two moments, two triggers with one effect.
+    expect(read.ok && read.script?.triggers?.map((t) => t.on.kind)).toEqual(['etb', 'room-fully-unlocked']);
+  });
+
+  it('an enchantment of yours entering', () => {
+    let s = table({ hand: ['Test Charm'], mine: ['Test Leech'] });
+    const theirs = life(s, 1 as SeatIndex);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Charm') } as Action)), 20);
+    expect(life(s, 1 as SeatIndex)).toBe(theirs - 1);
+  });
+
+  it('a Room fully unlocked: the first door does not, the last does', () => {
+    let s = table({ mine: ['Test Leech', WHOLE] });
+    const room = find(s, 0, 'battlefield', WHOLE);
+    const theirs = life(s, 1 as SeatIndex);
+    s = drain(apply(s, { type: 'auto:unlock', by: 0, card: room, door: 0 } as Action), 20);
+    expect(life(s, 1 as SeatIndex)).toBe(theirs);
+    s = drain(apply(s, { type: 'auto:unlock', by: 0, card: room, door: 1 } as Action), 20);
+    expect(life(s, 1 as SeatIndex)).toBe(theirs - 1);
+  });
+
+  it('an opponent fully unlocking their Room is not "you"', () => {
+    let s = table({ mine: ['Test Leech'], theirs: [WHOLE], first: 1 });
+    const room = find(s, 1, 'battlefield', WHOLE);
+    const theirs = life(s, 1 as SeatIndex);
+    s = drain(apply(s, { type: 'auto:unlock', by: 1, card: room, door: 0 } as Action), 20);
+    s = drain(apply(s, { type: 'auto:unlock', by: 1, card: room, door: 1 } as Action), 20);
+    expect(s.instances[room]!.doors).toEqual([true, true]);
+    expect(life(s, 1 as SeatIndex)).toBe(theirs + 1);
   });
 });
 

@@ -12659,7 +12659,9 @@ const KEYWORD_ABILITY_NAMES: readonly string[] = [
   'demonstrate', 'daybound', 'nightbound', 'decayed', 'disturb', 'training', 'compleated', 'blitz',
   'casualty', 'enlist', 'read ahead', 'ravenous', 'squad', 'prototype', 'living metal',
   'for mirrodin!', 'toxic', 'backup', 'bargain', 'craft', 'disguise', 'cloak', 'plot', 'saddle',
-  'spree', 'freerunning', 'gift', 'offspring', 'impending', 'eerie', 'max speed',
+  // `eerie` was here, and is an ability word (CR 207.2c), not a keyword: it labels a trigger the
+  // line then prints in full, so on this list its label was never taken off (D1299).
+  'spree', 'freerunning', 'gift', 'offspring', 'impending', 'max speed',
   // `Job select` was missing, which is why every card printing it had an unread line while
   // `Living weapon` and `For Mirrodin!` — the same mechanic under two older names — did not.
   'job select',
@@ -24791,6 +24793,19 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const enchantedSeatOf = (state: GameState, source: string): SeatIndex | undefined => state.instances[source]?.enchantedSeat;
   const cursed = withoutAbilityWord(plain(line).trim());
+  /*
+    Eerie (D1299): "Whenever an enchantment you control enters and whenever you fully unlock a Room,
+    <effect>". The first half read as its own trigger, and the same trigger again on the second
+    moment (`room-fully-unlocked`).
+  */
+  const eerie = /^(When(?:ever)? .+?) and whenever you fully unlock a Room, (.+)$/i.exec(cursed);
+  if (eerie !== null) {
+    const read = triggerFromLine(`${eerie[1]!}, ${eerie[2]!}`, name);
+    const trigger = read?.triggers?.length === 1 && Object.keys(read).length === 1 ? read.triggers[0]! : null;
+    if (trigger === null) return null;
+    // Two moments, two triggers with one effect, as D635's "enters or is turned face up" is.
+    return { triggers: [trigger, { ...trigger, on: { kind: 'room-fully-unlocked' } }] };
+  }
   const cursedStep = /^At the beginning of enchanted player's (upkeep|draw step|end step), (.+)$/i.exec(cursed);
   if (cursedStep !== null) {
     const body = cursedStep[2]!.replace(/^they /i, 'that player ');
