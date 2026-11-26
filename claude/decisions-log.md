@@ -64687,3 +64687,34 @@ Faults injected by hand: 4, all caught.
 - "And/or" read as both types at once.
 
 Coverage: 17,182 of 31,900 cards (+12 over D1272's 17,170), 39,886 of 59,888 lines (+18).
+
+## D1274 — "… if it's <colour>": the colour asked as it resolves
+
+Pyroblast's and Hydroblast's "Counter target spell if it's blue" / "Destroy target permanent if it's
+red", Burnout's "Counter target instant spell if it's blue", and the Ring cycle's "put a +1/+1
+counter on equipped creature if it's green". Unlike Red Elemental Blast's "target blue spell", the
+target may be anything. The colour is asked as the effect resolves, of what "it" is then
+(CR 608.2b), and the effect does nothing if it is not that colour. "It" is the single target, or,
+with no target, the enchanted or equipped creature a counter is put on. The rest of the sentence
+is read as it would be without the tail.
+
+Statics that print the same words stay unread: Hobble's "can't block if it's black" and Scion of
+Draco's keyword list.
+
+Read whole now: Pyroblast, Hydroblast, Burnout, and the five Rings (Evos Isle, Kalonia, Thune,
+Valkas, Xathrid).
+
+**Tests.** 4 engine tests:
+- Both forms read; a two-target sentence with the tail stays unread.
+- It destroys a blue permanent, and does nothing to a red one it may still target.
+- It counters a blue spell, and not a red one.
+- The Ring adds a counter to a green creature wearing it at its controller's upkeep, and not to a
+  red one.
+
+Faults injected by hand: 3; 2 caught.
+- The colour check dropped: caught.
+- "It" read as the Ring itself rather than the creature wearing it: caught.
+- A separate "two targets" guard removed: not caught, because a sentence with two targets already
+  reads to two targets and is refused by the one-target check. The guard was redundant and is gone.
+
+Coverage: 17,191 of 31,900 cards (+9 over D1273's 17,182), 39,901 of 59,888 lines (+15).
