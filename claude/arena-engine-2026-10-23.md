@@ -48955,3 +48955,28 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6435 of 6435 pass.
 
 Coverage: 17,428 of 31,900 cards (+13 over D1318's 17,415), 40,238 of 59,888 lines (+19).
+
+## D1320 — "Remove a +1/+1 counter from it at end of combat": the Clockworks
+
+Clockwork Beetle, Condor and Dragon print "Whenever ~ attacks or blocks, remove a +1/+1 counter from
+it at end of combat." The trigger read; its effect did not.
+
+It is now a third engine-known delayed ability, `builtin: 'remove-plus-one'`, beside D1310's draw:
+- scheduled as the trigger resolves, about the Clockwork as it is now (CR 400.7);
+- on the stack at this combat's end-of-combat step, D969's timing;
+- it takes one +1/+1 counter off, while the Clockwork is on the battlefield and has one.
+
+Clockwork Steed and Clockwork Swarm print their own "At end of combat, if ~ attacked or blocked this
+combat, remove a +1/+0 counter" and an X ability capped by a total, and stay unread.
+
+**Tests.** 2 tests:
+- The fixture Beetle reads whole.
+- With two counters it attacks for two, and once combat ends it has one.
+
+Faults injected by hand: 2, both caught.
+- Nothing removed.
+- Removed at the end step instead.
+
+The scripts tests, compile tests and pins: 6437 of 6437 pass.
+
+Coverage: 17,432 of 31,900 cards (+4 over D1319's 17,428), 40,242 of 59,888 lines (+4).
