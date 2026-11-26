@@ -46312,6 +46312,63 @@ describe('"that many" counters: a batch of discards, any counter kind, a target 
   });
 });
 
+describe('two counters in one sentence: "… on A and a … counter on B" (D1272)', () => {
+  const R = (name: string, text: string) => ({
+    name, type_line: 'Creature — Elf', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const RANGER = R('Test Ranger', 'Whenever another creature you control enters, put a +1/+1 counter on that creature and a +1/+1 counter on Test Ranger.');
+  const BISKELION = R('Test Biskelion', '{T}: Put a -1/-1 counter on Test Biskelion and a -1/-1 counter on target creature.');
+  const BEAR = R('Test Bear', '');
+  const ROWS = [RANGER, BISKELION, BEAR];
+  const deck = customDeck({ id: 'd1272', name: 'Pairs', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: readonly string[] = [], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1272', 1: 'd1272' }, deckSpecs: { d1272: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads both', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [RANGER, BISKELION]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature entering gets a counter, and so does the Ranger', () => {
+    let s = table(['Test Ranger'], ['Test Bear']);
+    const ranger = find(s, 0, 'battlefield', 'Test Ranger');
+    const bear = find(s, 0, 'hand', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear } as Action)), 30);
+    s = drain(passBoth(s), 30);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[ranger]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('one counter on itself and one on the target', () => {
+    let s = table(['Test Biskelion'], [], ['Test Bear']);
+    const bisk = find(s, 0, 'battlefield', 'Test Biskelion');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: bisk, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(s.instances[bisk]!.counters['-1/-1']).toBe(1);
+    expect(s.instances[bear]!.counters['-1/-1']).toBe(1);
+  });
+
+  it('two targets in one sentence: three counters on each, not six on one (Evolutionary Escalation)', () => {
+    const ESCALATE = { name: 'Test Escalation', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Put three +1/+1 counters on target creature you control and three +1/+1 counters on target creature an opponent controls.' };
+    const compiled = compileCard(ESCALATE as never);
+    expect(compiled).toMatchObject({ ok: true, unread: [] });
+    const two = customDeck({ id: 'd1272b', name: 'Two', entries: [{ name: 'Test Escalation', count: 2 }, { name: 'Test Bear', count: 4 }, { name: 'Forest', count: 54 }], data: [ESCALATE, BEAR] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1272b', 1: 'd1272b' }, deckSpecs: { d1272b: two.deck },
+      battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] }, hands: { 0: ['Test Escalation'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Escalation'), targets: [{ kind: 'card', id: mine }, { kind: 'card', id: theirs }] } as Action)), 30);
+    expect(s.instances[mine]!.counters['+1/+1']).toBe(3);
+    expect(s.instances[theirs]!.counters['+1/+1']).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

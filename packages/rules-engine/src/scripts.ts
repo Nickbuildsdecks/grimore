@@ -29536,6 +29536,12 @@ function conjoinedEffect(
     // a later part that is only the next token takes the verb back.
     .map((part, i, all) => (i > 0 && /^create\b/i.test(all[0]!) && /^(a|an|one|two|three|\d+) .*\btokens?\b/i.test(part) ? `create ${part}` : part))
     /*
+      "Put a +1/+1 counter on that creature and a +1/+1 counter on ~" (D1272, Juniper Order Ranger,
+      Serrated Biskelion, Ich-Tekik): a later part that is only the next counter and where it goes
+      takes the verb back, as the next token does.
+    */
+    .map((part, i, all) => (i > 0 && /^put\b/i.test(all[0]!) && /^(a|an|one|two|three|\d+) \S+ counters? on \S/i.test(part) ? `put ${part}` : part))
+    /*
       "Put a +1/+1 counter on ~ and it can't be blocked this turn" (D838, Kappa Cannoneer): "it" is
       the card the first part named, not the trigger's subject, which on "whenever an artifact you
       control enters" is the artifact. So the name is carried into the later part.

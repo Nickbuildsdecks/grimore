@@ -188,3 +188,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1268 pushed in dfb392e. D1269 five more counts in boardCount (life total, permanent cards in graveyard, different powers, players with more lands, commander mana value); Ajani, Caller of the Pride pins updated (done).
 - D1269 pushed in 3a8a0b3 (checkpoint 48dc0f0). D1270 power/toughness counters other than +1/+1 and -1/-1 (characteristics layer 7c, readers keep the printed kind, addCounters graveyard guard widened) (done).
 - D1270 pushed in 9f82e1d. D1271 "that many" counters: discard batches carry their count, any counter kind on self, a target; may-prompts show "that" not the mark (done).
+- D1271 pushed in 759ca18. D1272 two counters in one sentence (conjoinedEffect restores "put" on the later half) (done).
