@@ -29819,6 +29819,30 @@ function readEffect(
   const copied = abilityCopyEffect(clause);
   if (copied !== null) return copied;
   /*
+    "… if it's <colour>" (D1274): Pyroblast's and Hydroblast's "Counter target spell if it's blue",
+    "Destroy target permanent if it's red", Burnout's "Counter target instant spell if it's blue",
+    and the Ring cycle's "put a +1/+1 counter on equipped creature if it's green". Unlike Red
+    Elemental Blast's "target blue spell", the target may be anything; the colour is asked as the
+    effect resolves, of what "it" is then (CR 608.2b), and the effect does nothing if it is not that
+    colour. "It" is the one target (a sentence with two reads to two and is refused), or, with no
+    target, the enchanted or equipped creature a counter is put on.
+  */
+  const ifColour = /^(.+?) if it's (white|blue|black|red|green)\.?$/i.exec(clause.trim());
+  if (ifColour !== null) {
+    const letter = ({ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' } as const)[ifColour[2]!.toLowerCase() as 'white'];
+    const body = readEffect(ifColour[1]!, name, where);
+    const onHost = /^put .+ counters? on (?:enchanted|equipped) creature$/i.test(ifColour[1]!.trim());
+    const single = body?.targets?.length === 1 && (body.targets[0]!.count ?? 1) === 1;
+    if (body !== null && body.decisions === undefined && (single || (onHost && body.targets === undefined))) {
+      const isColour = (c: EffectContext): boolean => {
+        const id = single ? firstCardTarget(c) : (c.state.instances[c.source]?.attachedTo ?? null);
+        const it = id === null ? undefined : c.state.instances[id];
+        return it !== undefined && (characteristicsOf(c.state, it).colors as readonly string[]).includes(letter);
+      };
+      return { ...body, effect: (c) => (isColour(c) ? body.effect(c) : c.state) };
+    }
+  }
+  /*
     "Destroy all creatures with power greater than target creature's power" (D3003, Fell the Mighty), and
     "… less than …": the target's power as it resolves against each creature's, the target spared by the
     comparison itself.

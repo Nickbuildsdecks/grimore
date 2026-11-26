@@ -190,3 +190,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1270 pushed in 9f82e1d. D1271 "that many" counters: discard batches carry their count, any counter kind on self, a target; may-prompts show "that" not the mark (done).
 - D1271 pushed in 759ca18. D1272 two counters in one sentence (conjoinedEffect restores "put" on the later half) (done).
 - D1272 pushed in a8b8372. D1273 counters "for each": any counter kind on self, opponents dealt damage this turn, two types and/or in a graveyard (done).
+- D1273 pushed in b2d6a87. D1274 "… if it's <colour>" asked as it resolves: Pyroblast, Hydroblast, Burnout, the Ring cycle (done).

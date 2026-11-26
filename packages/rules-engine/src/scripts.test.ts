@@ -46415,6 +46415,80 @@ describe('counters "for each": any counter kind, opponents dealt damage, two typ
   });
 });
 
+describe('"… if it\'s <colour>": the colour asked as it resolves (D1274)', () => {
+  /*
+    Pyroblast may target any spell or permanent and does something only if it is blue then
+    (CR 608.2b); the Rings add a counter only if the creature wearing one is the Ring's colour.
+  */
+  const PYRO = {
+    name: 'Test Pyroblast', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: "Choose one —\n• Counter target spell if it's blue.\n• Destroy target permanent if it's blue.",
+  };
+  const RING = {
+    name: 'Test Ring', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: "At the beginning of your upkeep, put a +1/+1 counter on equipped creature if it's green.\nEquip {0}",
+  };
+  const C = (name: string, colour: string) => ({
+    name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: `{${colour}}`, cmc: 1, colors: [colour], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ROWS = [PYRO, RING, C('Test Blue', 'U'), C('Test Red', 'R'), C('Test Green', 'G')];
+  const deck = customDeck({ id: 'd1274', name: 'Colours', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 15 }, { name: 'Mountain', count: 15 }, { name: 'Forest', count: 15 }], data: ROWS as never[] });
+
+  it('reads both; a two-target sentence with the tail stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [PYRO, RING]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const two = compileCard({ ...PYRO, oracle_text: "Destroy target creature and target artifact if it's blue." } as never);
+    expect(two.ok && two.unread.length).toBeGreaterThan(0);
+  });
+
+  it('destroys a blue permanent, and does nothing to a red one it may still target', () => {
+    for (const [victim, gone] of [['Test Blue', true], ['Test Red', false]] as const) {
+      let s = advanceTo(arena({
+        decks: { 0: 'd1274', 1: 'd1274' }, deckSpecs: { d1274: deck.deck },
+        battlefield: { 1: [victim] }, hands: { 0: ['Test Pyroblast'] }, turn: 3, firstSeat: 0,
+      }), 'precombat-main');
+      const id = find(s, 1, 'battlefield', victim);
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pyroblast'), modes: [1], targets: [{ kind: 'card', id }] } as Action)), 20);
+      expect(s.instances[id]!.zone, victim).toBe(gone ? 'graveyard' : 'battlefield');
+    }
+  });
+
+  it('counters a blue spell, and not a red one', () => {
+    for (const [spell, countered] of [['Test Blue', true], ['Test Red', false]] as const) {
+      let s = advanceTo(arena({
+        decks: { 0: 'd1274', 1: 'd1274' }, deckSpecs: { d1274: deck.deck },
+        battlefield: { 1: ['Island', 'Mountain'] }, hands: { 0: ['Test Pyroblast'], 1: [spell] }, turn: 3, firstSeat: 1,
+      }), 'precombat-main');
+      const id = find(s, 1, 'hand', spell);
+      s = apply(s, { type: 'auto:cast', by: 1, card: id } as Action);
+      s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+      s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pyroblast'), modes: [0], targets: [{ kind: 'card', id }] } as Action);
+      s = drain(passBoth(s), 30);
+      s = drain(passBoth(s), 30);
+      expect(s.instances[id]!.zone, spell).toBe(countered ? 'graveyard' : 'battlefield');
+    }
+  });
+
+  it('the Ring adds a counter to a green creature wearing it, and not to a red one', () => {
+    for (const [wearer, counters] of [['Test Green', 1], ['Test Red', 0]] as const) {
+      let s = advanceTo(arena({
+        decks: { 0: 'd1274', 1: 'd1274' }, deckSpecs: { d1274: deck.deck },
+        battlefield: { 0: ['Test Ring', wearer] }, turn: 3, firstSeat: 0,
+      }), 'precombat-main');
+      const ring = find(s, 0, 'battlefield', 'Test Ring');
+      const id = find(s, 0, 'battlefield', wearer);
+      s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ring, abilityIndex: 0, targets: [{ kind: 'card', id }] } as Action)), 20);
+      expect(s.instances[ring]!.attachedTo).toBe(id);
+      // To our next upkeep: no attack this turn, through the opponent's turn.
+      s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action);
+      s = advanceTo(advanceTo(advanceTo(s, 'end'), 'upkeep'), 'end');
+      s = drain(passBoth(advanceTo(s, 'upkeep')), 20);
+      expect(s.activeSeat).toBe(0);
+      expect(s.instances[id]!.counters['+1/+1'] ?? 0, wearer).toBe(counters);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
