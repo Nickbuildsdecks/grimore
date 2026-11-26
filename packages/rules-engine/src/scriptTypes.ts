@@ -4475,6 +4475,19 @@ export interface CardScript {
    */
   readonly preventsDamageToYou?: true;
   /**
+   * "If a red source would deal damage to you, prevent 2 of that damage." (D1308, CR 615.7): the
+   * Spheres, Urza's Armor's "a source", Guardian Seraph's "a source an opponent controls", Orbs of
+   * Warding's "a creature" and Sphere of Purity's "an artifact". `amount` comes off each damage event
+   * dealt to this permanent's controller by a source of the kind, in `dealDamage` before the
+   * prevention shields, while it is on the battlefield with its abilities. Several add up.
+   */
+  readonly damageToYouReduced?: {
+    readonly amount: number;
+    readonly colour?: Color;
+    readonly type?: 'creature' | 'artifact';
+    readonly opponents?: true;
+  };
+  /**
    * "If damage would be dealt to ~, …" (D1147, CR 615): a replacement of damage dealt to this
    * permanent, applied in `dealDamage` to each damage event on its own.
    * - `whileCounter`: only "while it has a +1/+1 counter on it" (Oathsworn Knight, Ugin's Conjurant);

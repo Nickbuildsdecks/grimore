@@ -502,6 +502,11 @@ export function dealDamage(
   if (!unpreventable && target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
   // And a player with protection from everything (D718): damage to them is prevented.
   if (!unpreventable && target.kind === 'player' && playerProtected(next, target.seat)) return next;
+  // And "If a red source would deal damage to you, prevent 2 of that damage" (D1308).
+  if (!unpreventable && target.kind === 'player') {
+    amount -= damageToYouReduction(next, target.seat, opts.source, opts.controller);
+    if (amount <= 0) return next;
+  }
   // And "prevent all damage that would be dealt to / by …" this turn (D738).
   if (!unpreventable && damagePrevented(next, target, opts.source, opts.combatFrom !== undefined || opts.combat === true)) return next;
   // A shield counter (D1033, CR 122.1c): the damage is replaced by removing one.
@@ -1492,6 +1497,34 @@ function replaceDamageToSelf(state: GameState, id: string, amount: number): Game
     case 'add-plus': return addCounters(state, id, '+1/+1', amount);
     case 'add-minus': return addCounters(state, id, '-1/-1', amount);
   }
+}
+
+/**
+ * How much of one damage event to `seat` their permanents prevent (D1308, `CardScript.damageToYouReduced`):
+ * each Sphere whose kind the source is. The source's controller is the one passed, else the source
+ * permanent's, as `multipliedDamage` reads it; its colour and type are read live.
+ */
+function damageToYouReduction(state: GameState, seat: SeatIndex, source: string | null, controller: SeatIndex | undefined): number {
+  if (scriptLookup === null) return 0;
+  const lookup = scriptLookup;
+  const from = source === null ? undefined : state.instances[source];
+  const by = controller ?? from?.zoneSeat;
+  let total = 0;
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+    const rule = lookup(state.cardDefs[inst.defKey])?.damageToYouReduced;
+    if (rule === undefined) continue;
+    if (rule.opponents === true && (by === undefined || by === seat)) continue;
+    if (rule.colour !== undefined || rule.type !== undefined) {
+      if (from === undefined) continue;
+      const ch = characteristicsOf(state, from);
+      if (rule.colour !== undefined && !ch.colors.includes(rule.colour)) continue;
+      if (rule.type !== undefined && !hasType(ch.typeLine, rule.type)) continue;
+    }
+    total += rule.amount;
+  }
+  return total;
 }
 
 function damageToYouPrevented(state: GameState, seat: SeatIndex): boolean {

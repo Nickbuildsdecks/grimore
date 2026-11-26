@@ -8116,6 +8116,9 @@ describe('deck coverage', () => {
       // D1299: Eerie, from card data; no pool deck plays one. Driven at runtime by
       // "Eerie: an enchantment entering, and fully unlocking a Room (D1299)".
       'trigger room-fully-unlocked',
+      // D1308: the Spheres and Urza's Armor, from card data; no pool deck plays one. Driven at
+      // runtime by "If a red source would deal damage to you, prevent 2 of that damage" (D1308).
+      'script damageToYouReduced',
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
@@ -48187,6 +48190,50 @@ describe('counters removed as an X, for mana and otherwise (D1307)', () => {
     expect(s.instances[arrows]!.counters['charge'] ?? 0).toBe(1);
     s = drain(passBoth(s), 4);
     expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+});
+
+describe('"If a red source would deal damage to you, prevent 2 of that damage" (D1308)', () => {
+  const LAW = { name: 'Sphere of Law', type_line: 'Enchantment', oracle_text: 'If a red source would deal damage to you, prevent 2 of that damage.', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal' };
+  const ARMOR = { name: "Urza's Armor", type_line: 'Artifact', oracle_text: 'If a source would deal damage to you, prevent 1 of that damage.', mana_cost: '{6}', cmc: 6, colors: [], layout: 'normal' };
+  const SERAPH = { name: 'Guardian Seraph', type_line: 'Creature — Angel', oracle_text: 'Flying\nIf a source an opponent controls would deal damage to you, prevent 1 of that damage.', mana_cost: '{2}{W}{W}', cmc: 4, colors: ['W'], power: '3', toughness: '4', layout: 'normal' };
+  const ORBS = { name: 'Orbs of Warding', type_line: 'Artifact', oracle_text: 'You have hexproof.\nIf a creature would deal damage to you, prevent 1 of that damage.', mana_cost: '{5}', cmc: 5, colors: [], layout: 'normal' };
+  const deck = customDeck({ id: 'd1308', name: 'Spheres', entries: [{ name: 'Sphere of Law', count: 4 }, { name: "Urza's Armor", count: 4 }, { name: 'Guardian Seraph', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 40 }], data: [LAW, ARMOR, SERAPH] as never[] });
+
+  const board = (mine: readonly string[], theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1308', 1: 'd1308' }, deckSpecs: { d1308: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const you = { kind: 'player', seat: 0 } as const;
+  const life = (s: GameState, seat: number): number => s.seats[seat]!.life;
+
+  it('reads the five kinds of source', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(LAW as never)).toMatchObject({ ok: true, unread: [], script: { damageToYouReduced: { amount: 2, colour: 'R' } } });
+    expect(compileCard(ARMOR as never)).toMatchObject({ ok: true, unread: [], script: { damageToYouReduced: { amount: 1 } } });
+    expect(compileCard(SERAPH as never)).toMatchObject({ ok: true, unread: [], script: { damageToYouReduced: { amount: 1, opponents: true } } });
+    expect(compileCard(ORBS as never)).toMatchObject({ ok: true, unread: [], script: { damageToYouReduced: { amount: 1, type: 'creature' } } });
+  });
+
+  it('Sphere of Law takes two from a red source and nothing from a green one', () => {
+    const s = board(['Sphere of Law'], ['Raging Goblin', 'Grizzly Bears']);
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(life(dealDamage(s, you, 3, { source: goblin, controller: 1 }), 0)).toBe(life(s, 0) - 1);
+    expect(life(dealDamage(s, you, 1, { source: goblin, controller: 1 }), 0)).toBe(life(s, 0));
+    expect(life(dealDamage(s, you, 3, { source: bears, controller: 1 }), 0)).toBe(life(s, 0) - 3);
+  });
+
+  it("several add up, an opponent's-source one ignores your own, and only you are shielded", () => {
+    const s = board(['Sphere of Law', "Urza's Armor", 'Guardian Seraph', 'Raging Goblin'], ['Raging Goblin']);
+    const theirs = find(s, 1, 'battlefield', 'Raging Goblin');
+    const mine = find(s, 0, 'battlefield', 'Raging Goblin');
+    // Two, one and one from their red creature.
+    expect(life(dealDamage(s, you, 5, { source: theirs, controller: 1 }), 0)).toBe(life(s, 0) - 1);
+    // Your own red creature: the Seraph does not count it.
+    expect(life(dealDamage(s, you, 5, { source: mine, controller: 0 }), 0)).toBe(life(s, 0) - 2);
+    // And the opponent is not shielded by your Sphere.
+    expect(life(dealDamage(s, { kind: 'player', seat: 1 }, 3, { source: mine, controller: 0 }), 1)).toBe(life(s, 1) - 3);
   });
 });
 

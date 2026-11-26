@@ -38162,6 +38162,22 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   }
   // Glacial Chasm (D716): see `CardScript.preventsDamageToYou`.
   if (/^prevent all damage that would be dealt to you\.?$/i.test(plain(line).trim())) return { preventsDamageToYou: true };
+  // The Spheres, Urza's Armor, Guardian Seraph (D1308): see `CardScript.damageToYouReduced`.
+  const reduced = /^if (?:an? (white|blue|black|red|green) source|a source( an opponent controls)?|a (creature)|an (artifact)) would deal damage to you, prevent (\d+|one|two|three) of that damage\.?$/i.exec(plain(line).trim());
+  if (reduced !== null) {
+    const amount = /^\d+$/.test(reduced[5]!) ? Number(reduced[5]) : countFrom(reduced[5]!) ?? 0;
+    if (amount <= 0) return null;
+    const COLOURS_BY_WORD: Readonly<Record<string, Color>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+    return {
+      damageToYouReduced: {
+        amount,
+        ...(reduced[1] === undefined ? {} : { colour: COLOURS_BY_WORD[reduced[1].toLowerCase()]! }),
+        ...(reduced[2] === undefined ? {} : { opponents: true as const }),
+        ...(reduced[3] === undefined ? {} : { type: 'creature' as const }),
+        ...(reduced[4] === undefined ? {} : { type: 'artifact' as const }),
+      },
+    };
+  }
   // "Skip your draw step." (D719): see `CardScript.skipsDrawStep`.
   if (/^skip your draw step\.?$/i.test(plain(line).trim())) return { skipsDrawStep: true };
   // And "Creatures you control can't attack" (D716): a static on your creatures, as an anthem is.
