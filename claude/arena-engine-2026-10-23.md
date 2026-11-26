@@ -47713,3 +47713,55 @@ the card unread, and its text is a finality counter; the reader and the test wer
 the gate.
 
 Coverage: 17,248 of 31,900 cards (+3 over D1288's 17,245), 39,994 of 59,888 lines (+3).
+
+## D1290 — Imprisoned in the Moon, and the Auras that make a permanent a Clue, a Food or a Treasure
+
+"Enchanted permanent is a colorless land with "{T}: Add {C}" and loses all other card types and
+abilities." The same shape with an artifact: In Too Deep (a colorless Clue with "{2}, Sacrifice this
+artifact: Draw a card"), Sugar Coat (a colorless Food), Minimus Containment (a Treasure, colour
+kept).
+
+The bonus reader takes "is a [colorless] [Clue|Food|Treasure] land|artifact with "<ability>" and
+[it] loses all other [card types and] abilities". "Is a land" with no "in addition to its other
+types" replaces its card types (CR 205.1a), so every other card type is removed and its creature
+types go. A land keeps its land types. The quoted ability is read by the same reader as Chromatic
+Lantern's, and granted by the same continuous effect that takes the abilities away.
+
+Three engine changes make that one ability the only one left:
+- `grantedAbilitiesOn`: an effect that both removes all abilities and grants one keeps its own
+  grant. Before, the loss cleared the list and skipped the effect, so the grant was lost with
+  everything else.
+- `manaSources` and `potentialMana`: a permanent that has lost all abilities but been handed one
+  afterwards is a mana source for that one only. No printed ability, and no basic land type's mana
+  either: an imprisoned Forest is still a Forest and taps for {C}, not {G}. Its intrinsic ability is
+  an ability, and goes in layer 6 (CR 305.6, 613.1f).
+- The activation loop in `legalActions`: the same, for an ability that is not a mana ability
+  (In Too Deep's draw).
+
+And the Enchant line takes a list of three: "Enchant creature, land, or planeswalker", "Enchant
+creature, planeswalker, or Clue", "Enchant artifact, creature, or planeswalker" (Planar Disruption,
+Tamiyo's Compleation). And "Enchant creature or Food". targetSpecFrom already read all of these.
+Only the reader's own allowlist and its character class kept them out.
+
+The list matters. In Too Deep prints "or Clue" because the enchanted creature is no longer a
+creature once the Aura applies, and an Aura that could only enchant a creature would fall off
+(CR 704.5m). The first test fixture printed "Enchant creature or planeswalker", and the Aura went to
+the graveyard, which is correct. The fixture now prints the card's own list.
+
+Read whole now: Imprisoned in the Moon, In Too Deep, Sugar Coat, Minimus Containment.
+
+**Tests.** 5 engine tests:
+- All three test Auras read whole.
+- An imprisoned creature is a colorless land with no subtypes and no flying, and taps for {C}.
+- An imprisoned land taps for {C} only, and its own draw ability is refused.
+- An imprisoned Forest keeps its Forest type and makes no green.
+- A creature made a Clue is an artifact Clue, and its controller is offered the one ability.
+
+Faults injected by hand: 5, all caught.
+- The effect's own grant dropped with the loss.
+- The basic land type's mana kept.
+- The activation loop skipping every permanent that has lost all abilities.
+- The printed script kept on a stripped mana source.
+- The Enchant line without commas.
+
+Coverage: 17,253 of 31,900 cards (+5 over D1289's 17,248), 40,004 of 59,888 lines (+10).
