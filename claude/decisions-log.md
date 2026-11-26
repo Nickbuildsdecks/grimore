@@ -66173,3 +66173,42 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6413 of 6413 pass.
 
 Coverage: 17,370 of 31,900 cards (+2 over D1311's 17,368), 40,159 of 59,888 lines (+2).
+
+## D1313 — A coloured cost increase: the Leeches
+
+"White spells you cast cost {W} more to cast" (Alabaster Leech, Derelor, Andradite Leech and the
+rest) is a coloured increase. The cost modifiers (D940) were generic only, and D940's pin kept the
+coloured form unread on purpose.
+
+**The modifier.** `costModifiers[].coloured` holds the symbols added, with `generic` 0 beside them.
+The reader takes `{W}`…`{G}` only with "more": nothing prints a coloured reduction, and "{B} less"
+stays unread.
+
+**Applying it.** `costChangeFor` collects the symbols as `coloured`, counted "for each" as the
+generic part is. `withCostChange` now takes the whole change, not just its generic number, and
+adds the coloured symbols. Every caller passes the whole change, so all of these agree:
+- the plain cast and the alternative costs;
+- emerge, entwine, kicker, buyback and replicate;
+- delve, convoke and improvise;
+- the payment in `castSpell`.
+
+**The table.** The play says it: `costExtra` "{W}" beside the printed "{W}", with the Leech's words
+in `costNote`, shown in the play sheet as "+{W}" the way a generic change shows "+{1}".
+
+**Tests.** 3 new tests, and D940's pin updated:
+- Compile: the Leech reads as `coloured: ['W']`.
+- With the Leech out, a white instant:
+  - is not offered, and is refused, off one Plains;
+  - with two Plains, is offered with `costExtra` "{W}" and taps both;
+  - a colourless instant is not taxed.
+- The opponent's white spell is not taxed.
+- D940's pin now reads "{B} more" whole and keeps "{B} less" unread.
+
+Faults injected by hand: 3, all caught.
+- The colour not added to the cost.
+- The cast ignoring a coloured-only change.
+- The symbols not collected.
+
+The scripts tests, compile tests and pins: 6416 of 6416 pass. Web: typecheck clean, 279 of 279.
+
+Coverage: 17,376 of 31,900 cards (+6 over D1312's 17,370), 40,165 of 59,888 lines (+6).
