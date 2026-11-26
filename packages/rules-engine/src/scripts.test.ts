@@ -46762,6 +46762,32 @@ describe('"that many" after an attack: mills, and a discard after the draw (D128
   });
 });
 
+describe('the first half before a question runs with the whole context (D1281)', () => {
+  /*
+    "When ~ enters, draw X cards, then discard a card": the draw runs before the question, and it
+    has to know X, which for a trigger is the X its permanent was cast with (`triggerX`).
+  */
+  const SAGE = {
+    name: 'Test Sage', type_line: 'Creature — Human Wizard', oracle_text: 'When Test Sage enters, draw X cards, then discard a card.',
+    mana_cost: '{X}{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1',
+  };
+  const deck = customDeck({ id: 'd1281', name: 'Sage', entries: [{ name: 'Test Sage', count: 4 }, { name: 'Island', count: 56 }], data: [SAGE] as never[] });
+
+  it('cast for X = 2: two cards drawn before the discard is asked', () => {
+    expect(compileCard(SAGE as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1281', 1: 'd1281' }, deckSpecs: { d1281: deck.deck },
+      hands: { 0: ['Test Sage'] }, battlefield: { 0: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = ids(s, 0, 'hand').length - 1;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sage'), x: 2 } as Action)), 20);
+    s = passBoth(s);
+    expect(s.pendingDecision?.candidates).toHaveLength(before + 2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates[0]!] } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

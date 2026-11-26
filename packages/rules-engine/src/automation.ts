@@ -5750,6 +5750,8 @@ function askingContext(state: GameState, object: StackObject): EffectContext {
     ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
     enteringAttack: object.enteringAttack,
     ...(object.division === undefined ? {} : { division: object.division }),
+    // And the face its source showed (D1281), as the effect's own context has it.
+    ...(object.kind === 'spell' ? {} : { sourceFace: object.cardKey }),
   };
 }
 
@@ -6673,22 +6675,15 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
   const wanted = decisionSpecsFor(state, object);
   if (wanted.length > 0) {
     // The half of the card that comes before its question. See `CardScript.beforeDecisions`.
+    /*
+      Run with the asking context (D1281): the one the questions are worked out from, which is the
+      effect's own less its answers. This used to be a third copy of that list, and it drifted: it
+      left out the event's amount (fixed in D1280), a trigger's X (`triggerX`, so "When ~ enters,
+      draw X cards, then discard a card" drew nothing), the spell itself (`resolving`), and the face
+      its source showed.
+    */
     const first = beforeDecisionsFor(state, object);
-    const ready = first === undefined ? state : first({
-      state, source: object.source,
-      controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
-      kicked: object.kicked === true, attacked: object.attacked,
-      ...aboutNow(state, object),
-      answering: object.answering,
-      actor: object.actor, subjectCounters: object.subjectCounters, sacrificed: object.sacrificedStats,
-      // The event's amount too (D1280): "draw that many cards, then discard that many cards" (Varina)
-      // runs its draw here, and without it "that many" was nought.
-      ...(object.eventAmount === undefined ? {} : { eventAmount: object.eventAmount }),
-      ...(object.subjectStats === undefined ? {} : { subjectStats: object.subjectStats }),
-      ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
-      enteringAttack: object.enteringAttack,
-      ...(object.division === undefined ? {} : { division: object.division }),
-    });
+    const ready = first === undefined ? state : first(askingContext(state, object));
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
   }
   return completeResolution(state, object, []);
