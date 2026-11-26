@@ -47876,3 +47876,46 @@ Faults injected by hand: 3, all caught.
 - "During combat" read as "during your turn".
 
 Coverage: 17,255 of 31,900 cards (+0 over D1292's 17,255), 40,008 of 59,888 lines (+1).
+
+## D1294 — Split cards from card data
+
+Every split card from card data was refused before this ("layout split has more than one face"), so
+in an uploaded deck Fire // Ice, Commit // Memory or Expansion // Explosion was cardboard. The engine
+already plays split cards: the hand-written Fire // Ice and Wax // Wane cast either half and never
+the whole (CR 708). Only the compiler path was missing.
+
+`compileSplit` compiles each half on its own, as a single card. The whole is the shape the engine
+already plays:
+- both names, both type lines and both costs joined with " // ";
+- the halves' colours together;
+- their mana values added, which is the card's mana value everywhere but the stack (CR 708.4).
+
+The whole has no script of its own. `derive.ts` reads a compiled def back at play time, and for a
+split card its faces are the two halves and nothing else. The round trip used to put the whole card
+in front of its faces, which is right for a transforming card and wrong here.
+
+Refused, rather than played wrongly:
+- Aftermath (27 cards): the second half may be cast only from the graveyard. Offered from the hand
+  like any other half, it would be a spell the card does not allow.
+- Rooms (30 cards): an enchantment with two doors, unlocked separately. The engine has no doors yet.
+
+Fuse stays an unread line on each half: each half is still cast on its own, as the card allows, and
+casting both together is not offered yet. Of the 69 legal split cards that now compile, 28 read
+whole; 17 of the rest are short only of Fuse.
+
+**Tests.** 3 engine tests:
+- A split card from data compiles to the split shape: names, types, costs, mana value 3 from 1 and
+  2, colours, two faces. Read back from the def at play time, it has no unread line, and a Fuse
+  card's line is still reported.
+- Aftermath and a Room are refused. Fuse is the only unread line on a Fuse card.
+- In a deck: the card is offered as its halves, the whole is refused ("choose which half"), the
+  second half is cast for its own cost, and the card goes to the graveyard.
+
+Faults injected by hand: 5, all caught.
+- The old round trip, the whole in front of its halves.
+- Aftermath let through.
+- Rooms let through.
+- The mana value of the first half only.
+- The split path dropped.
+
+Coverage: 17,255 of 31,900 cards (+0 over D1293's 17,255), 40,008 of 59,888 lines (+0).
