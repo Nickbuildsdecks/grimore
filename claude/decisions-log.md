@@ -66063,3 +66063,41 @@ Faults injected by hand: 6, all caught.
 The scripts tests, compile tests and pins: 6406 of 6406 pass. Web: typecheck clean, 279 of 279.
 
 Coverage: 17,363 of 31,900 cards (+5 over D1308's 17,358), 40,149 of 59,888 lines (+5).
+
+## D1310 — A delayed draw from a permanent's ability
+
+"Draw a card at the beginning of the next turn's upkeep" has read on a spell since D689, as a
+delayed trigger on the card itself. It did not read in a permanent's ability. That left Carrier
+Pigeons' "When ~ enters, draw a card at the beginning of the next turn's upkeep" unread, along with
+the other Mirage and Ice Age cantrip permanents (Krovikan Fetish, Pyknite, Barbed Sextant).
+
+It is now the engine-known delayed ability `builtin: 'draw'`, next to D696's sacrifice and exile:
+- it is scheduled as the ability resolves;
+- it goes on the stack at whoever's upkeep comes next, so the draw is usually at the opponent's
+  upkeep;
+- the ability's controller draws;
+- it has no subject, so it happens whether or not the permanent is still there (CR 603.7c).
+
+**A simplification this inherits, not one it adds.** Barbed Sextant's "{1}, {T}, Sacrifice ~: Add
+one mana of any color. Draw a card at the beginning of the next turn's upkeep." now reads the way
+Chromatic Sphere's "Add one mana of any color. Draw a card." already did: as an ability that uses
+the stack and adds the mana as it resolves. By CR 605.1a it is a mana ability, which never uses the
+stack and can be used mid-payment. A mana ability with a second effect is the next thing worth
+reading properly. Aleatory's line is still unread, because its coin-flip line is.
+
+**Tests.** 2 tests:
+- The Pigeons fixture reads whole.
+- After casting it:
+  - one delayed draw is waiting;
+  - nothing is drawn that turn;
+  - at the opponent's next upkeep its controller has one more card;
+  - the delayed draw is gone.
+
+Faults injected by hand: 3, all caught.
+- No draw.
+- Only at your own upkeep.
+- Not the engine-known ability.
+
+The scripts tests, compile tests and pins: 6408 of 6408 pass.
+
+Coverage: 17,368 of 31,900 cards (+5 over D1309's 17,363), 40,157 of 59,888 lines (+8).
