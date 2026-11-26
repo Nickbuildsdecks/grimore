@@ -48833,6 +48833,47 @@ describe('"Target creature can\'t block ~ this turn" (D1323)', () => {
   });
 });
 
+describe('three more board conditions, as a cost reduction reads them (D1324)', () => {
+  const S = (name: string, condition: string) => ({ name, type_line: 'Sorcery', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal',
+    oracle_text: `This spell costs {1} less to cast if ${condition}.\nDraw a card.` });
+  const YARD = S('Test Yard', 'there is a land card in your graveyard');
+  const BASICS = S('Test Basics', 'an opponent controls no basic lands');
+  const MULTI = S('Test Multi', 'an opponent controls a multicolored permanent');
+  const GOLD = { name: 'Test Gold', type_line: 'Creature — Bird', mana_cost: '{W}{U}', cmc: 2, colors: ['W', 'U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const GROUNDS = { name: 'Test Grounds', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const deck = customDeck({ id: 'd1324', name: 'Conditions', entries: [YARD, BASICS, MULTI, GOLD, GROUNDS].map((r) => ({ name: r.name, count: 3 })).concat([{ name: 'Mountain', count: 41 }, { name: 'Grizzly Bears', count: 4 }]), data: [YARD, BASICS, MULTI, GOLD, GROUNDS] as never[] });
+  const board = (theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1324', 1: 'd1324' }, deckSpecs: { d1324: deck.deck },
+    hands: { 0: ['Test Yard', 'Test Basics', 'Test Multi', 'Mountain'] }, battlefield: { 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const change = (s: GameState, name: string): number => costChangeFor(s, 0 as SeatIndex, Object.values(s.cardDefs).find((d) => d.name === name)!, find(s, 0, 'hand', name)).generic;
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [YARD, BASICS, MULTI]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a land card in your graveyard', () => {
+    let s = board(['Mountain']);
+    expect(change(s, 'Test Yard')).toBe(0);
+    s = relocate(s, s.instances[find(s, 0, 'hand', 'Mountain')]!, 'graveyard', 0, 'top');
+    expect(change(s, 'Test Yard')).toBe(-1);
+  });
+
+  it('an opponent with no basic lands, and one with a multicolored permanent', () => {
+    const basic = board(['Mountain']);
+    expect(change(basic, 'Test Basics')).toBe(0);
+    expect(change(basic, 'Test Multi')).toBe(0);
+    const gold = board(['Test Gold']);
+    expect(change(gold, 'Test Basics')).toBe(-1);
+    expect(change(gold, 'Test Multi')).toBe(-1);
+    // A nonbasic land is not a basic one, and a green creature is not a multicolored one.
+    const other = board(['Test Grounds', 'Grizzly Bears']);
+    expect(change(other, 'Test Basics')).toBe(-1);
+    expect(change(other, 'Test Multi')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

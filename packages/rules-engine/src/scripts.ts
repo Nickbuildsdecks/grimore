@@ -39682,6 +39682,37 @@ function interveningConditionRows(
     return (had[1] ?? '').toLowerCase() === 'no' ? (c) => count(c) === 0 : (c) => count(c) > 0;
   }
   /*
+    D1324: three more board facts, live. "There is a land card in your graveyard" (Igneous
+    Elemental, the cost reductions), "an opponent controls no basic lands" (Hagra Mauling's
+    printing), "an opponent controls a multicolored permanent" (Ghostfire Slice).
+  */
+  const oneInYard = /^there is an? (land|creature|artifact|enchantment|instant|sorcery|planeswalker) card in your graveyard$/i.exec(text);
+  if (oneInYard !== null) {
+    const type = oneInYard[1]!.toLowerCase();
+    return (c) => listAt(c.state, zoneKey(c.controller, 'graveyard')).some((id) => {
+      const inst = c.state.instances[id];
+      return inst !== undefined && hasType(characteristicsOf(c.state, inst).typeLine, type);
+    });
+  }
+  if (/^an opponent controls no basic lands$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller).some((seat) => !listAt(c.state, zoneKey(seat, 'battlefield')).some((id) => {
+      const inst = c.state.instances[id];
+      if (inst === undefined) return false;
+      const ch = characteristicsOf(c.state, inst);
+      return ch.isLand && ch.typeLine.supertypes.some((t) => /^basic$/i.test(t));
+    }));
+  }
+  const multi = /^an opponent controls an? multicolou?red (permanent|creature)$/i.exec(text);
+  if (multi !== null) {
+    const creature = multi[1]!.toLowerCase() === 'creature';
+    return (c) => opponentsOf(c.state, c.controller).some((seat) => listAt(c.state, zoneKey(seat, 'battlefield')).some((id) => {
+      const inst = c.state.instances[id];
+      if (inst === undefined) return false;
+      const ch = characteristicsOf(c.state, inst);
+      return ch.colors.length > 1 && (!creature || ch.isCreature);
+    }));
+  }
+  /*
     D1016: five board and table facts, each read live as both asks of the intervening-if are made.
   */
   if (/^there is no monarch$/i.test(text)) return (c) => c.state.monarch === null;
