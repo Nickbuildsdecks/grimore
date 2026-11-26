@@ -47456,3 +47456,31 @@ gains `sourceFace`, so it matches the effect's own apart from the answers.
   before the discard is asked.
 
 Coverage: 17,220 of 31,900 cards (+0 over D1280's 17,220), 39,956 of 59,888 lines (+0).
+
+## D1282 — "That creature" on the other side of a block, by the borrow
+
+"Whenever ~ blocks or becomes blocked by a creature, ~ deals 1 damage to that creature" (Sawtooth
+Ogre), "… that creature loses first strike until end of turn" (Talruum Champion), and the rest of
+the family's clauses. D480 wrote one reader per wording for the creature on the other side, which
+travels as `c.blocked` on `blocks` and `becomes-blocked` (and on a creature dealt damage, D980).
+After those, every other clause now goes through D530's borrow: the same sentence with "target
+creature" in that place is read, and the creature the event carries is handed to it as that target.
+It is gated on the same events as the specific readers. Under an attack, an enters or a dies
+prologue, "that creature" names something else or nothing, and it stays unread.
+
+Read whole now include Talruum Champion, Barrow-Blade, Ornery Goblin, Kessig Forgemaster, Skewer
+Slinger and Inferno Elemental, beside the block cards that already read.
+
+**Tests.** 3 engine tests:
+- Both forms read. "That creature" after an enters prologue and after an attack prologue stays
+  unread.
+- Blocked by a 0/1, it deals 1 damage to that creature, which dies before combat damage.
+- Blocked by a first striker, that creature loses first strike, and the 3/3 survives the 2 and kills
+  it.
+
+Faults injected by hand: 2, all caught.
+- The referent supplied as the source instead of the other creature.
+- The block-events gate removed. Caught only after a second sentence was added: under an attack
+  prologue, "that creature gains flying" read and would have done nothing.
+
+Coverage: 17,225 of 31,900 cards (+5 over D1281's 17,220), 39,962 of 59,888 lines (+6).
