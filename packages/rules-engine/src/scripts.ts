@@ -24049,6 +24049,22 @@ function eventRelativeEffect(
         : addCounters(c.state, c.blocked, kind, 1)),
     };
   }
+  /*
+    And every other clause about the creature on the other side (D1282), by D530's borrow: the same
+    sentence with "target creature" in that place is read, and the creature the event carries is
+    handed to it as that target. "Whenever ~ blocks or becomes blocked by a creature, ~ deals 1
+    damage to that creature" (Sawtooth Ogre), "… that creature loses first strike until end of
+    turn" (Talruum Champion), "… destroy that creature" with more after it. The readers above stay
+    for the wordings they were written for; this is the one for the rest.
+  */
+  if (aboutTheOther) {
+    const other = referentEffect(
+      text, 'that creature', 'creature',
+      (c) => (c.blocked === undefined ? null : { kind: 'card', id: c.blocked }),
+      (swapped) => readEffect(swapped, name, null),
+    );
+    if (other !== null) return other;
+  }
 
   /*
     Hellrider: "~ deals 1 damage to the player or planeswalker it's attacking".

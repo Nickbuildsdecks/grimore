@@ -198,3 +198,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1278 pushed in b5038e5. D1279 "Whenever you attack with one or more creatures / <Type>s" (done).
 - D1279 pushed in d24bc97 (checkpoint 8384567). D1280 that many after an attack: target player mills, discard that many; beforeDecisions context carries eventAmount (automation.ts); trigger descriptions show printed words (done).
 - D1280 pushed in 4b07426. D1281 beforeDecisions runs with askingContext (automation.ts): trigger X, resolving, sourceFace no longer dropped (done).
+- D1281 pushed in f4e66be. D1282 "that creature" on the other side of a block via referentEffect (done).

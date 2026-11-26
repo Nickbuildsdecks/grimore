@@ -46788,6 +46788,55 @@ describe('the first half before a question runs with the whole context (D1281)',
   });
 });
 
+describe('"that creature" on the other side of a block, by the borrow (D1282)', () => {
+  const C = (name: string, text: string, power: string, toughness: string, kw = '') => ({
+    name, type_line: 'Creature — Ogre', oracle_text: kw === '' ? text : `${kw}\n${text}`.trim(), mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power, toughness,
+  });
+  const OGRE = C('Test Sawtooth', 'Whenever Test Sawtooth blocks or becomes blocked by a creature, Test Sawtooth deals 1 damage to that creature.', '2', '2');
+  const CHAMP = C('Test Champion', 'Whenever Test Champion blocks or becomes blocked by a creature, that creature loses first strike until end of turn.', '3', '3');
+  const STRIKER = C('Test Striker', '', '2', '1', 'First strike');
+  const WALL = C('Test Wall', '', '0', '1');
+  const ROWS = [OGRE, CHAMP, STRIKER, WALL];
+  const deck = customDeck({ id: 'd1282', name: 'Blocks', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const combat = (attacker: string, blocker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1282', 1: 'd1282' }, deckSpecs: { d1282: deck.deck },
+      battlefield: { 0: [attacker], 1: [blocker] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const a = find(s, 0, 'battlefield', attacker);
+    const b = find(s, 1, 'battlefield', blocker);
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a, defender: 1 }] } as Action), 20);
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: b, attacker: a }] } as Action);
+    return { s, a, b };
+  };
+
+  it('reads both; "that creature" after an enters or an attack prologue is still not claimed', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [OGRE, CHAMP]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const entered = compileCard(C('Test Odd', 'Whenever a creature you control enters, Test Odd deals 1 damage to that creature.', '1', '1') as never);
+    expect(entered.ok && entered.unread.length).toBe(1);
+    // An attack carries no other creature, so "that creature" there names nothing and stays unread.
+    const attacking = compileCard(C('Test Odder', 'Whenever Test Odder attacks, that creature gains flying until end of turn.', '1', '1') as never);
+    expect(attacking.ok && attacking.unread.length).toBe(1);
+  });
+
+  it('blocked by a 0/1, it deals 1 damage to that creature, which dies before damage', () => {
+    let { s, b } = combat('Test Sawtooth', 'Test Wall');
+    s = drain(passBoth(s), 20);
+    expect(s.instances[b]!.zone).toBe('graveyard');
+  });
+
+  it('blocked by a first striker, that creature loses first strike: the 3/3 survives its 2 and kills it', () => {
+    let { s, a, b } = combat('Test Champion', 'Test Striker');
+    s = drain(passBoth(s), 20);
+    expect(characteristicsOf(s, s.instances[b]!).keywords).not.toContain('first strike');
+    s = advanceTo(s, 'postcombat-main');
+    expect(s.instances[b]!.zone).toBe('graveyard');
+    expect(s.instances[a]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
