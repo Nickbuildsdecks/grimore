@@ -6681,6 +6681,9 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       ...aboutNow(state, object),
       answering: object.answering,
       actor: object.actor, subjectCounters: object.subjectCounters, sacrificed: object.sacrificedStats,
+      // The event's amount too (D1280): "draw that many cards, then discard that many cards" (Varina)
+      // runs its draw here, and without it "that many" was nought.
+      ...(object.eventAmount === undefined ? {} : { eventAmount: object.eventAmount }),
       ...(object.subjectStats === undefined ? {} : { subjectStats: object.subjectStats }),
       ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
       enteringAttack: object.enteringAttack,

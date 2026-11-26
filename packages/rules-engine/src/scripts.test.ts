@@ -46712,6 +46712,56 @@ describe('"Whenever you attack with one or more …" (D1279)', () => {
   });
 });
 
+describe('"that many" after an attack: mills, and a discard after the draw (D1280)', () => {
+  const C = (name: string, type: string, text = '') => ({
+    name, type_line: `Creature — ${type}`, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const VARINA = C('Test Varina', 'Zombie', 'Whenever you attack with one or more Zombies, draw that many cards, then discard that many cards.');
+  const SWARM = C('Test Swarm', 'Insect', 'Whenever you attack with one or more creatures, target player mills that many cards.');
+  const ZOMBIE = C('Test Zombie', 'Zombie');
+  const ROWS = [VARINA, SWARM, ZOMBIE];
+  const deck = customDeck({ id: 'd1280', name: 'That many', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+  const table = (mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1280', 1: 'd1280' }, deckSpecs: { d1280: deck.deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'declare-attackers');
+
+  it('reads both; "that many" with no amount behind it stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [VARINA, SWARM]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const bare = compileCard(C('Test Bare', 'Zombie', '{T}: Target player mills that many cards.') as never);
+    expect(bare.ok && bare.unread.length).toBeGreaterThan(0);
+  });
+
+  it('two Zombies attack: two cards drawn, then two discarded, chosen from the hand with the new cards in it', () => {
+    let s = table(['Test Varina', 'Test Zombie']);
+    const attackers = ids(s, 0, 'battlefield').map((id) => ({ attacker: id, defender: 1 as SeatIndex }));
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers } as Action);
+    // On the stack in the printed words, not the reader's mark for "that many".
+    expect(s.stackObjects[s.stackOrder[0]!]!.description).toContain('draw that many cards');
+    s = passBoth(s);
+    expect(s.pendingDecision?.min).toBe(2);
+    expect(s.pendingDecision?.candidates).toHaveLength(hand + 2);
+    const yard = ids(s, 0, 'graveyard').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+    expect(ids(s, 0, 'graveyard').length).toBe(yard + 2);
+  });
+
+  it('three creatures attack: the target player mills three', () => {
+    let s = table(['Test Swarm', 'Test Zombie', 'Test Zombie']);
+    const attackers = ids(s, 0, 'battlefield').map((id) => ({ attacker: id, defender: 1 as SeatIndex }));
+    const library = ids(s, 1, 'library').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers } as Action);
+    if (s.pendingDecision?.targetChoices !== undefined || s.pendingChoice !== undefined) {
+      s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    }
+    s = drain(passBoth(s), 20);
+    expect(ids(s, 1, 'library').length).toBe(library - 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

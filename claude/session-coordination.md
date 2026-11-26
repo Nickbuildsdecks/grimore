@@ -196,3 +196,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1276 pushed in dbd8449. D1277 "sacrifice it at end of combat" (delayedSelf at end-combat) (done).
 - D1277 pushed in 80edb77. D1278 "a Blood token": a subtype before "token" in permanentDescribed (done).
 - D1278 pushed in b5038e5. D1279 "Whenever you attack with one or more creatures / <Type>s" (done).
+- D1279 pushed in d24bc97 (checkpoint 8384567). D1280 that many after an attack: target player mills, discard that many; beforeDecisions context carries eventAmount (automation.ts); trigger descriptions show printed words (done).

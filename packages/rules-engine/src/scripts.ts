@@ -24949,6 +24949,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
+    // The mark is the reader's; the stack and the log show the printed words (D1280).
+    const shown = clause.replace(/\u000e/g, 'that');
     /*
       Where the clause's own subject is when it runs, read off the **event** rather than guessed.
 
@@ -25009,7 +25011,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       return {
         triggers: on.map((event) => ({
           on: event,
-          description: clause,
+          description: shown,
           inCommandZone: true as const,
           condition: there,
           ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
@@ -25031,7 +25033,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       return {
         triggers: on.map((event) => ({
           on: event,
-          description: clause,
+          description: shown,
           inGraveyard: true as const,
           condition: inYard,
           ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
@@ -25058,7 +25060,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       return {
         triggers: on.map((event) => ({
           on: event,
-          description: clause,
+          description: shown,
           inGraveyard: true as const,
           ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
           ...(back.decisions === undefined ? {} : { decisions: back.decisions }),
@@ -25126,7 +25128,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     return {
       triggers: on.map((event) => ({
         on: event,
-        description: clause,
+        description: shown,
         // "This ability triggers only once each turn" (D532), spent in `fireTrigger`.
         ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
         ...(read.targets === undefined ? {} : { targets: read.targets }),
@@ -30879,6 +30881,30 @@ function readEffect(
     }
     if (/^that player mills \u000e many cards$/i.test(text)) {
       return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : mill(c.state, seat, n(c)); } };
+    }
+    /*
+      D1280: "target player mills that many cards" (Screaming Swarm), aimed as it goes on the stack;
+      and "discard that many cards" (Varina, Lich Queen's second half), the controller's own
+      question, sized as it is asked from the event's amount (D1195, as the hit player's discard is).
+    */
+    const millsTarget = /^(target player|target opponent) mills \u000e many cards$/i.exec(text);
+    if (millsTarget !== null) {
+      const spec = targetSpecFrom(millsTarget[1]!.toLowerCase(), false);
+      if (spec !== null) {
+        return {
+          targets: [spec],
+          effect: (c) => { const seat = firstPlayerTarget(c); return seat === null ? c.state : mill(c.state, seat, n(c)); },
+        };
+      }
+    }
+    if (/^(?:you )?discard \u000e many cards$/i.test(text)) {
+      return {
+        decisions: [(state: GameState, _source: string, at?: EffectContext): DecisionSpec => {
+          const many = at === undefined ? 0 : Math.max(0, at.eventAmount ?? 0);
+          return { who: 'controller', from: 'hand', prompt: `Discard ${many} card${many === 1 ? '' : 's'}`, min: many, max: many };
+        }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      };
     }
     if (/^you get \u000e many \{E\}(?: \(energy counters?\))?$/i.test(text)) {
       return { effect: (c) => addEnergy(c.state, c.controller, n(c)) };
