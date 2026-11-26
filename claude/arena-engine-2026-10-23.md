@@ -48843,3 +48843,37 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6424 of 6424 pass.
 
 Coverage: 17,403 of 31,900 cards (+7 over D1315's 17,396), 40,203 of 59,888 lines (+13).
+
+## D1317 — Endure N (CR 701.63)
+
+Tarkir: Dragonstorm's keyword action had no reader. The forms are "When this creature enters, it
+endures 3", "Anafenza endures 2" and "… and this creature endures 1". Rule 701.63: put N +1/+1
+counters on it, or create an N/N white Spirit creature token.
+
+**The choice.** It is the controller's, asked as the effect resolves, with "Counters" the bot's
+answer. A permanent no longer on the battlefield can only make the Spirit (CR 701.63b), so then the
+question is not asked (`askOnlyIf`) and the Spirit is made.
+
+**The token.** The token reader builds the Spirit from "create an N/N white Spirit creature token",
+so it is the same token any other card makes.
+
+Only a fixed N reads. "Endures X, where X is …" (Hamza, Warden of the Grove) and Krumar Initiate's
+"{X} … endures X" stay unread. Amber-Plate Ainok is held by its double team line.
+
+**Tests.** 4 tests:
+- The fixture reads whole, and an X form is left unread.
+- The enters trigger:
+  - asks Counters or Spirit;
+  - answered Counters, it gives two +1/+1 counters and no token;
+  - answered Spirit, it makes a 2/2 white creature token and no counters.
+- With the creature put into the graveyard before the trigger resolves, a Spirit is made and
+  nothing is asked.
+
+Faults injected by hand: 3, all caught.
+- Counters for a creature that has left.
+- Always asked.
+- The answer ignored.
+
+The scripts tests, compile tests and pins: 6428 of 6428 pass.
+
+Coverage: 17,411 of 31,900 cards (+8 over D1316's 17,403), 40,211 of 59,888 lines (+8).
