@@ -432,6 +432,11 @@ export interface StackObject {
   readonly manaSpent?: number;
   /** Which colours of mana were spent on it (D742): "if {U} was spent to cast it". */
   readonly colorsSpent?: readonly string[];
+  /**
+   * How much of each type of mana was spent on it (D1319): adamant's "if at least three white mana
+   * was spent to cast this spell". Colourless counts as a type here. Absent for none.
+   */
+  readonly spentByType?: Readonly<Record<string, number>>;
   /** Cast when a sorcery couldn't have been (D727): Necromancy's flash, and its cleanup sacrifice. */
   readonly castOutsideSorceryTiming?: true;
   /**
@@ -1422,7 +1427,7 @@ export interface AutomationState {
    * by other means) makes the record stale without anything clearing it — the new object was never
    * cast (CR 400.7). Optional so a game saved before it loads as "nothing was cast".
    */
-  readonly castPermanents?: Readonly<Record<string, { readonly from: ZoneId; readonly seq: number; readonly colors?: readonly string[] }>>;
+  readonly castPermanents?: Readonly<Record<string, { readonly from: ZoneId; readonly seq: number; readonly colors?: readonly string[]; readonly spent?: Readonly<Record<string, number>> }>>;
   /**
    * Whether it is day or night (CR 726), or neither — `null`, which is how every game starts.
    *

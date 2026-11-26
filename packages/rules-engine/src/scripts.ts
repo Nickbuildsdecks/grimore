@@ -38930,6 +38930,20 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     if (count === null || plainRead === null || fixed === undefined || fixed.amount !== 1 || Object.keys(plainRead).length !== 1) return null;
     return { entersWith: { ...fixed, per: count } };
   }
+  /*
+    And the leading form (D1319): "Adamant — If at least three white mana was spent to cast this
+    spell, ~ enters with a +1/+1 counter on it" (the Paladins, Henge Walker). The same `if`, asked as
+    the permanent arrives.
+  */
+  const leading = new RegExp(`^if (.+?), (${selfRef(name)} ${ENTERS} with .+)$`, 'i').exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
+  if (leading !== null) {
+    const holds = interveningConditionFor(leading[1]!, name);
+    const plainRead = holds === null ? null : entersWithFromLine(leading[2]!, name);
+    const fixed = plainRead?.entersWith;
+    if (holds !== null && plainRead !== null && fixed !== undefined && fixed.amount !== 'x' && Object.keys(plainRead).length === 1) {
+      return { entersWith: { ...fixed, if: holds } };
+    }
+  }
   const conditioned = /^(.+) if (.+ this turn)$/i.exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
   if (conditioned !== null) {
     const holds = interveningConditionFor(conditioned[2]!, name);
@@ -39669,6 +39683,31 @@ function interveningConditionRows(
       if (record === undefined || inst === undefined || record.seq !== (inst.objectSeq ?? 0)) return false;
       return (record.colors ?? []).includes(colour);
     };
+  }
+  /*
+    Adamant (D1319): "if at least three white mana was spent to cast this spell", "… three mana of the
+    same color …", "… three colorless mana …", arriving here as "three or more" (D892's rewrite). The amounts the spell being resolved was paid with,
+    or for a permanent the amounts recorded beside "you cast it" (D607) as it resolved, so a
+    permanent that arrived any other way spent nothing.
+  */
+  const adamant = new RegExp(`^(?:at least )?(\\w+)(?: or more)? (white|blue|black|red|green|colorless) mana was spent to cast (?:it|this spell|${selfRef(name)})$`, 'i').exec(text)
+    ?? new RegExp(`^(?:at least )?(\\w+)(?: or more)? (mana of the same colou?r) was spent to cast (?:it|this spell|${selfRef(name)})$`, 'i').exec(text);
+  if (adamant !== null) {
+    const least = countFrom(adamant[1]!);
+    const LETTER: Readonly<Record<string, string>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G', colorless: 'C' };
+    const letter = LETTER[adamant[2]!.toLowerCase()];
+    if (least !== null && least > 0) {
+      const enough = (spent: Readonly<Record<string, number>> | undefined): boolean => (letter === undefined
+        ? ['W', 'U', 'B', 'R', 'G'].some((type) => (spent?.[type] ?? 0) >= least)
+        : (spent?.[letter] ?? 0) >= least);
+      return (c) => {
+        if (c.resolving?.kind === 'spell' && c.resolving.source === c.source) return enough(c.resolving.spentByType);
+        const record = c.state.castPermanents?.[c.source];
+        const inst = c.state.instances[c.source];
+        if (record === undefined || inst === undefined || record.seq !== (inst.objectSeq ?? 0)) return false;
+        return enough(record.spent);
+      };
+    }
   }
   const castIt = /^you cast it( from your hand)?$/i.exec(text);
   if (castIt !== null) {

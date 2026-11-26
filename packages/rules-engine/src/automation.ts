@@ -5579,6 +5579,8 @@ function payFrom(
   exclude?: ReadonlySet<string>,
 ): {
   state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[]; manaSpent: number;
+  /** How much of each type (D1319), for adamant. */
+  spentByType: Readonly<Record<string, number>>;
   /** What each source tapped here made (D783): which row of a land paid, read off the mana it made. */
   picks: readonly ManaPick[];
 } {
@@ -5656,6 +5658,14 @@ function payFrom(
     ? (Object.keys(beforePaying) as ManaType[]).reduce((sum, type) => (
       sum + Math.max(0, (beforePaying[type] ?? 0) - ((result.pool as ManaPool)[type] ?? 0))), 0)
     : 0;
+  // And how much of each (D1319): adamant.
+  const spentByType: Record<string, number> = {};
+  if (result.paid) {
+    for (const type of Object.keys(beforePaying) as ManaType[]) {
+      const used = Math.max(0, (beforePaying[type] ?? 0) - ((result.pool as ManaPool)[type] ?? 0));
+      if (used > 0) spentByType[type] = used;
+    }
+  }
   if (!result.paid) {
     const asText = typeof costText === 'string' || costText === undefined ? costText : null;
     const shown = asText === null
@@ -5675,7 +5685,7 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent, picks };
+  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent, spentByType, picks };
 }
 
 /** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */
@@ -6948,6 +6958,8 @@ function resolveObject(
             from: object.castFrom ?? 'hand', seq: next.instances[inst.id]?.objectSeq ?? 0,
             // And the colours spent on it (D742): "if {U} was spent to cast it".
             ...((object.colorsSpent ?? []).length > 0 ? { colors: [...object.colorsSpent!] } : {}),
+            // And how much of each (D1319): adamant's "if at least three white mana was spent".
+            ...(object.spentByType === undefined ? {} : { spent: object.spentByType }),
           },
         },
       };

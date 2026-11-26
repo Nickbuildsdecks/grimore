@@ -48649,6 +48649,47 @@ describe('combat damage equal to toughness rather than power (D1318)', () => {
   });
 });
 
+describe('adamant: at least three mana of one colour spent (D1319)', () => {
+  const PALADIN = { name: 'Test Paladin', type_line: 'Creature — Human Knight', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: '2', toughness: '5',
+    oracle_text: 'Adamant — If at least three white mana was spent to cast this spell, Test Paladin enters with a +1/+1 counter on it.' };
+  const GIFT = { name: 'Test Gift', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal',
+    oracle_text: 'You gain 1 life.\nAdamant — If at least three black mana was spent to cast this spell, draw a card.' };
+  const deck = customDeck({ id: 'd1319', name: 'Adamant', entries: [{ name: 'Test Paladin', count: 4 }, { name: 'Test Gift', count: 4 }, { name: 'Plains', count: 20 }, { name: 'Swamp', count: 16 }, { name: 'Mountain', count: 16 }], data: [PALADIN, GIFT] as never[] });
+  const board = (hand: string, lands: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1319', 1: 'd1319' }, deckSpecs: { d1319: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: [...lands] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(PALADIN as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(GIFT as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Paladin enters with a counter off four Plains, and without one off a Plains and three Mountains', () => {
+    let white = board('Test Paladin', ['Plains', 'Plains', 'Plains', 'Plains']);
+    const paladin = find(white, 0, 'hand', 'Test Paladin');
+    white = drain(passBoth(apply(white, { type: 'auto:cast', by: 0, card: paladin } as Action)), 6);
+    expect(white.instances[paladin]!.counters['+1/+1']).toBe(1);
+    let mixed = board('Test Paladin', ['Plains', 'Mountain', 'Mountain', 'Mountain']);
+    const other = find(mixed, 0, 'hand', 'Test Paladin');
+    mixed = drain(passBoth(apply(mixed, { type: 'auto:cast', by: 0, card: other } as Action)), 6);
+    expect(mixed.instances[other]!.zone).toBe('battlefield');
+    expect(mixed.instances[other]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('the sorcery draws only off three black', () => {
+    let black = board('Test Gift', ['Swamp', 'Swamp', 'Swamp']);
+    const held = ids(black, 0, 'hand').length;
+    black = drain(passBoth(apply(black, { type: 'auto:cast', by: 0, card: find(black, 0, 'hand', 'Test Gift') } as Action)), 6);
+    expect(ids(black, 0, 'hand').length).toBe(held);
+    let mixed = board('Test Gift', ['Swamp', 'Mountain', 'Mountain']);
+    const before = ids(mixed, 0, 'hand').length;
+    mixed = drain(passBoth(apply(mixed, { type: 'auto:cast', by: 0, card: find(mixed, 0, 'hand', 'Test Gift') } as Action)), 6);
+    expect(ids(mixed, 0, 'hand').length).toBe(before - 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

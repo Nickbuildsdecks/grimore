@@ -235,3 +235,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1315 pushed in 8aab076. D1316 "becomes the creature type of your choice until end of turn" (scripts.ts readEffect).
 - D1316 pushed with the D1316 checkpoint in 97f9fa1. D1317 endure N (scripts.ts selfEffect).
 - D1317 pushed in 0b3fbcd. D1318 Doran, combat damage by toughness (assignsByToughness, combatDamageOf): characteristics, effects, combat.ts, scripts.ts reader.
+- D1318 pushed in f13b82e. D1319 adamant (spentByType on payFrom, the stack object and castPermanents; condition row; leading-if enters-with): automation.ts, autoActions.ts, turnTypes.ts, scripts.ts.
