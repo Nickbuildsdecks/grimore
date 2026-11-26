@@ -17562,7 +17562,8 @@ const KEYWORD_COUNTER_WORDS = 'first strike|double strike|flying|deathtouch|hexp
 
 // Shield left this list in D1033: `spendShieldCounter` is its replacement (CR 122.1c).
 const RULES_COUNTERS: readonly string[] = [
-  'loyalty', 'defense', 'lore', 'time', 'fade', 'finality', 'poison', 'energy',
+  // Not `finality` since D1276: the engine applies its rule (CR 122.1i) wherever the counter sits.
+  'loyalty', 'defense', 'lore', 'time', 'fade', 'poison', 'energy',
   'experience', 'rad', 'ticket', 'age', 'level',
 ];
 
@@ -29483,7 +29484,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
   // And oil and charge on a target (D1079): counters other cards read ("for each oil counter on …"),
   // as their own lines read them on the card itself (D1078). Aimed as a gift, as a +1/+1 counter is.
-  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (${PT_COUNTER}|stun|shield|oil|charge|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
+  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (${PT_COUNTER}|stun|shield|oil|charge|finality|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
     const word = countered[1]!.toLowerCase();
     const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
@@ -29906,9 +29907,9 @@ function readEffect(
     Persist the spell): the return as it reads without the counter, then the counter on the card it
     returned, if it arrived.
   */
-  // Only the two size counters: a finality counter has a rule of its own (CR 122.1i) the return does
-  // not carry, and D527 pins that refusal.
-  const withCounter = /^(return .+? to the battlefield(?: under your control)?) with an? (\+1\/\+1|-1\/-1) counter on it$/i.exec(clause.trim().replace(/\.$/, ''));
+  // And a finality counter since D1276, whose rule (CR 122.1i) the engine now applies; D527 pinned the
+  // refusal until then.
+  const withCounter = /^(return .+? to the battlefield(?: tapped)?(?: under your control)?) with an? (\+1\/\+1|-1\/-1|finality) counter on it$/i.exec(clause.trim().replace(/\.$/, ''));
   if (withCounter !== null) {
     const inner = readEffect(withCounter[1]!, name, where);
     if (inner !== null && (inner.targets ?? []).length === 1 && inner.decisions === undefined && inner.beforeDecisions === undefined) {
@@ -35315,12 +35316,15 @@ function graveyardPhrase(head: string, whose: string): string {
 
 function graveyardSelfReturn(clause: string, name: string): ReadEffect | null {
   const matched = new RegExp(
-    `^return (?:${selfRef(name)}|this card) from your graveyard to (your hand|the battlefield)( tapped)?$`, 'i',
+    `^return (?:${selfRef(name)}|this card) from your graveyard to (your hand|the battlefield)( tapped)?`
+    // And a counter it comes back with (D1276): "… with a finality counter on it" (Grim Repriser).
+    + `(?: with an? (finality|\\+1/\\+1|-1/-1) counter on it)?$`, 'i',
   ).exec(plain(clause).trim());
   if (matched === null) return null;
   if (matched[1]!.toLowerCase() === 'your hand') {
-    return matched[2] === undefined ? { effect: (c) => bounceToHand(c.state, c.source) } : null;
+    return matched[2] === undefined && matched[3] === undefined ? { effect: (c) => bounceToHand(c.state, c.source) } : null;
   }
+  const counter = matched[3]?.toLowerCase();
   /*
     **To the battlefield** (D626): "{1}{B}: Return Bone Dragon... from your graveyard to the
     battlefield tapped", Advanced Stitchwing, Necrosavant's upkeep-only one. About 20 legal lines.
@@ -35330,9 +35334,11 @@ function graveyardSelfReturn(clause: string, name: string): ReadEffect | null {
   */
   const tapped = matched[2] !== undefined;
   return {
-    effect: (c) => (c.state.instances[c.source]?.zone === 'graveyard'
-      ? putOntoBattlefield(c.state, c.source, c.controller, tapped ? { tapped: true } : {})
-      : c.state),
+    effect: (c) => {
+      if (c.state.instances[c.source]?.zone !== 'graveyard') return c.state;
+      const back = putOntoBattlefield(c.state, c.source, c.controller, tapped ? { tapped: true } : {});
+      return counter === undefined || back.instances[c.source]?.zone !== 'battlefield' ? back : addCounters(back, c.source, counter, 1);
+    },
   };
 }
 

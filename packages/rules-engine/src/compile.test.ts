@@ -14527,6 +14527,9 @@ describe('the graveyard clause family (D527)', () => {
       'Put target card from your graveyard on the bottom of your library.'],
     ['a card under its owner’s library',
       "Put target card from a graveyard on the bottom of its owner’s library."],
+    // Refused until D1276 as "a rider the move does not carry"; the engine applies the counter's rule now.
+    ['a return with a finality counter (D1276)',
+      'Return target creature card from your graveyard to the battlefield with a finality counter on it.'],
   ])('reads %s', (_why, text) => {
     const read = sorcery(text as string);
     expect(read.ok).toBe(true);
@@ -14536,8 +14539,6 @@ describe('the graveyard clause family (D527)', () => {
   });
 
   it.each([
-    ['a rider the move does not carry',
-      'Return target creature card from your graveyard to the battlefield with a finality counter on it.'],
     ['a subtype nothing has, which would match nothing (#341)',
       'Exile target Blorp card from a graveyard.'],
     ['a plural, which reads the same as a singular and is refused for it',

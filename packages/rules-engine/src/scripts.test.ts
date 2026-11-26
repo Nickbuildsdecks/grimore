@@ -30824,7 +30824,8 @@ describe('entering with counters of its own (D1078)', () => {
   it('reads every row whole; a rules counter or a size counter it cannot apply stays unread', () => {
     expect(deck.unknown).toEqual([]);
     for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
-    for (const counter of ['three time counters', 'a finality counter', 'a +1/+0 counter', 'a lore counter']) {
+    // Not "a finality counter" since D1276: the engine applies its rule, so entering with one reads.
+    for (const counter of ['three time counters', 'a +1/+0 counter', 'a lore counter']) {
       const odd = compileCard(C('Test Odd', `Test Odd enters with ${counter} on it.`, ['1', '1']) as never);
       expect(odd.ok && odd.unread.length, counter).toBe(1);
     }
@@ -46535,6 +46536,69 @@ describe('the Confluences: "Choose three. You may choose the same mode more than
     const hand = ids(s, 0, 'hand').length;
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Confluence'), modes: [2, 2, 2] } as Action)), 20);
     expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
+  });
+});
+
+describe('finality counters: exiled instead of going to a graveyard (D1276)', () => {
+  /*
+    "If a permanent with a finality counter on it would be put into a graveyard from the battlefield,
+    exile it instead" (CR 122.1i). The rule is the engine's, so it holds wherever the counter came
+    from; exiled instead, the permanent did not die, and nothing that watches deaths sees it.
+  */
+  const R = (name: string, text: string) => ({
+    name, type_line: 'Creature — Zombie', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const REPRISER = R('Test Repriser', '{0}: Return this card from your graveyard to the battlefield with a finality counter on it.');
+  const MARKER = R('Test Marker', '{0}: Put a finality counter on target creature.');
+  const ARTIST = R('Test Artist', 'Whenever a creature dies, you gain 1 life.');
+  const KILL = { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' };
+  const ROWS = [REPRISER, MARKER, ARTIST, KILL];
+  const deck = customDeck({ id: 'd1276', name: 'Finality', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], yard: readonly string[] = [], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1276', 1: 'd1276' }, deckSpecs: { d1276: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, graveyard: { 0: [...yard] }, hands: { 0: ['Test Kill', 'Test Kill'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kill = (s: GameState, id: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id }] } as Action)), 30);
+
+  it('reads both', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [REPRISER, MARKER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('comes back from the graveyard with a finality counter, and is exiled rather than dying', () => {
+    let s = table(['Test Artist'], ['Test Repriser']);
+    const repriser = find(s, 0, 'graveyard', 'Test Repriser');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: repriser, abilityIndex: 0 } as Action)), 30);
+    expect(s.instances[repriser]!.zone).toBe('battlefield');
+    expect(s.instances[repriser]!.counters['finality']).toBe(1);
+    const before = life(s, 0);
+    s = kill(s, repriser);
+    expect(s.instances[repriser]!.zone).toBe('exile');
+    expect(life(s, 0)).toBe(before);
+  });
+
+  it('a finality counter put on a creature: exiled when destroyed; without one, it dies', () => {
+    let s = table(['Test Marker', 'Test Artist'], [], ['Test Marker', 'Test Marker']);
+    const [marked, plain] = ids(s, 1, 'battlefield');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Marker'), abilityIndex: 0, targets: [{ kind: 'card', id: marked! }] } as Action)), 30);
+    expect(s.instances[marked!]!.counters['finality']).toBe(1);
+    s = kill(s, marked!);
+    expect(s.instances[marked!]!.zone).toBe('exile');
+    const before = life(s, 0);
+    s = kill(s, plain!);
+    expect(s.instances[plain!]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 1);
+  });
+
+  it('a token with a finality counter does not die: no death trigger', () => {
+    let s = table(['Test Artist']);
+    s = createToken(s, 1, { name: 'Zombie', typeLine: 'Token Creature — Zombie', manaCost: '', cmc: 0, power: '2', toughness: '2', oracleText: '', colors: ['B'] }, 1);
+    const token = ids(s, 1, 'battlefield')[0]!;
+    s = addCounters(s, token, 'finality', 1);
+    const before = life(s, 0);
+    s = kill(s, token);
+    expect(s.instances[token]).toBeUndefined();
+    expect(life(s, 0)).toBe(before);
   });
 });
 

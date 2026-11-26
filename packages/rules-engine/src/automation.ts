@@ -4185,6 +4185,22 @@ function replaceZoneChange(
       printed version says "nontoken", and the pool's own Rest in Peace was the counter-example.
     */
     const inst = next.instances[id];
+    /*
+      A finality counter (D1276, CR 122.1i): "If a permanent with a finality counter on it would be
+      put into a graveyard from the battlefield, exile it instead." The rule itself rather than any
+      permanent's, so it is asked first, of the permanent as it last was (`vanished`, whose counters
+      survive the move that wiped the card's), and only of what left the battlefield in this move
+      (`left`). A token's last state is there too, recorded after its move: exiled instead, it did
+      not die, and nothing that watches deaths sees it.
+    */
+    const last = next.vanished[id];
+    if (on === 'to-graveyard' && last !== undefined && next.left.includes(id) && (last.counters['finality'] ?? 0) > 0) {
+      const named = next.cardDefs[last.defKey]?.name ?? 'a permanent';
+      if (inst !== undefined) next = exileCard(next, id);
+      next = { ...next, replacements: [...next.replacements, `${named}: exiled instead (finality counter)`] };
+      replaced.add(id);
+      continue;
+    }
     if (inst === undefined) {
       /*
         And the rule's own test, asked of the token's last state (D1239): Leyline of the Void's

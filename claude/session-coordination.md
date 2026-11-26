@@ -192,3 +192,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1272 pushed in a8b8372. D1273 counters "for each": any counter kind on self, opponents dealt damage this turn, two types and/or in a graveyard (done).
 - D1273 pushed in b2d6a87. D1274 "… if it's <colour>" asked as it resolves: Pyroblast, Hydroblast, Burnout, the Ring cycle (done).
 - D1274 pushed in 5757a33. D1275 the Confluences: ModalDef.repeats, combinations with repetition (done).
+- D1275 pushed in bdaf9d2. D1276 finality counters: the rule in replaceZoneChange, readers for returns and self-returns with one, finality out of RULES_COUNTERS (done).
