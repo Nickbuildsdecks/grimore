@@ -1606,6 +1606,21 @@ export function manaSources(
       turn three, which is the Mutavault mistake in `payFrom` wearing different clothes.
     */
     if (usable.some((u) => !u.sacrifices)) usable = usable.filter((u) => !u.sacrifices);
+    /*
+      And a run that covers a smaller row (D1306): a Forest under Gift of Paradise has its own {G}
+      and five runs of two of one colour. The solver sizes a choice at one mana, so with the {G} in
+      the choice the land would pay one where it can pay two. When the longest rows are runs of one
+      colour and every shorter row's colours are among them, only the longest are the source: two of
+      a colour is never worse than one of it. The player still sees every row offered.
+    */
+    const longest = most(usable);
+    if (longest > 1 && usable.some((u) => u.produces.length < longest)) {
+      const top = usable.filter((u) => u.produces.length === longest && new Set(u.produces).size === 1);
+      const colours = new Set(top.map((u) => u.produces[0]));
+      if (top.length > 0 && usable.every((u) => u.produces.length === longest ? top.includes(u) : u.produces.every((m) => colours.has(m)))) {
+        usable = top;
+      }
+    }
     if (usable.length === 0) continue;
     const cost = usable[0]!.life;
     const eats = usable[0]!.sacrifices;
@@ -1674,6 +1689,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     let tapsForMana = false;
     // The kinds its taps make, for a Mana Flare's one more (D1106): optimistic, as the rest is.
     const tapKinds = new Set<ManaType>();
+    const tapMost = new Map<ManaType, number>();
     // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
     // which is the point of both: one answer to "what can this seat pay". And Arrest's (D943).
     // And a land whose land types were set keeps only its new type's mana (D1246), as in `manaSources`.
@@ -1724,12 +1740,21 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       // because a player looking at Mana Confluence already counts it as a land.
       const life = ability.cost.life ?? 0;
       if (!canPayLife(state, seat, life)) continue;
-      for (const type of producedBy(state, ability, id, seat)) {
-        pool = addMana(pool, type as ManaType, 1);
-        if (ability.cost.tap) tapKinds.add(type as ManaType);
+      /*
+        A tap ability's mana is the most of each kind any one of them makes (D1306), since one tap
+        pays for one: a Forest under Gift of Paradise is two green, not its own one plus the gift's
+        two. Optimistic across kinds, as before, and summed for an ability that does not tap.
+      */
+      const made = new Map<ManaType, number>();
+      for (const type of producedBy(state, ability, id, seat)) made.set(type as ManaType, (made.get(type as ManaType) ?? 0) + 1);
+      for (const [type, n] of made) {
+        if (!ability.cost.tap) { pool = addMana(pool, type, n); continue; }
+        tapKinds.add(type);
+        tapMost.set(type, Math.max(tapMost.get(type) ?? 0, n));
       }
       if (ability.cost.tap) tapsForMana = true;
     }
+    for (const [type, n] of tapMost) pool = addMana(pool, type, n);
     // A Wild Growth's mana, once for the one tap (D1088).
     if (tapsForMana) for (const type of tapManaExtras(state, id)) pool = addMana(pool, type, 1);
     // A Mana Flare's (D1106).

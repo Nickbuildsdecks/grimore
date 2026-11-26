@@ -48089,6 +48089,35 @@ describe('exiling chosen cards from your graveyard (D1304)', () => {
   });
 });
 
+describe('"Add two mana of any one color", granted (D1306)', () => {
+  const GIFT = { name: 'Test Gift', type_line: 'Enchantment — Aura', oracle_text: 'Enchant land\nEnchanted land has "{T}: Add two mana of any one color."', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' };
+  const deck = customDeck({ id: 'd1306', name: 'Gift', entries: [{ name: 'Test Gift', count: 4 }, { name: 'Forest', count: 56 }], data: [GIFT] as never[] });
+
+  it('reads whole, as one ability per colour making two of it', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(GIFT as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the enchanted Forest offers two blue, or two of any other colour, besides its own green', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1306', 1: 'd1306' }, deckSpecs: { d1306: deck.deck },
+      hands: { 0: ['Test Gift'] }, battlefield: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gift'), targets: [{ kind: 'card', id: forest }] } as Action)), 20);
+    // One source for the land, its choice a run of two of any colour (D697's shape), not one mana.
+    const source = manaSources(s, 0 as SeatIndex).filter((e) => e.key === forest);
+    expect(source.length).toBe(1);
+    expect(source[0]).toMatchObject({ chooseRun: 2, choose: true });
+    expect([...source[0]!.produces].sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+    expect(potentialMana(s, 0).U).toBe(2);
+    expect(potentialMana(s, 0).G).toBe(2);
+    // And the player is still offered the land's own {G}, beside the five granted rows.
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === forest && p.kind === 'activate');
+    expect(rows.length).toBeGreaterThanOrEqual(6);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

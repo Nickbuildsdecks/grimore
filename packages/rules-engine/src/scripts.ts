@@ -36381,7 +36381,15 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const choice = /^add ((?:\{[WUBRGC]\}, )*\{[WUBRGC]\},? or \{[WUBRGC]\})$/i.exec(manaClause);
   const anyColour = /^add one mana of any colou?r$/i.test(manaClause);
-  if (choice !== null || anyColour) {
+  /*
+    And "Add two mana of any one color" (D1306): one colour chosen, that many of it. Gift of Paradise,
+    Grafted Growth and New Horizons grant it to the land they enchant, which is what this reader is
+    for: `cardFromData`'s land path reads it on a land, and a granted ability is read here. One
+    ability per colour, as above, each making that many.
+  */
+  const runOf = /^add (two|three|four|five) mana of any one colou?r$/i.exec(manaClause);
+  const many = runOf === null ? 1 : countFrom(runOf[1]!) ?? 0;
+  if (choice !== null || anyColour || (runOf !== null && many > 1)) {
     const options: readonly ManaType[] = choice === null
       ? COLOURS
       : (choice[1]!.match(/\{([WUBRGC])\}/g) ?? [])
@@ -36391,8 +36399,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       abilities: options.map((colour) => ({
         ...timing,
         cost,
-        description: `${split[1]!.trim()}: Add {${colour}}.${spendOnly ? ` Spend this mana only ${spendOnly.words}.` : ''}`,
-        produces: [colour],
+        description: `${split[1]!.trim()}: Add ${`{${colour}}`.repeat(many)}.${spendOnly ? ` Spend this mana only ${spendOnly.words}.` : ''}`,
+        produces: Array.from({ length: many }, () => colour),
         ...only,
       })),
     };
