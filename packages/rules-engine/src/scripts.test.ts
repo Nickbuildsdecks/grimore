@@ -46113,6 +46113,81 @@ describe('a search bounded by "where X is …", its destination in the next sent
   });
 });
 
+describe('five more "where X is" measures (D1269)', () => {
+  const S = (name: string, phrase: string) => ({
+    name, type_line: 'Sorcery', oracle_text: `You gain X life, where X is ${phrase}.`, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+  });
+  const C = (name: string, power: number) => ({
+    name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: `{${power}}`, cmc: power, colors: ['G'], layout: 'normal', power: String(power), toughness: '2',
+  });
+  const ROWS = [
+    S('Test Mirror', 'your life total'),
+    S('Test Ossuary', 'the number of permanent cards in your graveyard'),
+    S('Test Harvest', 'the number of different powers among creatures you control'),
+    S('Test Envy', 'the number of players who control more lands than you'),
+    S('Test Grudge', 'the number of players who control at least two more lands than you'),
+    S('Test Legacy', 'the greatest mana value of a commander you own on the battlefield or in the command zone'),
+    C('Test Two', 2), C('Test Other Two', 2), C('Test Five', 5),
+    { name: 'Test Shock', type_line: 'Instant', oracle_text: 'Test Shock deals 2 damage to any target.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1269', name: 'Measures',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 42 }],
+    data: ROWS as never[],
+  });
+  const gained = (spell: string, setup: { mine?: readonly string[]; theirs?: readonly string[]; yard?: readonly string[] }) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1269', 1: 'd1269' }, deckSpecs: { d1269: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: [...(setup.mine ?? [])], 1: [...(setup.theirs ?? [])] },
+      graveyard: { 0: [...(setup.yard ?? [])] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 20);
+    return life(s, 0) - before;
+  };
+  const startingLife = () => life(advanceTo(arena({ decks: { 0: 'd1269', 1: 'd1269' }, deckSpecs: { d1269: deck.deck }, turn: 3, firstSeat: 0 }), 'precombat-main'), 0);
+
+  it('reads all five', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 6)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('your life total doubles it', () => {
+    expect(gained('Test Mirror', {})).toBe(startingLife());
+    expect(startingLife()).toBeGreaterThan(0);
+  });
+
+  it('permanent cards in the graveyard: creatures and lands count, an instant does not', () => {
+    expect(gained('Test Ossuary', { yard: ['Test Two', 'Plains', 'Test Shock'] })).toBe(2);
+  });
+
+  it('different powers: two 2s and a 5 are two powers', () => {
+    expect(gained('Test Harvest', { mine: ['Test Two', 'Test Other Two', 'Test Five'] })).toBe(2);
+  });
+
+  it('players with more lands, and with at least two more', () => {
+    const board = { mine: ['Plains'], theirs: ['Plains', 'Plains'] };
+    expect(gained('Test Envy', board)).toBe(1);
+    expect(gained('Test Grudge', board)).toBe(0);
+    expect(gained('Test Grudge', { mine: ['Plains'], theirs: ['Plains', 'Plains', 'Plains'] })).toBe(1);
+    expect(gained('Test Envy', { mine: ['Plains', 'Plains'], theirs: ['Plains', 'Plains'] })).toBe(0);
+  });
+
+  it('the greatest mana value of a commander you own: a Five and a Two as commanders give 5, none gives 0', () => {
+    expect(gained('Test Legacy', { mine: ['Test Five'] })).toBe(0);
+    let s = advanceTo(arena({
+      decks: { 0: 'd1269', 1: 'd1269' }, deckSpecs: { d1269: deck.deck },
+      hands: { 0: ['Test Legacy'] }, battlefield: { 0: ['Test Two', 'Test Five'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const five = find(s, 0, 'battlefield', 'Test Five');
+    const two = find(s, 0, 'battlefield', 'Test Two');
+    s = { ...s, instances: { ...s.instances, [five]: { ...s.instances[five]!, isCommander: true }, [two]: { ...s.instances[two]!, isCommander: true } } };
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Legacy') } as Action)), 20);
+    expect(life(s, 0) - before).toBe(5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

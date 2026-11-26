@@ -248,6 +248,16 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     keys: ['abilities'],
     digest: 'f1b506d1',
   },
+  /*
+    D1269: Ajani, Caller of the Pride reads whole now that "where X is your life total" is a count, so
+    it is compared for the first time. The −8 agrees. The +1's compiled target carries a `filter`
+    function the hand-written target does not; both are "up to one target creature".
+  */
+  'Ajani, Caller of the Pride': {
+    why: "the compiled +1 target carries a filter function the hand-written one leaves out",
+    keys: ['abilities'],
+    digest: 'bb872a04',
+  },
 };
   /*
     **Two more were here and are settled (D420).** `Flame Slash` wanted the `removesACreature` hint

@@ -6016,7 +6016,6 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it.each([
       ['Jace, Memory Adept', '\u22127: Any number of target players each draw twenty cards.'],
-      ['Ajani, Caller of the Pride', '\u22128: Create X 2/2 white Cat creature tokens, where X is your life total.'],
     ])('%s reads every ability but its printed ultimate, and says which (D577)', (card, ultimate) => {
       /*
         Both read whole while the pool gave them ultimates of its own. The printed ones are two
@@ -6034,6 +6033,22 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         expect(ability.description).toBe(theirs[i]!.description);
       });
       expect(theirs[2]!.description).toBe(ultimate);
+    });
+
+    it('Ajani, Caller of the Pride reads its ultimate too, since "where X is your life total" (D1269)', () => {
+      /*
+        It was the second row of the table above until D1269 read "your life total" as a count. All
+        three abilities now agree with the hand-written card in cost and description.
+      */
+      const compiled = compiledScript('Ajani, Caller of the Pride');
+      expect(compiled.unread).toEqual([]);
+      const mine = abilitiesOf(compiled.script);
+      const theirs = abilitiesOf(scriptFor('Ajani, Caller of the Pride'));
+      expect(mine).toHaveLength(3);
+      mine.forEach((ability, i) => {
+        expect(ability.cost).toEqual(theirs[i]!.cost);
+        expect(ability.description).toBe(theirs[i]!.description);
+      });
     });
 
     it.each([

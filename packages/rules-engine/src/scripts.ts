@@ -13371,7 +13371,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = new RegExp(`^(.*?),\\s*where X is ((?:\\w+ plus |twice )?the number of .+|your devotion to .+|the amount of life you gained this turn|the (?:greatest|highest) (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is ((?:\\w+ plus |twice )?the number of .+|your devotion to .+|your life total|the greatest mana value of a commander you own .+|the amount of life you gained this turn|the (?:greatest|highest) (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -22020,6 +22020,8 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
     creatures that player controls". Each part is a measure this function reads.
   */
   const compound = plain(phrase).trim().replace(/\.$/, '');
+  const more = moreMeasures(compound);
+  if (more !== null) return more;
   const twice = /^twice (the number of .+)$/i.exec(compound);
   if (twice !== null) {
     const base = boardCount(twice[1]!, name);
@@ -22124,6 +22126,49 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
   }
   const announced = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
   return announced === null ? null : countOfThing(announced[1]!, name, 'plural');
+}
+
+/**
+ * Measures `boardCount` reads that are not "the number of <thing>" in `countOfThing`'s grammar (D1269).
+ */
+function moreMeasures(text: string): ((c: EffectContext) => number) | null {
+  /*
+    Five more measures (D1269), each read as the effect runs, from the board then.
+    - "Your life total" (Storm Herd, Ajani, Caller of the Pride, Death's Shadow).
+    - "The number of permanent cards in your graveyard": artifact, battle, creature, enchantment,
+      land and planeswalker cards, by the printed type line, as every graveyard count is.
+    - "The number of different powers among creatures you control" (Celebrate the Harvest).
+    - "The number of players who control [at least two] more lands than you" (Oreskos Explorer,
+      Surveyor's Scope); opponents only can, so eliminated seats are not counted.
+    - "The greatest mana value of a commander you own on the battlefield or in the command zone"
+      (Cloudkill, Majestic Genesis, the Visions cycle), 0 with none there.
+  */
+  if (/^your life total$/i.test(text)) return (c) => Math.max(0, c.state.seats[c.controller]?.life ?? 0);
+  if (/^the number of permanent cards in your graveyard$/i.test(text)) {
+    const PERMANENT = ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'];
+    return (c) => listAt(c.state, zoneKey(c.controller, 'graveyard')).filter((id) => {
+      const line = parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine);
+      return PERMANENT.some((kind) => hasType(line, kind));
+    }).length;
+  }
+  if (/^the number of different powers among creatures you control$/i.test(text)) {
+    return (c) => new Set(creaturesControlledBy(c.state, c.controller)
+      .map((id) => characteristicsOf(c.state, c.state.instances[id]!).power)).size;
+  }
+  const moreLands = /^the number of players who control (at least two )?more lands than you$/i.exec(text);
+  if (moreLands !== null) {
+    const margin = moreLands[1] === undefined ? 1 : 2;
+    const lands = (state: GameState, seat: SeatIndex) => listAt(state, zoneKey(seat, 'battlefield'))
+      .filter((id) => hasType(characteristicsOf(state, state.instances[id]!).typeLine, 'land')).length;
+    return (c) => opponentsOf(c.state, c.controller)
+      .filter((seat) => lands(c.state, seat) >= lands(c.state, c.controller) + margin).length;
+  }
+  if (/^the greatest mana value of a commander you own on the battlefield or in the command zone$/i.test(text)) {
+    return (c) => Math.max(0, ...Object.values(c.state.instances)
+      .filter((inst) => inst.isCommander === true && inst.owner === c.controller && (inst.zone === 'battlefield' || inst.zone === 'command'))
+      .map((inst) => c.state.cardDefs[inst.defKey]?.cmc ?? 0));
+  }
+  return null;
 }
 
 /**
