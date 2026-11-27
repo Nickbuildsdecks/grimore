@@ -34289,6 +34289,37 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * Scroll Rack (D1350): "Exile any number of cards from your hand face down. Put that many cards from
+ * the top of your library into your hand. Then look at the exiled cards and put them on top of your
+ * library in any order."
+ *
+ * One question: the cards from hand, in the order they go back, the first chosen on top. The cards
+ * that were on top go to hand (put there, not drawn: nothing that counts draws sees them), and the
+ * chosen cards go on top. The face-down exile in between has no game in it, since nothing can happen
+ * between the three steps, so it is not modelled. The bot chooses nothing: what to put back is a
+ * plan it cannot make.
+ */
+function scrollRack(clauses: readonly string[]): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  if (!/^exile any number of cards from your hand face down\. put that many cards from the top of your library into your hand\. (?:then )?look at the exiled cards and put them on top of your library in any order\.?$/i.test(text)) return null;
+  return {
+    decisions: [{
+      who: 'controller', from: 'hand', min: 0, max: ANY_NUMBER,
+      prompt: 'Choose cards to put on top of your library, the first chosen on top',
+      pick: () => [],
+    }],
+    effect: (c) => {
+      const chosen = chosenCards(c).filter((id) => c.state.instances[id]?.zone === 'hand' && c.state.instances[id]?.zoneSeat === c.controller);
+      if (chosen.length === 0) return c.state;
+      const top = listAt(c.state, zoneKey(c.controller, 'library')).slice(0, chosen.length);
+      let next = moveToHand(c.state, top);
+      for (const id of [...chosen].reverse()) next = putOnTopOfLibrary(next, id);
+      return next;
+    },
+  };
+}
+
+/**
  * Approach of the Second Sun (D1349): "If this spell was cast from your hand and you've cast another
  * spell named Approach of the Second Sun this game, you win the game. Otherwise, put Approach of the
  * Second Sun into its owner's library seventh from the top and you gain 7 life."
@@ -35095,6 +35126,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // Scroll Rack (D1350): see `scrollRack`.
+  const racked = scrollRack(clauses);
+  if (racked !== null) return racked;
   // Approach of the Second Sun (D1349): see `approachOfTheSecondSun`.
   const approach = approachOfTheSecondSun(clauses, name);
   if (approach !== null) return approach;

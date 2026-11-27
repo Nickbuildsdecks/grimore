@@ -50036,6 +50036,45 @@ describe('Approach of the Second Sun: the second cast from hand wins (D1349)', (
   });
 });
 
+describe('Scroll Rack: cards from hand traded for the top of the library (D1350)', () => {
+  const RACK = { name: 'Test Rack', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{1}, {T}: Exile any number of cards from your hand face down. Put that many cards from the top of your library into your hand. Then look at the exiled cards and put them on top of your library in any order.' };
+  const deck = customDeck({ id: 'd1350', name: 'Rack', entries: [{ name: 'Test Rack', count: 2 }, { name: 'Hill Giant', count: 6 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 46 }], data: [RACK] as never[] });
+  const activate = (): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1350', 1: 'd1350' }, deckSpecs: { d1350: deck.deck },
+      battlefield: { 0: ['Test Rack', 'Forest'] }, hands: { 0: ['Hill Giant', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const rack = find(s, 0, 'battlefield', 'Test Rack');
+    const play = legalActions(s, 0).plays.find((p) => p.card === rack && p.kind === 'activate')!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: rack, abilityIndex: play.abilityIndex! } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(RACK as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two cards go on top in the order chosen, and the two that were there come to hand', () => {
+    let s = activate();
+    const giant = find(s, 0, 'hand', 'Hill Giant');
+    const bears = find(s, 0, 'hand', 'Grizzly Bears');
+    const top = ids(s, 0, 'library').slice(0, 2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [bears, giant] } as Action), 20);
+    expect(ids(s, 0, 'library').slice(0, 2)).toEqual([bears, giant]);
+    expect(top.every((id) => s.instances[id]!.zone === 'hand')).toBe(true);
+  });
+
+  it('none chosen: nothing moves', () => {
+    let s = activate();
+    const hand = [...ids(s, 0, 'hand')].sort();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect([...ids(s, 0, 'hand')].sort()).toEqual(hand);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
