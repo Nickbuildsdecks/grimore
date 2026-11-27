@@ -67404,3 +67404,36 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6524 of 6524 pass.
 
 Coverage: 17,553 of 31,900 cards (+1 over D1346's 17,552), 40,393 of 59,888 lines (+1).
+
+## D1348 — Mana Echoes: mana as many as the creatures that share a type
+
+Mana Echoes is on the second staples list: "Whenever a creature enters, you may add an amount of
+{C} equal to the number of creatures you control that share a creature type with it." Three things
+were missing.
+
+**The spelling.** The counted-mana reader (`countScaledEffect`) read "Add {B} for each …" only.
+"Add an amount of {C} equal to the number of …" is now rewritten as "Add X {C}, where X is the
+number of …", and the announced form of one symbol reads: X of that symbol.
+
+**The count.** "Creatures you control that share a creature type with it", next to D861's Shared
+Animosity count. "It" is the event's creature, its creature types read live. It counts itself when
+you control it, since it shares its own types, which is the card's ruling.
+
+**On a mana ability.** D1139's "an amount of {G} equal to …" also takes any count D1140's "where X
+is" reads. For example, Rotating Fireplace's "the number of time counters on ~", whose other lines
+do not read yet.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole, and so does "add X {C}, where X is the number of creatures you control".
+- With two Bears out, a third enters: asked, and on yes three {C}.
+- Declined: no mana.
+- A rock with three charge counters makes three {C}.
+
+Faults injected by hand: 3, all caught.
+- The entering creature not counting itself.
+- One mana whatever the count.
+- The rock's count fixed at one.
+
+The scripts tests, compile tests and pins: 6528 of 6528 pass.
+
+Coverage: 17,555 of 31,900 cards (+2 over D1347's 17,553), 40,396 of 59,888 lines (+3).
