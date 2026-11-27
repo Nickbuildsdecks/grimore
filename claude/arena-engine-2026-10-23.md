@@ -50874,3 +50874,42 @@ Faults injected by hand: 1, caught (the old type test put back).
 The scripts tests, compile tests and pins: 6608 of 6608 pass.
 
 Coverage: 17,642 of 31,900 cards (+4 over D1372's 17,638), 40,527 of 59,888 lines (+5).
+
+## D1374 — Tribute
+
+"Tribute 2 (As this creature enters, an opponent of your choice may put two +1/+1 counters on it.)
+When ~ enters, if tribute wasn't paid, …" Eleven legal cards from Born of the Gods, none read
+before.
+
+**The rule.**
+- Tribute N is an as-it-enters choice (CR 702.104a), read the way riot and unleash are
+  (`entersChoice: 'tribute'`): a yes-or-no asked of an opponent as the creature spell resolves,
+  before the creature moves.
+- Paid, the N +1/+1 counters and a `TRIBUTED` marker go on as it arrives.
+- "If tribute wasn't paid" is the trigger's intervening condition on the marker's absence.
+
+Two simplifications, stated:
+- "An opponent of your choice" is asked of the next opponent in turn order. In a duel that is the
+  only opponent. In a pod, which opponent is not offered as a choice.
+- A tribute creature put onto the battlefield without being cast was asked nothing, so its tribute
+  was not paid.
+
+Read whole now: 10 of the 11 (Fanatic of Xenagos, Nessian Demolok, Nessian Wilds Ravager, Oracle of
+Bones, Ornitharch, Pharagax Giant, Shrike Harpy, Siren of the Fanged Coast, Snake of the Golden
+Grove, Thunder Brute).
+
+**Tests.** 2 engine tests:
+- The fixture reads whole.
+- The opponent is asked as the spell resolves. Paid: two +1/+1 counters and no life. Declined: no
+  counters and 4 life.
+
+`CardScript.tribute` joins the mechanic-coverage exemptions, naming its runtime test.
+
+Faults injected by hand: 3, all caught.
+- No counters.
+- No marker.
+- Asked of the controller.
+
+The scripts tests, compile tests and pins: 6610 of 6610 pass. Web typecheck clean.
+
+Coverage: 17,652 of 31,900 cards (+10 over D1373's 17,642), 40,548 of 59,888 lines (+21).
