@@ -51256,3 +51256,37 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6634 of 6634 pass. Test typecheck clean.
 
 Coverage: 17,709 of 31,900 cards (+9 over D1380's 17,700), 40,642 of 59,888 lines (+17).
+
+## D1382 — "Loses the game", and Phage the Untouchable
+
+"Whenever Phage deals combat damage to a player, that player loses the game." D690 made "you lose
+the game" a rule the engine keeps (`loseTheGame`, with CR 104.3a's "can't lose" for Platinum
+Angel), but no clause reader said it.
+
+**The readers.**
+- "Target player loses the game", "target opponent loses the game" and "you lose the game" are
+  read as clauses: Door to Nothingness. Through the hit-player swap (D566) this also reads Phage's
+  "that player loses the game".
+- "If you didn't cast it from your hand", the negation of D607's "if you cast it from your hand":
+  Phage's arrival.
+- "Destroy that creature. It can't be regenerated." on a trigger about the creature it fought: the
+  event-relative destroy carries D535's rider. This is Phage's last line.
+
+Phage the Untouchable and Door to Nothingness read whole.
+
+**Tests.** 5 engine tests:
+- The fixtures read whole.
+- The Door's target loses the game.
+- Cast from the hand, Phage's controller does not lose.
+- Unblocked, the player it hits loses.
+- Blocked by a 2/2 with a regeneration shield, the blocker is destroyed anyway.
+
+Faults injected by hand: 4, all caught.
+- The controller losing instead of the target.
+- The negation ignored.
+- The rider ignored.
+- No "loses the game" reader.
+
+The scripts tests, compile tests and pins: 6639 of 6639 pass. Test typecheck clean.
+
+Coverage: 17,713 of 31,900 cards (+4 over D1381's 17,709), 40,655 of 59,888 lines (+13).
