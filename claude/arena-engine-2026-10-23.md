@@ -49486,3 +49486,32 @@ With both fixes on the D1326 build, seed 96041 finishes, on turn 64 after 808 mo
 The scripts tests, compile tests and pins: 6481 of 6481 pass.
 
 Coverage: 17,515 of 31,900 cards (+0 over D1333's 17,515), 40,340 of 59,888 lines (+0).
+
+## D1336 — a hand question beside a second target
+
+"Target opponent reveals their hand" opens 51 legal lines, and 31 of them did not read. One reason
+was a rule in `composeEffects`: with two targeting sentences, a sentence that asks a question was
+refused. The plan asks "target player" of the first player among all the targets, which another
+sentence's target could be. Aggressive Negotiations was refused for it: "Target opponent reveals
+their hand. You choose a nonland card from it and exile that card. Put a +1/+1 counter on up to one
+target creature you control."
+
+**The rule now.** The first targeting part may ask its question when it aims at players alone and
+no later target could be a player: not `player`, `any` or `player-or-planeswalker`. Then the first
+player among the targets can only be its own.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole, with a player target and then a creature target.
+- Cast at the opponent and my creature:
+  - the caster is asked, from the opponent's two nonland cards;
+  - the chosen card is exiled;
+  - the counter goes on my creature.
+- The same sentence followed by "deals 2 damage to any target" is still refused.
+
+Faults injected by hand: 2, both caught.
+- The old refusal restored.
+- The later-target check removed.
+
+The scripts tests, compile tests and pins: 6484 of 6484 pass.
+
+Coverage: 17,517 of 31,900 cards (+2 over D1335's 17,515), 40,343 of 59,888 lines (+3).
