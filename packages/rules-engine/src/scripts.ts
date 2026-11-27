@@ -31812,6 +31812,54 @@ function readEffect(
     }
   }
   /*
+    Untargeted returns of more than one card, or to the battlefield (D1353): "Return up to two
+    creature cards from your graveyard to the battlefield", "return any number of artifact creature
+    cards with total mana value 6 or less from your graveyard to the battlefield" (Technomancer),
+    "Return two creature cards from your graveyard to your hand". Chosen as it resolves, not
+    targeted: a fixed count is that many, or as many as there are (CR 609.3); "up to" and "any number
+    of" from nought. A total mana value bounds the answer as D1352's search does. The bot takes the
+    costliest cards the count and the total allow.
+  */
+  const manyFromYard = /^(you may )?return (an?|one|two|three|four|five|up to (?:one|two|three|four|five)|any number of) (.+?) from your graveyard to (your hand|the battlefield(?: tapped)?)(?: under your control)?$/i.exec(clause.trim());
+  if (manyFromYard !== null && !(/^(?:an?|up to one)$/i.test(manyFromYard[2]!) && /^your hand$/i.test(manyFromYard[4]!))) {
+    const quantity = manyFromYard[2]!.toLowerCase();
+    const upTo = /^up to /.test(quantity);
+    const any = quantity === 'any number of';
+    const n = any ? ANY_NUMBER : /^an?$/.test(quantity) ? 1 : countFrom(quantity.replace(/^up to /, ''));
+    const totalled = /^(.+?) with total mana value (\d+) or less$/i.exec(manyFromYard[3]!.trim());
+    const cards = (totalled === null ? manyFromYard[3]! : totalled[1]!).trim();
+    const bound = totalled === null ? undefined : Number(totalled[2]);
+    const kind = n === null || n < 1 ? null : libraryFilter(`a ${cards.replace(/\bcards\b/i, 'card')}`, name);
+    if (n !== null && n > 0 && kind !== null && kind.xBound !== true && (n === 1 || /\bcards\b/i.test(cards) || any)) {
+      const test = kind.filter;
+      const optional = manyFromYard[1] !== undefined || upTo || any;
+      const to = manyFromYard[4]!.toLowerCase();
+      const cmc = (state: GameState, id: string): number => state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0;
+      return {
+        decisions: [{
+          who: 'controller', from: 'graveyard', min: optional ? 0 : n, max: n,
+          prompt: clause.trim().replace(/^you may /i, '').replace(/^./, (ch) => ch.toUpperCase()),
+          filter: (state: GameState, id: string, chooser: SeatIndex) => test === null || test === undefined || test(state, id, chooser),
+          ...(bound === undefined ? {} : { totalManaValueAtMost: bound }),
+          pick: (state: GameState, _chooser: SeatIndex, candidates: readonly string[]) => {
+            let left = bound ?? Infinity;
+            const out: string[] = [];
+            for (const id of [...candidates].sort((a, b) => cmc(state, b) - cmc(state, a))) {
+              if (out.length >= n) break;
+              if (cmc(state, id) <= left) { out.push(id); left -= cmc(state, id); }
+            }
+            return out;
+          },
+        }],
+        effect: (c) => {
+          const found = chosenCards(c).filter((id) => c.state.instances[id]?.zone === 'graveyard');
+          if (to === 'your hand') return moveToHand(c.state, found);
+          return found.reduce((state, id) => putOntoBattlefield(state, id, c.controller, { tapped: to.endsWith('tapped') }), c.state);
+        },
+      };
+    }
+  }
+  /*
     "Exile two cards from your graveyard", "exile a creature card from your graveyard" (D1304): chosen,
     not targeted, so a question as it resolves. Exactly that many; with fewer there, as many as there
     are (CR 609.3), except as the opener of a "you may X. If you do" (see `optionalEffect`).

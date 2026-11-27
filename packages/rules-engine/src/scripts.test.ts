@@ -50162,6 +50162,57 @@ describe('Protean Hulk: a search bounded by total mana value (D1352)', () => {
   });
 });
 
+describe('untargeted returns from the graveyard: counts, the battlefield, a total (D1353)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text });
+  const DIRGE = card('Test Dirge', 'Return up to two creature cards with total mana value 4 or less from your graveyard to the battlefield.');
+  const RAISE = card('Test Raise', 'Return two creature cards from your graveyard to your hand.');
+  const ROWS = [DIRGE, RAISE];
+  const deck = customDeck({ id: 'd1353', name: 'Dirge', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 6 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const cast = (name: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1353', 1: 'd1353' }, deckSpecs: { d1353: deck.deck },
+      hands: { 0: [name] }, graveyard: { 0: ['Hill Giant', 'Grizzly Bears', 'Grizzly Bears', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+  const yard = (s: GameState, name: string) => ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) === name);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('up to two, total 4: Giant and Bears refused, two Bears to the battlefield', () => {
+    let s = cast('Test Dirge');
+    expect(s.pendingDecision).toMatchObject({ min: 0, max: 2, totalManaValueAtMost: 4 });
+    // Creatures only: the Swamp is not offered.
+    expect(s.pendingDecision!.candidates.some((id) => nameOf(s, id) === 'Swamp')).toBe(false);
+    const [giant] = yard(s, 'Hill Giant');
+    const bears = yard(s, 'Grizzly Bears');
+    expect(() => apply(s, { type: 'auto:decide', by: 0, cards: [giant!, bears[0]!] } as Action)).toThrow(/total mana value/);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: bears } as Action), 20);
+    expect(bears.every((id) => s.instances[id]!.zone === 'battlefield')).toBe(true);
+  });
+
+  it('two to hand: exactly two', () => {
+    let s = cast('Test Raise');
+    expect(s.pendingDecision).toMatchObject({ min: 2, max: 2 });
+    const [giant] = yard(s, 'Hill Giant');
+    const [bear] = yard(s, 'Grizzly Bears');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [giant!, bear!] } as Action), 20);
+    expect([giant, bear].every((id) => s.instances[id!]!.zone === 'hand')).toBe(true);
+  });
+
+  it('the bot: the costliest within the total', () => {
+    let s = cast('Test Dirge');
+    s = drain(apply(s, botAction(s, 0)!), 20);
+    expect(yard(s, 'Hill Giant')).toHaveLength(0);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Hill Giant')).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
