@@ -68655,3 +68655,39 @@ The scripts tests, compile tests and pins: 6628 of 6628 pass. Test typecheck and
 clean.
 
 Coverage: 17,684 of 31,900 cards (+6 over D1378's 17,678), 40,598 of 59,888 lines (+8).
+
+## D1380 — "You may pay {X}. When you do", and a card that calls itself he or she
+
+Two pieces, both on trigger lines.
+
+**The reflexive form of D1379.** "When Electro leaves the battlefield, you may pay {X}. When you
+do, he deals X damage to target player." Also Wildborn Preserver, Rose Room Treasurer and Tester of
+the Tangential. The first half is D1379's priced yes-or-no and X. The reflexive trigger it queues
+(D948) carries the X paid (`reflexive[].amount`), which becomes its stack object's event amount, and
+the second half reads X as "that many" (D903). Its targets are chosen as it goes on the stack,
+after X is paid (CR 603.12).
+
+**Pronouns.** Oracle text names a character card with its own pronouns: "When Gandalf enters, he
+deals 3 damage divided …", "When Momo enters, he deals 4 damage …", "she gains indestructible",
+"put a +1/+1 counter on him", "his power". Oracle text has used "they" for players since 2017, so a
+gendered pronoun on a card is the card. `selfPronouns` reads them as "it" and "its" on a trigger
+line, and never inside a hyphenated name ("She-Hulk"). 13 of the 28 unread trigger lines that do
+this now read; the rest wait on other shapes ("for each time he was kicked", "is dealt damage").
+
+Read whole now: Gandalf, Spark Starter; Momo, Rambunctious Rascal; Boomerang, Blade Flinger; Jet,
+Freedom Fighter; and others. Electro's trigger reads, and its static line about red mana does not.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole.
+- Pay X of three: the reflexive trigger is aimed after the payment and deals 3.
+- "When Test Hero enters, he deals 2 damage to target creature an opponent controls" kills a Bear.
+
+Faults injected by hand: 4, all caught.
+- The X not put on the reflexive trigger.
+- The X not recorded on the queue.
+- No pronoun reading.
+- The second half read without the X marked.
+
+The scripts tests, compile tests and pins: 6631 of 6631 pass. Test typecheck clean.
+
+Coverage: 17,700 of 31,900 cards (+16 over D1379's 17,684), 40,625 of 59,888 lines (+27).
