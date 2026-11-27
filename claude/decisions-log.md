@@ -68072,3 +68072,33 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6586 of 6586 pass.
 
 Coverage: 17,611 of 31,900 cards (+3 over D1364's 17,608), 40,494 of 59,888 lines (+10).
+
+## D1366 — "As long as you control a Jace planeswalker"
+
+Twenty legal lines condition a creature on a planeswalker of one type: Jace's Sentinel, Dovin's
+Automaton, Renegade Firebrand, Guardian of the Great Conduit, the planeswalker decks' creatures. For
+17 of them it was the card's only unread line. `boardCondition` read "you control a Wizard" and "a
+Vehicle", but not "a Jace planeswalker".
+
+**The rule.** A capitalised word followed by "planeswalker" is a planeswalker type (CR 205.3j), asked
+of the type line of a planeswalker the player controls. The leading form ("As long as you control a
+Jace planeswalker, ~ gets +1/+0") and the trailing form ("~ gets +2/+2 as long as you control a
+Garruk planeswalker") both read, because both go through this condition.
+
+18 of the 20 lines read now. The two left are inside an emblem (Gideon of the Trials) and a granted
+ability (Lukka).
+
+**Tests.** 2 engine tests:
+- The fixture reads whole.
+- With a Jace planeswalker the creature is 2/3. With none, or with only a Chandra, it is 1/3.
+
+Faults injected by hand: 3, 2 caught.
+- Any planeswalker counting: caught.
+- The reader removed: caught.
+- The type left off the condition (the subtype asked of any permanent) passed. No permanent but a
+  planeswalker can have a planeswalker type, so nothing can tell the two apart. The type is kept
+  because it is what the card prints.
+
+The scripts tests, compile tests and pins: 6588 of 6588 pass.
+
+Coverage: 17,613 of 31,900 cards (+2 over D1365's 17,611), 40,496 of 59,888 lines (+2).
