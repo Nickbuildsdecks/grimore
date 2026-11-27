@@ -50190,3 +50190,34 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6549 of 6549 pass, before the trigger test was added.
 
 Coverage: 17,566 of 31,900 cards (+1 over D1353's 17,565), 40,411 of 59,888 lines (+1).
+
+## D1355 — "Put a counter on each of them" after a sentence that aimed at several
+
+"Put a +1/+1 counter on each of them", "… a stun counter …", "… two stun counters …" follow a
+sentence that targets several objects on 27 legal lines, and none read. On 18 cards it was the only
+unread line. D723's "put a counter on it" took one target only.
+
+**The rule.** In `composeEffects`, the clause reads when exactly one earlier sentence aims at cards,
+with one spec that takes more than one. Each card target that sentence took, still on the
+battlefield, gets the counters. Sentences that aim only at players do not count (Homesickness's
+"Target player draws two cards"), since a player takes no counter. A counter the rules give a
+meaning of their own (`RULES_COUNTERS`) is refused, as everywhere.
+
+Seven cards read whole now: Scout for Survivors, Out Cold, Involuntary Cooldown, Homesickness,
+Donatello, and two more.
+
+**Tests.** 3 engine tests:
+- Two fixtures read whole. "Destroy target creature" (one target) and a loyalty counter are
+  refused.
+- Two Grizzly Bears returned from the graveyard each have a +1/+1 counter.
+- Beside a player target, both creatures are tapped with a stun counter each, and the player draws
+  two.
+
+Faults injected by hand: 3, all caught.
+- Player-only sentences counted as aiming.
+- The rules counters let through.
+- Only the first target counted.
+
+The scripts tests, compile tests and pins: 6553 of 6553 pass.
+
+Coverage: 17,573 of 31,900 cards (+7 over D1354's 17,566), 40,420 of 59,888 lines (+9).
