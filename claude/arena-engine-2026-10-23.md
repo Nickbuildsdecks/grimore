@@ -50722,3 +50722,43 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6595 of 6595 pass.
 
 Coverage: 17,619 of 31,900 cards (+5 over D1367's 17,614), 40,502 of 59,888 lines (+5).
+
+## D1369 — "Untap those creatures" after a team bonus, and a name without its accents
+
+Three small readings.
+
+**Jeskai Ascendancy.** "Whenever you cast a noncreature spell, creatures you control get +1/+1 until
+end of turn. Untap those creatures." The second sentence's "those creatures" are the group the
+first sentence pumped, and nothing comes between them, so the sentence glue rewrites it to name
+that group ("Untap all creatures you control"). D600's mass reader then reads it. Also for
+"attacking creatures you control" and "all creatures".
+
+**The other way round.** "Untap all creatures you control. They gain flying and double strike until
+end of turn" (Flying Crane Technique), "… Those creatures get +1/+1 until end of turn": the
+second sentence names the group too.
+
+**A name without its accents.** Gríma, Saruman's Footman prints "Whenever Grima deals combat
+damage", and Thrór's Map prints "Thror's Map". `selfRef` now matches each name and its short form
+with the accents taken off as well.
+
+I first wrote a general "untap all <group>" reader as well. D600 already reads that, and the probe
+that suggested otherwise had used an Enchantment type line, where no sentence resolves. The
+duplicate reader and its test were removed before the gate.
+
+Read whole now: Jeskai Ascendancy, Flying Crane Technique, Gríma, Thrór's Map, and others the
+measure counts.
+
+**Tests.** 3 engine tests:
+- Four fixtures read whole, the accentless name included.
+- A noncreature spell under the Ascendancy: each tapped Grizzly Bears gets +1/+1 and untaps, in the
+  same main phase.
+- Untap all creatures you control, then they gain flying.
+
+Faults injected by hand: 3, all caught.
+- No accent fold.
+- The "those creatures" rewrite dropped.
+- The "they gain" rewrite dropped.
+
+The scripts tests, compile tests and pins: 6598 of 6598 pass.
+
+Coverage: 17,629 of 31,900 cards (+10 over D1368's 17,619), 40,512 of 59,888 lines (+10).
