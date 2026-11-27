@@ -49942,6 +49942,55 @@ describe('Ad Nauseam: a process repeated as many times as the player says (D1347
   });
 });
 
+describe('Mana Echoes: mana as many as the creatures that share a type (D1348)', () => {
+  const ECHOES = { name: 'Test Echoes', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Whenever a creature enters, you may add an amount of {C} equal to the number of creatures you control that share a creature type with it.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{T}: Add an amount of {C} equal to the number of charge counters on Test Rock.' };
+  const deck = customDeck({ id: 'd1348', name: 'Echoes', entries: [{ name: 'Test Echoes', count: 2 }, { name: 'Test Bear', count: 8 }, { name: 'Test Rock', count: 2 }, { name: 'Forest', count: 48 }], data: [ECHOES, BEAR, ROCK] as never[] });
+  const cast = (name: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1348', 1: 'd1348' }, deckSpecs: { d1348: deck.deck },
+      battlefield: { 0: ['Test Echoes', 'Test Bear', 'Test Bear', 'Test Rock'] }, hands: { 0: [name] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action)), 20);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole, and the counted mana line too', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ECHOES, ROCK]) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+    const plain = { ...ECHOES, name: 'Test Plain', oracle_text: 'When Test Plain enters, add X {C}, where X is the number of creatures you control.' };
+    expect(compileCard(plain as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a third Bear enters: three {C}, the Bear counting itself', () => {
+    let s = cast('Test Bear');
+    expect(s.pendingDecision?.seat).toBe(0);
+    s = say(s, 0, 'Yes');
+    expect(poolOf(s, 0).C).toBe(3);
+  });
+
+  it('declined: no mana', () => {
+    const s = say(cast('Test Bear'), 0, 'No');
+    expect(poolOf(s, 0).C ?? 0).toBe(0);
+  });
+
+  it('the Rock makes one {C} per charge counter', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1348', 1: 'd1348' }, deckSpecs: { d1348: deck.deck },
+      battlefield: { 0: ['Test Rock'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const rock = find(s, 0, 'battlefield', 'Test Rock');
+    s = addCounters(s, rock, 'charge', 3);
+    const play = legalActions(s, 0).plays.find((p) => p.card === rock && p.kind === 'activate')!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: rock, abilityIndex: play.abilityIndex! } as Action);
+    expect(poolOf(s, 0).C).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

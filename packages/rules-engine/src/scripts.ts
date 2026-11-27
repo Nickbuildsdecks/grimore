@@ -13506,7 +13506,9 @@ function countedSizeShrinks(power: string, toughness: string): boolean {
 }
 
 function countScaledEffect(clause: string, name: string): ReadEffect | null {
-  const flat = clause.trim().replace(/\.\s*$/, '');
+  // "Add an amount of {C} equal to <a count>" (D1348) is "Add X {C}, where X is <the count>".
+  const flat = clause.trim().replace(/\.\s*$/, '')
+    .replace(/^add an amount of (\{[WUBRGC]\}) equal to (the number of .+)$/i, 'add X $1, where X is $2');
 
   /*
     The third grammar first, because it has no number in the body for the other two to find: "draw
@@ -13586,6 +13588,21 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     to a search that scores the position after the cast, and Battle Hymn is exactly Dark Ritual's
     shape. It is `spellFlags`, so an *ability* that prints this clause — Cabal Coffers — drops it.
   */
+  /*
+    And the announced spelling of one symbol (D1348): "Add X {C}, where X is the number of …",
+    "add an amount of {C} equal to the number of …" (Mana Echoes). X of that one symbol.
+  */
+  const xMana = /^add X (\{[WUBRGC]\})$/i.exec(body);
+  if (xMana !== null && announced) {
+    const symbol = xMana[1]!.slice(1, -1).toUpperCase() as Parameters<typeof addToPool>[2];
+    return {
+      effect: (c) => {
+        const n = counted(c);
+        return n <= 0 ? c.state : addToPool(c.state, c.controller, symbol, n);
+      },
+      spellFlags: { makesMana: true },
+    };
+  }
   const mana = /^add ((?:\{[WUBRGC]\})+)$/i.exec(body);
   if (mana !== null && !announced) {
     const symbols = [...mana[1]!.toUpperCase().matchAll(/\{([WUBRGC])\}/g)].map((m) => m[1]!);
@@ -23113,6 +23130,24 @@ function countOfThing(
   if (/^1 life your opponents have lost this turn$/i.test(text)) {
     return (c) => opponentsOf(c.state, c.controller)
       .reduce((sum, seat) => sum + Math.max(0, c.state.lifeLostThisTurn?.[String(seat)] ?? 0), 0);
+  }
+  /*
+    "The number of creatures you control that share a creature type with it" (D1348, Mana Echoes):
+    "it" is the event's creature, which counts itself when you control it (it shares its own types).
+  */
+  if (/^creatures you control that share a creature type with it$/i.test(text) && number === 'plural') {
+    const kinds = (state: GameState, id: string): readonly string[] => {
+      const inst = state.instances[id];
+      return inst === undefined ? [] : characteristicsOf(state, inst).typeLine.subtypes.filter((t) => isCreatureType(t));
+    };
+    return (c) => {
+      const mine = new Set(kinds(c.state, itMeans(undefined, c)));
+      if (mine.size === 0) return 0;
+      return listAt(c.state, zoneKey(c.controller, 'battlefield')).filter((id) => {
+        const inst = c.state.instances[id];
+        return inst !== undefined && characteristicsOf(c.state, inst).isCreature && kinds(c.state, id).some((t) => mine.has(t));
+      }).length;
+    };
   }
   if (/^other attacking creature that shares a creature type with it$/i.test(text) && number === 'singular') {
     const kinds = (state: GameState, id: string): readonly string[] => {

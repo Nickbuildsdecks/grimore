@@ -263,3 +263,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1344 pushed in 361512b. D1345 Najeela (attacks of any Warrior; its controller's attacking token; D1183's double-escaped regex fixed): scripts.ts only.
 - D1345 pushed in 7fe2ed1. D1346 commander ninjutsu (AbilityCost.alsoFromCommandZone) and the Confidant reveal widened: scriptTypes, legalActions, autoActions, scripts.ts.
 - D1346 pushed in b0ff07d. D1347 Ad Nauseam (revealRepeatedly, a fixed list of repeat questions): scripts.ts only.
+- D1347 pushed in 9469bb6. D1348 Mana Echoes (announced "add X {C}", shared-type count, mana-ability amount counts): scripts.ts, fromCardData.ts.

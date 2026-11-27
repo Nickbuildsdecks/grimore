@@ -891,6 +891,16 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
         ...(spendOnly === undefined ? {} : { spendOnly }),
       };
     }
+    // And any count D1140's "where X is" reads (D1348): Rotating Fireplace's "the number of time
+    // counters on ~", "the number of Elves you control".
+    const xCount = own === null && !greatest && symbol !== null && symbol.length === 1 ? xManaCount(phrase, name) : null;
+    if (xCount !== null) {
+      return {
+        mode: 'sum', produces: symbol!, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
+        per: xCount,
+        ...(spendOnly === undefined ? {} : { spendOnly }),
+      };
+    }
   }
   /*
     "X mana of any one color, where X is ..." (D1140): Sanctum Weaver, Heronblade Elite, Lotus
