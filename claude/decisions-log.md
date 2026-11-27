@@ -68147,3 +68147,44 @@ Staples: the second list is at 124 of 125 (Food Chain left). The first is at 243
 (Castle Garenbrig left).
 
 Coverage: 17,614 of 31,900 cards (+1 over D1366's 17,613), 40,497 of 59,888 lines (+1).
+
+## D1368 — Exile until a kind of card, and cast it free
+
+"Exile cards from the top of your library until you exile a nonland card. You may cast that card
+without paying its mana cost." (Nico Minoru, Q, Your Illustrious Host), "Target opponent exiles cards
+from the top of their library until they exile an instant or sorcery card. You may cast that card
+…" (Chaos Wand), and "that player exiles …" on a combat-damage trigger (Dazzling Sphinx). Cascade's
+walk (`cascadeFrom`) did this only for the caster's own library, and only with a mana value bound.
+
+**The rule** (`untilCastable`, `exileUntilOffered`):
+- The library is the controller's, the target's, or, on a combat-damage trigger, the hit player's.
+- The kind is any phrase the library search reads (`libraryFilter`).
+- Cards are exiled one at a time from the top until one of the kind turns up.
+- That card is offered to the controller free through the ordinary offered cast
+  (`pendingOfferedCast`), so the cast's choices are the player's. A card the opponent owns goes to
+  that opponent's graveyard once it resolves.
+- With "Then … put the exiled cards that weren't cast this way on the bottom … in a random order",
+  the rest go to the bottom, and so does the hit if it is declined. Without that sentence everything
+  stays exiled (the offer's `stays`).
+
+Read whole now: Nico Minoru, Runaway; Q, Your Illustrious Host; Chaos Wand; Dazzling Sphinx. Gríma
+prints its own name as "Grima" in the trigger, so its trigger does not match. The Caretaker and
+Strago and Relm each have another clause.
+
+**Tests.** 4 engine tests:
+- Both fixtures read whole. The opponent is a target.
+- The opponent's first sorcery is offered to the caster for nothing. Cast, it gains the caster 3
+  life and goes to its owner's graveyard, and the cards above it go to the bottom of that library.
+- On combat damage, the card offered comes from the library of the player hit.
+- Declined with the bottom sentence, the hit goes back into the library. Without it, the hit and
+  everything above it stay exiled.
+
+Faults injected by hand: 4, all caught.
+- Always the controller's library.
+- Any card counted as the hit.
+- Nothing sent to the bottom.
+- A declined hit never staying.
+
+The scripts tests, compile tests and pins: 6595 of 6595 pass.
+
+Coverage: 17,619 of 31,900 cards (+5 over D1367's 17,614), 40,502 of 59,888 lines (+5).
