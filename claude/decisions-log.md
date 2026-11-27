@@ -68969,3 +68969,32 @@ The scripts tests, compile tests and pins: 6660 of 6660 pass. Test typecheck and
 clean.
 
 Coverage: 17,760 of 31,900 cards (+2 over D1387's 17,758), 40,713 of 59,888 lines (+3).
+
+## D1389 — A card that calls itself he or she on any line
+
+D1380 read a character card's pronouns for itself ("he deals", "on him", "his power") as "it" on
+trigger lines. The same pronouns are printed on every other kind of line:
+- "Gargantos enters with three +1/+1 counters on him."
+- "{2}{G}, Sacrifice a Food: Put two +1/+1 counters on Bosco. He gains trample until end of turn."
+- "As long as Captain America has a shield counter on him, …"
+
+`lineScriptFor` now retries a line with `selfPronouns` applied when the printed line doesn't read.
+It is asked only then, so no line that reads today changes. 10 more pronoun lines read. Loyalty
+abilities go through their own reader and aren't covered (Gideon's "prevent all damage that would
+be dealt to him").
+
+Read whole now: Gargantos, the Endbringer; Bosco, Just a Bear; and others.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole.
+- A creature that "enters with three +1/+1 counters on him" has them.
+- "She gains trample" is the card itself.
+
+Faults injected by hand: 3, all caught.
+- No retry.
+- "Him" not read.
+- "She" not read.
+
+The scripts tests, compile tests and pins: 6663 of 6663 pass. Test typecheck clean.
+
+Coverage: 17,766 of 31,900 cards (+6 over D1388's 17,760), 40,725 of 59,888 lines (+12).
