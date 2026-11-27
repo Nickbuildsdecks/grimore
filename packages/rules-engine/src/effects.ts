@@ -1425,10 +1425,12 @@ function multipliedDamage(state: GameState, target: Target, amount: number, cont
 export function cantLoseTheGame(state: GameState, seat: SeatIndex): boolean {
   if (scriptLookup === null) return false;
   const lookup = scriptLookup;
-  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+  // And an emblem's (D1391), which is in the command zone rather than on the battlefield.
+  return [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)].some((id) => {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
-    return lookup(state.cardDefs[inst.defKey])?.cantLose === true;
+    const rule = lookup(state.cardDefs[inst.defKey])?.cantLose;
+    return rule === true || (rule !== undefined && rule.while(state, seat));
   });
 }
 
@@ -4099,6 +4101,8 @@ export function preventDamageThisTurn(
   opts: {
     readonly direction: 'to' | 'by'; readonly combatOnly: boolean;
     readonly scope?: ContinuousEffect['scope']; readonly players?: 'controller' | 'all';
+    /** "Until your next turn" (D1391), rather than this turn. */
+    readonly untilYourNextTurn?: boolean;
   },
 ): GameState {
   return pushEffect(state, {
@@ -4107,7 +4111,7 @@ export function preventDamageThisTurn(
     ...(opts.scope === undefined ? {} : opts.direction === 'to' ? { preventsDamageTo: true as const } : { preventsDamageFrom: true as const }),
     ...(opts.players === undefined ? {} : { preventsDamageToPlayers: opts.players }),
     ...(opts.combatOnly ? { preventsCombatOnly: true as const } : {}),
-    duration: 'end-of-turn',
+    duration: opts.untilYourNextTurn === true ? 'until-controllers-next-turn' : 'end-of-turn',
   });
 }
 

@@ -78,7 +78,7 @@ const customDeck = (input: Parameters<typeof eagerDeck>[0]): ReturnType<typeof e
   };
 };
 import { draw as drawCards } from './effects.js';
-import { REGENERATION, temptWithRing, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
+import { REGENERATION, cantLoseTheGame, emblemsOf, temptWithRing, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, modeCombinations, preferredOption, settle as engineSettle } from './automation.js';
 import { attackTaxFor, costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
 import { canAfford, reducedCostText, solveTap } from './mana.js';
@@ -51910,6 +51910,39 @@ describe("Gideon: a creature that's still a planeswalker, and damage to him prev
     expect(s.instances[gideon]!.counters.loyalty).toBe(5);
     expect(s.instances[gideon]!.damage).toBe(0);
     expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
+describe('Gideon of the Trials: prevention until your next turn, and an emblem that keeps you in (D1391)', () => {
+  const TRIALS = { name: 'Test Trials', type_line: 'Legendary Planeswalker — Gideon', mana_cost: '{1}{W}{W}', cmc: 3, colors: ['W'], layout: 'normal', power: null, toughness: null, loyalty: '3',
+    oracle_text: "+1: Until your next turn, prevent all damage target permanent would deal.\n0: Until end of turn, Test Trials becomes a 4/4 Human Soldier creature with indestructible that's still a planeswalker. Prevent all damage that would be dealt to him this turn.\n0: You get an emblem with \"As long as you control a Gideon planeswalker, you can't lose the game and your opponents can't win the game.\"" };
+  const deck = customDeck({ id: 'd1391', name: 'Trials', entries: [{ name: 'Test Trials', count: 2 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Plains', count: 52 }], data: [TRIALS] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1391', 1: 'd1391' }, deckSpecs: { d1391: deck.deck }, battlefield: { 0: ['Test Trials'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const activate = (s: GameState, index: number, targets: readonly Target[] = []): GameState => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Trials'), abilityIndex: index, ...(targets.length > 0 ? { targets: [...targets] } : {}),
+  } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(TRIALS as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the +1 prevents the Bear's damage, and for longer than this turn", () => {
+    let s = table();
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = activate(s, 0, [{ kind: 'card', id: bear }]);
+    expect(life(dealDamage(s, { kind: 'player', seat: 0 }, 2, { controller: 1, source: bear }), 0)).toBe(20);
+    expect(s.effects.some((e) => e.preventsDamageFrom === true && e.duration === 'until-controllers-next-turn')).toBe(true);
+  });
+
+  it('the emblem keeps its owner in the game while a Gideon is on the battlefield, and not after', () => {
+    let s = activate(table(), 2);
+    expect(emblemsOf(s, 0).length).toBe(1);
+    expect(cantLoseTheGame(s, 0)).toBe(true);
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Test Trials'), toZone: 'graveyard' } as Action);
+    expect(cantLoseTheGame(s, 0)).toBe(false);
   });
 });
 

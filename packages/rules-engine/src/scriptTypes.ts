@@ -3622,7 +3622,12 @@ export interface CardScript {
    * commander damage, an empty library, "you lose the game"). An opponent winning is every other
    * player losing, so the one flag covers both halves. A concession is not stopped (CR 104.3a).
    */
-  readonly cantLose?: true;
+  /**
+   * Or only while a condition holds (D1391): Gideon of the Trials' emblem, "As long as you control a
+   * Gideon planeswalker, you can't lose the game and your opponents can't win the game." Asked of
+   * the seat the permanent or emblem belongs to.
+   */
+  readonly cantLose?: true | { readonly while: (state: GameState, seat: SeatIndex) => boolean };
   /**
    * "If an opponent would draw a card except the first one they draw in each of their draw steps,
    * instead that player skips that draw and you draw a card." (D891, Notion Thief.) Asked by `draw`.

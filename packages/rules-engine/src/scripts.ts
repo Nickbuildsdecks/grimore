@@ -14769,6 +14769,27 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     this turn", "… dealt by creatures this turn", "… dealt this turn to creatures you control",
     "… to you and creatures you control this turn", "… combat damage … to players this turn".
   */
+  /*
+    "Until your next turn, prevent all damage target permanent would deal" (D1391, Gideon of the
+    Trials' +1), and "… this turn": the damage the target would deal, for the time printed.
+  */
+  const wouldDeal = /^(until your next turn, )?prevent all (combat )?damage (target [^,]+?) would deal( this turn)?$/i.exec(text);
+  if (wouldDeal !== null && (wouldDeal[1] === undefined) === (wouldDeal[4] !== undefined)) {
+    const spec = targetSpecFrom(wouldDeal[3]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      const untilYourNextTurn = wouldDeal[1] !== undefined;
+      const combatOnly = wouldDeal[2] !== undefined;
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const ids = cardTargets(c);
+          return ids.length === 0 ? c.state
+            : preventDamageThisTurn(c.state, c.source, c.controller, { direction: 'by', combatOnly, scope: { kind: 'cards', ids }, untilYourNextTurn });
+        },
+        spellFlags: { preventsDamage: true as const },
+      };
+    }
+  }
   const prevented = /^prevent all (combat )?damage that would be dealt (?:this turn )?(to|by) (.+?)(?: this turn)?$/i.exec(text);
   if (prevented !== null && /\bthis turn\b/i.test(text)) {
     const combatOnly = prevented[1] !== undefined;
@@ -39826,7 +39847,7 @@ function damageToSelfFromLine(line: string, name: string): Partial<CardScript> |
   return then === null ? null : { damageToSelf: { ...whileCounter, then } };
 }
 
-function staticFromLine(line: string): Partial<CardScript> | null {
+function staticFromLine(line: string, name = ''): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
   // D3007: "Each opponent's maximum hand size is reduced by seven."
@@ -39872,6 +39893,14 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   }
   // D3009: Platinum Angel. See `CardScript.cantLose`.
   if (/^you can't lose the game and your opponents can't win the game\.?$/i.test(plain(line).trim())) return { cantLose: true };
+  // And while a condition holds (D1391): Gideon of the Trials' emblem.
+  const cantLoseWhile = /^as long as (.+?), you can't lose the game and your opponents can't win the game\.?$/i.exec(plain(line).trim());
+  const lossCondition = cantLoseWhile === null ? null : interveningConditionFor(cantLoseWhile[1]!, name);
+  if (lossCondition !== null) {
+    return { cantLose: { while: (state, seat) => lossCondition({
+      state, controller: seat, source: '', targets: [], x: 0, decisions: [], kicked: false,
+    }) } };
+  }
   // D891: Notion Thief. See `CardScript.stealsExtraDraws`.
   if (/^if an opponent would draw a card except the first one they draw in each of their draw steps, instead that player skips that draw and you draw a card\.?$/i.test(plain(line).trim())) {
     return { stealsExtraDraws: true };
@@ -42441,7 +42470,7 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     ?? entersAsCopyFromLine(line, name)
     ?? chooseAsEntersFromLine(line, name)
     ?? chosenSelfStaticFromLine(line, name)
-    ?? staticFromLine(line)
+    ?? staticFromLine(line, name)
     ?? damageToSelfFromLine(line, name)
     ?? preventionStaticFromLine(line, name)
     ?? costModifierFromLine(line, name)
