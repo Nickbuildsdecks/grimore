@@ -49776,6 +49776,59 @@ describe("Mind's Desire and Urza: a card exiled to be played for nothing (D1344)
   });
 });
 
+describe('Najeela: whenever anybody\'s Warrior attacks, its controller may get an attacking Warrior (D1345)', () => {
+  const NAJEELA = { name: 'Test Najeela', type_line: 'Legendary Creature — Human Warrior', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '2',
+    oracle_text: "Whenever a Warrior attacks, you may have its controller create a 1/1 white Warrior creature token that's tapped and attacking." };
+  const WARRIOR = { name: 'Test Warrior', type_line: 'Creature — Human Warrior', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({ id: 'd1345', name: 'Najeela', entries: [{ name: 'Test Najeela', count: 2 }, { name: 'Test Warrior', count: 6 }, { name: 'Mountain', count: 52 }], data: [NAJEELA, WARRIOR] as never[] });
+  const attack = (attackerSeat: SeatIndex): GameState => {
+    const other = (1 - attackerSeat) as SeatIndex;
+    let s = advanceTo(arena({
+      decks: { 0: 'd1345', 1: 'd1345' }, deckSpecs: { d1345: deck.deck },
+      battlefield: { 0: ['Test Najeela'], [attackerSeat]: attackerSeat === 0 ? ['Test Najeela', 'Test Warrior'] : ['Test Warrior'] },
+      turn: 3, firstSeat: attackerSeat,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: attackerSeat, attackers: [{ attacker: find(s, attackerSeat, 'battlefield', 'Test Warrior'), defender: other }] });
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const tokens = (s: GameState, seat: SeatIndex) => ids(s, seat, 'battlefield').filter((id) => s.instances[id]!.isToken);
+
+  it('reads whole, any Warrior, and a count in digits reads too', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(NAJEELA as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.triggers?.[0]?.on).toMatchObject({ kind: 'attacks', of: 'any', ofSubtypes: ['Warrior'] });
+    const digits = { ...WARRIOR, name: 'Test Digits', oracle_text: 'Whenever Test Digits attacks, create 2 tapped and attacking 1/1 red Goblin creature tokens.' };
+    expect(compileCard(digits as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('my Warrior attacks: I may take a token, tapped and attacking the same player', () => {
+    let s = attack(0);
+    expect(s.pendingDecision?.seat).toBe(0);
+    s = drain(say(s, 0, 'Yes'), 20);
+    const made = tokens(s, 0);
+    expect(made).toHaveLength(1);
+    expect(s.instances[made[0]!]!.tapped).toBe(true);
+    expect(s.combat.attacks.find((a) => a.attacker === made[0])?.defender).toBe(1);
+  });
+
+  it("an opponent's Warrior attacks: I decide, and the token is theirs", () => {
+    let s = attack(1);
+    expect(s.pendingDecision?.seat).toBe(0);
+    s = drain(say(s, 0, 'Yes'), 20);
+    expect(tokens(s, 0)).toHaveLength(0);
+    const made = tokens(s, 1);
+    expect(made).toHaveLength(1);
+    expect(s.combat.attacks.find((a) => a.attacker === made[0])?.defender).toBe(0);
+  });
+
+  it('declined: no token', () => {
+    const s = drain(say(attack(0), 0, 'No'), 20);
+    expect(tokens(s, 0)).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

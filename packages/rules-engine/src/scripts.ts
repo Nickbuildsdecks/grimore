@@ -22191,9 +22191,13 @@ const TRIGGER_SHAPES: readonly ({
     capitalised creature type, checked against the attacker's live subtypes.
   */
   {
-    prologue: () => /^Whenever an? (?<tribe>[A-Z][a-z]+) you control attacks, (?<clause>.+)$/,
+    // And anybody's (D1345): Najeela's "Whenever a Warrior attacks".
+    prologue: () => /^Whenever an? (?<tribe>[A-Z][a-z]+)(?<yours> you control)? attacks, (?<clause>.+)$/,
     from: (matched) => (isCreatureType(matched.groups!.tribe!)
-      ? [{ kind: 'attacks' as const, who: 'any' as const, of: 'you' as const, ofSubtypes: [matched.groups!.tribe!] }]
+      ? [{
+        kind: 'attacks' as const, who: 'any' as const,
+        of: matched.groups!.yours === undefined ? 'any' as const : 'you' as const, ofSubtypes: [matched.groups!.tribe!],
+      }]
       : null),
   },
   // "Whenever a creature you control becomes blocked" (D635): the per-creature block, from your side.
@@ -23345,10 +23349,21 @@ function namedTokenFrom(body: string): { token: CardDef; printed: string } | nul
  * opponent. It was never declared as an attacker, so "whenever … attacks" does not see it.
  */
 function attackingTokenEffect(clause: string, name: string): ReadEffect | null {
-  const flat = clause.trim().replace(/\\.$/, '');
+  /*
+    "Have its controller create …" (D1345): Najeela's "you may have its controller create a 1/1
+    white Warrior creature token that's tapped and attacking". The tokens are the attacking
+    creature's controller's (the trigger's subject), attacking whom it attacks.
+  */
+  const theirs = /^have its controller (create .+)$/i.exec(clause.trim().replace(/\.$/, ''));
+  const recipients = theirs === null ? undefined : (c: EffectContext): readonly SeatIndex[] => {
+    const seat = c.state.instances[c.subject ?? '']?.zoneSeat;
+    return seat === undefined ? [] : [seat];
+  };
+  // A trailing full stop off, and a count in digits (D1345: both were escaped twice since D1183).
+  const flat = (theirs === null ? clause : theirs[1]!).trim().replace(/\.$/, '');
   const shapes = [
     /^(create .+? tokens?) (?:that's |that are )?tapped and attacking$/i,
-    /^(create (?:an?|one|two|three|four|five|x|\\d+)) tapped and attacking (.+)$/i,
+    /^(create (?:an?|one|two|three|four|five|x|\d+)) tapped and attacking (.+)$/i,
   ];
   let plainClause: string | null = null;
   const after = shapes[0]!.exec(flat);
@@ -23356,7 +23371,7 @@ function attackingTokenEffect(clause: string, name: string): ReadEffect | null {
   const before = after === null ? shapes[1]!.exec(flat) : null;
   if (before !== null) plainClause = `${before[1]!} ${before[2]!}`;
   if (plainClause === null) return null;
-  const made = tokenEffect(plainClause, name);
+  const made = tokenEffect(plainClause, name, undefined, recipients);
   if (made === null || made.targets !== undefined || made.decisions !== undefined) return null;
   const join = (fn: EffectFn): EffectFn => (c) => {
     const had = new Set(Object.keys(c.state.instances));
