@@ -51225,3 +51225,34 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6631 of 6631 pass. Test typecheck clean.
 
 Coverage: 17,700 of 31,900 cards (+16 over D1379's 17,684), 40,625 of 59,888 lines (+27).
+
+## D1381 — A legendary card that calls itself by the name before its epithet
+
+"Whenever Smaug attacks, he deals damage equal to the number of Treasures you control to any
+target", on *Smaug the Magnificent*. Oracle text calls a legendary card by its short name after
+the first mention. D438 read the short name of a titled card ("Bilbo", for "Bilbo, Retired
+Burglar"), which is the part before the comma. A name with an epithet and no comma had no short
+name: Smaug the Magnificent, Dáin of the Ancient Halls, Hazoret the Fervent, Gideon of the Trials,
+Phage the Untouchable. 43 legal cards use theirs in their own text.
+
+**The rule.** The first word, before "the", "of" or "of the", on a **legendary** card only. The
+same shape names ordinary cards whose first word is a common noun: Wall of Kelp, Case of the Lost
+Witness, Knight of the Mists. `selfRef` cannot see the type line, so `compileCard` sets the alias
+for the card it is compiling (`withEpithetAlias`, the way `withXPayable` carries the mana cost),
+and `selfRef` uses it for that card's own name alone.
+
+With D1380's pronouns, Smaug and Dáin now read whole, and so does Hazoret.
+
+**Tests.** 3 engine tests:
+- The short name reads on a legendary card, for "the" and "of the" alike.
+- The short name doesn't read on a card that isn't legendary: its line stays unread.
+- The short name's trigger works: the card's arrival gains its 2 life.
+
+Faults injected by hand: 3, all caught.
+- `selfRef` ignoring the alias.
+- No legendary check.
+- `compileCard` not setting it.
+
+The scripts tests, compile tests and pins: 6634 of 6634 pass. Test typecheck clean.
+
+Coverage: 17,709 of 31,900 cards (+9 over D1380's 17,700), 40,642 of 59,888 lines (+17).
