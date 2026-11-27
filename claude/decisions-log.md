@@ -67363,3 +67363,44 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6521 of 6521 pass.
 
 Coverage: 17,552 of 31,900 cards (+3 over D1345's 17,549), 40,392 of 59,888 lines (+5).
+
+## D1347 — Ad Nauseam: a process repeated as many times as the player says
+
+Ad Nauseam is a cEDH staple: "Reveal the top card of your library and put that card into your hand.
+You lose life equal to its mana value. You may repeat this process any number of times." D816's
+Dark Confidant clause read the first two sentences. The repeat did not, because the plan asks
+every question of a resolution from a list fixed before it starts.
+
+**The reading.** `revealRepeatedly` is a fixed list of 60 questions, as D730's punisher rounds are
+a fixed list of 40:
+- Each question does one reveal as it is reached (`onReach`): the card into hand and its mana value
+  lost.
+- Each then asks "Reveal another" or "Stop".
+- Each after the first is asked only if the answer before it was "Reveal another"
+  (`askOnlyIfChosen`), and only while the library has a card. A "Stop" ends the chain, because it
+  stays the latest answer with a word for every question after it.
+- The last question's "Reveal another" is the effect's own reveal.
+- The life is lost card by card. A player at 0 loses as the spell finishes resolving (CR 704.3).
+
+Sixty is a ceiling, as the punisher's forty is: past it the process stops being offered, a known
+limit no real game reaches.
+
+**The bot** goes again while it has more than 10 life and a library.
+
+**Tests.** 3 engine tests, with the library's top set to Hill Giant, Forest, Hill Giant:
+- A fixture Ad Nauseam reads whole.
+- Step by step:
+  - the Giant comes before the first question, at 16 life;
+  - "Reveal another" brings the Forest, still 16;
+  - again brings the second Giant, 12;
+  - "Stop" ends it, the stack empty and the fourth card still in the library.
+- The bot reveals until it is at 10 or less, and stops above 5.
+
+Faults injected by hand: 3, all caught.
+- The chain no longer stopped by "Stop".
+- The bot never stopping.
+- No life lost.
+
+The scripts tests, compile tests and pins: 6524 of 6524 pass.
+
+Coverage: 17,553 of 31,900 cards (+1 over D1346's 17,552), 40,393 of 59,888 lines (+1).
