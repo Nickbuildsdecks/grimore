@@ -400,9 +400,14 @@ function chooseTargets(
       // "From a single graveyard" (D1216): after the first, only cards with its owner.
       const anchor = spec.sameOwner === true && taken > 0 ? chosen[firstHere] : undefined;
       const anchorOwner = anchor?.kind === 'card' ? state.instances[anchor.id]?.owner : undefined;
+      // And within a total mana value (D1354): only what the targets taken so far leave room for.
+      const cmcOf = (t: Target): number => (t.kind === 'card' ? state.cardDefs[state.instances[t.id]?.defKey ?? '']?.cmc ?? 0 : 0);
+      const room = spec.totalManaValueAtMost === undefined ? Infinity
+        : spec.totalManaValueAtMost - chosen.slice(firstHere).reduce((sum, t) => sum + cmcOf(t), 0);
       const candidates = (play.candidates[i] ?? []).filter(
         (t) => !used.has(targetKey(t))
-          && (anchorOwner === undefined || (t.kind === 'card' && state.instances[t.id]?.owner === anchorOwner)),
+          && (anchorOwner === undefined || (t.kind === 'card' && state.instances[t.id]?.owner === anchorOwner))
+          && cmcOf(t) <= room,
       );
       const base = spec.friendly === true
         ? (t: Target): number => friendlyRank(state, t, foes)
@@ -3118,7 +3123,15 @@ function aimPending(
     const pool = spec.sameOwner === true
       ? ranked.filter((t) => t.kind === 'card' && state.instances[t.id]?.owner === firstOwner)
       : ranked;
-    for (const pick of pool.slice(0, want)) {
+    // Within a total mana value (D1354), each taken while it still fits.
+    let room = spec.totalManaValueAtMost ?? Infinity;
+    let took = 0;
+    for (const pick of pool) {
+      if (took >= want) break;
+      const cmc = pick.kind === 'card' ? state.cardDefs[state.instances[pick.id]?.defKey ?? '']?.cmc ?? 0 : 0;
+      if (cmc > room) continue;
+      room -= cmc;
+      took += 1;
       used.add(targetKey(pick));
       chosen.push(pick);
     }

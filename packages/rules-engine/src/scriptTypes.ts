@@ -94,6 +94,12 @@ export interface TargetSpec {
    */
   readonly sameOwner?: true;
   /**
+   * "Up to three target creature cards **with total mana value 3 or less**" (D1354): the targets this
+   * spec takes total at most this mana value. Checked across them in `checkTargets`, as `sameOwner`
+   * is; the bot takes each while the total still allows it.
+   */
+  readonly totalManaValueAtMost?: number;
+  /**
    * Advice to the bot: what this points at is being **helped**, not hit.
    *
    * Not a restriction, and deliberately not one. "Prevent the next 3 damage that would be dealt to

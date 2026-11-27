@@ -302,6 +302,11 @@ export function checkTargets(
       taken.push(candidate);
       index += 1;
     }
+    // "With total mana value 3 or less" (D1354): the chosen together.
+    if (spec.totalManaValueAtMost !== undefined) {
+      const total = taken.reduce((sum, t) => sum + (t.kind === 'card' ? state.cardDefs[state.instances[t.id]?.defKey ?? '']?.cmc ?? 0 : 0), 0);
+      if (total > spec.totalManaValueAtMost) return { ok: false, reason: `${spec.description} must total mana value ${spec.totalManaValueAtMost} or less` };
+    }
     // "From a single graveyard" (D1216): one owner for all of them.
     if (spec.sameOwner === true) {
       const owners = new Set(taken.map((t) => (t.kind === 'card' ? state.instances[t.id]?.owner : undefined)));

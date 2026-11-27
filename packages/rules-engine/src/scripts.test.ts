@@ -50213,6 +50213,65 @@ describe('untargeted returns from the graveyard: counts, the battlefield, a tota
   });
 });
 
+describe('targets bounded by their total mana value: Patch Up (D1354)', () => {
+  const PATCH = { name: 'Test Patch', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'Return up to three target creature cards with total mana value 3 or less from your graveyard to the battlefield.' };
+  const ONE = { name: 'Test One', type_line: 'Creature — Human', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const MEDIC = { name: 'Test Medic', type_line: 'Creature — Human Cleric', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'When Test Medic enters, return up to two target creature cards with total mana value 3 or less from your graveyard to your hand.' };
+  const deck = customDeck({ id: 'd1354', name: 'Patch', entries: [{ name: 'Test Patch', count: 2 }, { name: 'Test Medic', count: 2 }, { name: 'Test One', count: 6 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Plains', count: 44 }], data: [PATCH, ONE, MEDIC] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1354', 1: 'd1354' }, deckSpecs: { d1354: deck.deck },
+    hands: { 0: ['Test Patch'] }, graveyard: { 0: ['Grizzly Bears', 'Grizzly Bears', 'Test One'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const yard = (s: GameState, name: string) => ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) === name);
+
+  it('reads whole, the total on its one target spec', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(PATCH as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.targets?.[0]).toMatchObject({ count: 3, optional: true, totalManaValueAtMost: 3 });
+  });
+
+  it('two Bears (4) refused as targets; a Bears and the 1-drop (3) return', () => {
+    let s = table();
+    const patch = find(s, 0, 'hand', 'Test Patch');
+    const bears = yard(s, 'Grizzly Bears');
+    const [one] = yard(s, 'Test One');
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: patch, targets: bears.map((id) => ({ kind: 'card', id })) } as Action)).toThrow(/total mana value 3/);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: patch, targets: [{ kind: 'card', id: bears[0]! }, { kind: 'card', id: one! }] } as Action)), 20);
+    expect([bears[0], one].every((id) => s.instances[id!]!.zone === 'battlefield')).toBe(true);
+    expect(s.instances[bears[1]!]!.zone).toBe('graveyard');
+  });
+
+  it("a trigger's targets, chosen by the bot, stay within the total", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1354', 1: 'd1354' }, deckSpecs: { d1354: deck.deck },
+      hands: { 0: ['Test Medic'] }, graveyard: { 0: ['Grizzly Bears', 'Grizzly Bears', 'Test One'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Medic') } as Action)), 10);
+    for (let i = 0; i < 6 && s.pendingChoice !== null; i++) s = apply(s, botAction(s, 0)!);
+    s = drain(passBoth(s), 20);
+    const back = ids(s, 0, 'hand').filter((id) => /Grizzly Bears|Test One/.test(nameOf(s, id)));
+    const total = back.reduce((sum, id) => sum + (s.cardDefs[s.instances[id]!.defKey]?.cmc ?? 0), 0);
+    expect(back.length).toBeGreaterThan(0);
+    expect(total).toBeLessThanOrEqual(3);
+  });
+
+  it('the bot aims within the total', () => {
+    let s = table();
+    let act = botAction(s, 0) as { type: string; targets?: { id: string }[] } | null;
+    for (let i = 0; i < 4 && act !== null && act.type !== 'auto:cast'; i++) {
+      s = apply(s, act as Action);
+      act = botAction(s, 0) as { type: string; targets?: { id: string }[] } | null;
+    }
+    expect(act?.type).toBe('auto:cast');
+    const total = (act!.targets ?? []).reduce((sum, t) => sum + (s.cardDefs[s.instances[t.id]!.defKey]?.cmc ?? 0), 0);
+    expect(total).toBeLessThanOrEqual(3);
+    expect(() => apply(s, act as Action)).not.toThrow();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -30374,6 +30374,21 @@ function abilityCopyEffect(clause: string): ReadEffect | null {
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  /*
+    "Return up to three target creature cards with total mana value 3 or less from your graveyard to
+    the battlefield" (D1354): the clause read without the total, and the total put on its one target
+    spec that takes more than one (`TargetSpec.totalManaValueAtMost`), which is the only place a total
+    means anything. Any other shape falls through to the readers below (D1353's untargeted return
+    reads the total itself).
+  */
+  const totalled = /^(.*?\b(?:cards?|creatures|permanents|artifacts|enchantments|artifacts and\/or enchantments)) with total mana value (\d+) or less\b(.*)$/i.exec(clause.trim());
+  if (totalled !== null) {
+    const inner = readEffect(`${totalled[1]!}${totalled[3]!}`, name, where);
+    const many = (inner?.targets ?? []).filter((spec) => (spec.count ?? 1) > 1);
+    if (inner !== null && many.length === 1 && (inner.targets ?? []).length === 1 && (inner.decisions ?? []).length === 0) {
+      return { ...inner, targets: [{ ...inner.targets![0]!, totalManaValueAtMost: Number(totalled[2]) }] };
+    }
+  }
   const copied = abilityCopyEffect(clause);
   if (copied !== null) return copied;
   /*
