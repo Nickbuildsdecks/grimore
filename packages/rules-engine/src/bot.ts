@@ -3913,7 +3913,25 @@ function damageStillToCome(state: GameState, seat: SeatIndex): boolean {
  */
 function preventionCanMatter(state: GameState, seat: SeatIndex, action: Action): boolean {
   if (!damageStillToCome(state, seat)) return false;
-  return !(action.type === 'auto:activate' && state.step === 'declare-attackers');
+  if (action.type !== 'auto:activate') return true;
+  if (state.step === 'declare-attackers') return false;
+  /*
+    And not past what could come (D1362, sweep 100001 seed 100010). Outrider en-Kor's {0} puts up
+    one more shield each press, and while damage was coming it was pressed a thousand times in one
+    declare-blockers step. The shields this source already has up are counted against the power of
+    every creature attacking this seat, which is the most combat damage there is to stop, and once
+    they cover it another press stops nothing.
+  */
+  const up = state.effects
+    .filter((effect) => effect.source === action.card && (effect.preventsDamageAmount ?? 0) > 0)
+    .reduce((sum, effect) => sum + (effect.preventsDamageAmount ?? 0), 0);
+  const coming = state.combat.attacks
+    .filter((attack) => attack.defender === seat)
+    .reduce((sum, attack) => {
+      const inst = state.instances[attack.attacker];
+      return sum + (inst === undefined ? 0 : Math.max(0, characteristicsOf(state, inst).power));
+    }, 0);
+  return up < Math.max(1, coming);
 }
 
 /**

@@ -50635,6 +50635,35 @@ describe('A vote: starting with you, each player votes (D1361, CR 701.38)', () =
   });
 });
 
+describe('a free shield pressed no more than the damage coming (D1362, sweep 100001 seed 100010)', () => {
+  const KOR = { name: 'Test Outrider', type_line: 'Creature — Kor Rebel Knight', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: '{0}: The next 1 damage that would be dealt to Test Outrider this turn is dealt to target creature you control instead.' };
+  const deck = customDeck({ id: 'd1362', name: 'Outrider', entries: [{ name: 'Test Outrider', count: 2 }, { name: 'Raging Goblin', count: 8 }, { name: 'Hill Giant', count: 6 }, { name: 'Plains', count: 44 }], data: [KOR] as never[] });
+
+  it('blocking a 3/3 that would kill it, the bot puts up no more shields than the 3 damage coming', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1362', 1: 'd1362' }, deckSpecs: { d1362: deck.deck },
+      battlefield: { 0: ['Test Outrider', 'Hill Giant'], 1: ['Hill Giant'] }, hands: { 0: [], 1: [] }, turn: 3, firstSeat: 1,
+    }), 'declare-attackers');
+    const goblin = find(s, 1, 'battlefield', 'Hill Giant');
+    const kor = find(s, 0, 'battlefield', 'Test Outrider');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: goblin, defender: 0 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: kor, attacker: goblin }] });
+    // The whole step played out: the bot's press, or its pass, then the opponent's pass, which
+    // resolves the shield and gives the bot priority again (the sweep's two thousand moves).
+    let presses = 0;
+    for (let i = 0; i < 60 && s.step === 'declare-blockers'; i++) {
+      const by = s.priority ?? 0;
+      const act = by === 0 ? botAction(s, 0) as { type: string; card?: string } | null : null;
+      if (act?.type === 'auto:activate' && act.card === kor) presses += 1;
+      s = apply(s, (act ?? { type: 'auto:pass', by }) as Action);
+    }
+    expect(presses).toBeGreaterThan(0);
+    expect(presses).toBeLessThanOrEqual(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
