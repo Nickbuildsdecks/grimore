@@ -24679,7 +24679,14 @@ function optionalEffect(
     const yText = (sacrifices
       ? reflex[2]!.replace(/\bthat (creature|artifact|permanent)'s (power|toughness|mana value)\b/gi, "the sacrificed $1's $2")
       : reflex[2]!).trim();
-    const y = sacrifices ? withSacrificeInCost(true, () => reader(yText)) : reader(yText);
+    /*
+      "You may pay {X}. When you do, ~ deals X damage to target player" (D1380): the X paid rides
+      on the queued trigger, and the second half reads it as "that many" (D903). Its targets are
+      chosen as it goes on the stack, after X is paid.
+    */
+    const paysX = /^you may pay (?:\{X\})+(?:\{[^X}]+\})*$/i.test(reflex[1]!.trim());
+    const yRead = paysX ? markPaidX(yText) : yText;
+    const y = sacrifices ? withSacrificeInCost(true, () => reader(yRead)) : reader(yRead);
     if (y === null || y.beforeDecisions !== undefined || y.reflexive !== undefined || dividesAQuantity(y)) return null;
     const key = yText;
     const queue: ReadEffect = {
@@ -24687,6 +24694,7 @@ function optionalEffect(
         ...c.state,
         reflexive: [...(c.state.reflexive ?? []), {
           source: c.source, key, controller: c.controller, ...(c.subject === undefined ? {} : { subject: c.subject }),
+          ...(paysX ? { amount: c.eventAmount ?? 0 } : {}),
         }],
       }),
     };
@@ -25014,7 +25022,7 @@ function optionalEffect(
       path's X reader.
     */
     ?? (priced !== null && /\{X\}/i.test(priced[1]!)
-      ? reader(inner.replace(/\bX (life|damage)\b/g, '\u000e much $1').replace(/\bX\b/g, '\u000e many'))
+      ? reader(markPaidX(inner))
         ?? (xName === undefined ? null : xSpellResolution([inner], xName))
       : null);
   if (read === null) return null;
@@ -25501,7 +25509,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
   // The ability word comes off first: "Battalion — Whenever ~ and at least two other creatures
   // attack, …" is a trigger whose prologue begins after the dash (CR 207.2c).
   const restriction = triggerRestriction(withoutAbilityWord(plain(line).trim()));
-  const text = restriction.rest;
+  const text = selfPronouns(restriction.rest);
   const self = selfRef(name);
   for (const shape of TRIGGER_SHAPES) {
     const matched = shape.prologue(self).exec(text);
@@ -27353,8 +27361,26 @@ function sweepDestination(
   };
 }
 
+/**
+ * A character card's pronouns for itself, read as "it" (D1380): "When Gandalf enters, he deals 3
+ * damage …", "she deals 4 damage to target creature", "put a +1/+1 counter on him", "his power".
+ * Oracle text has used "they" for players since 2017, so a gendered pronoun on a card is the card.
+ */
+const selfPronouns = (text: string): string => text
+  // Never inside a hyphenated name ("She-Hulk"), which is the card's name and not a pronoun.
+  .replace(/(?<![-\w])(He|She)(?![-\w])/g, 'It')
+  .replace(/(?<![-\w])(he|she)(?![-\w])/g, 'it')
+  .replace(/(?<![-\w])(himself|herself)(?![-\w])/g, 'itself')
+  .replace(/(?<![-\w])(his|her) (power|toughness|controller|owner)(?![-\w])/g, 'its $2')
+  .replace(/(?<![-\w])his(?![-\w])/g, 'its')
+  .replace(/(?<![-\w])(him|her)(?![-\w])/g, 'it');
+
 /** The most a "you may pay {X}" offers (D1379), before the engine stops it at what can be paid. */
 const X_PAID_AT_MOST = 30;
+
+/** An X just paid, marked as "that many" is (D903) so the clause readers take it (D1379, D1380). */
+const markPaidX = (text: string): string =>
+  text.replace(/\bX (life|damage)\b/g, '\u000e much $1').replace(/\bX\b/g, '\u000e many');
 
 /**
  * Whether a reading carries a **divided** quantity.

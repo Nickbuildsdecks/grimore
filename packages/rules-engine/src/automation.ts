@@ -4739,6 +4739,11 @@ function settle(state: GameState, before: GameState): GameState {
         const top = next.stackOrder[next.stackOrder.length - 1]!;
         next = { ...next, stackObjects: { ...next.stackObjects, [top]: { ...next.stackObjects[top]!, sacrificedStats: entry.sacrificed } } };
       }
+      // And the X it paid (D1380), read by the second half as "that many" is.
+      if (entry.amount !== undefined && next.stackOrder.length > height) {
+        const top = next.stackOrder[next.stackOrder.length - 1]!;
+        next = { ...next, stackObjects: { ...next.stackObjects, [top]: { ...next.stackObjects[top]!, eventAmount: entry.amount } } };
+      }
     }
     /*
       Damage before deaths, because that is the order the two happened in: combat damage is dealt,

@@ -51424,6 +51424,50 @@ describe('"You may pay {X}. If you do" (D1379)', () => {
   });
 });
 
+describe('"You may pay {X}. When you do", and a card that calls itself he or she (D1380)', () => {
+  const BATTERY = { name: 'Test Battery', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'When Test Battery enters, you may pay {X}. When you do, it deals X damage to target player.' };
+  const HERO = { name: 'Test Hero', type_line: 'Legendary Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'When Test Hero enters, he deals 2 damage to target creature an opponent controls.\nWhenever Test Hero attacks, put a +1/+1 counter on her.' };
+  const ROWS = [BATTERY, HERO];
+  const deck = customDeck({ id: 'd1380', name: 'Battery', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Mountain', count: 46 }], data: ROWS as never[] });
+  const table = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1380', 1: 'd1380' }, deckSpecs: { d1380: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState, until: (s: GameState) => boolean): GameState => {
+    for (let i = 0; i < 6 && !until(s) && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const asked = (t: GameState): boolean => t.pendingDecision !== null || t.pendingChoice !== null;
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('pays X of three, then aims the trigger that follows, which deals the X paid', () => {
+    let s = table('Test Battery');
+    s = settle(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Battery') } as Action)), asked);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {X}' } as Action);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 3 });
+    s = settle(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 3 } as Action), asked);
+    const theirs = life(s, 1);
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    s = settle(s, () => false);
+    expect(life(s, 1)).toBe(theirs - 3);
+  });
+
+  it("the hero's 'he deals' is its own damage: the Bear dies", () => {
+    let s = table('Test Hero');
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = settle(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hero') } as Action)), asked);
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] } as Action);
+    s = settle(s, () => false);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

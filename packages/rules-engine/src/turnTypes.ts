@@ -1099,6 +1099,8 @@ export interface AutomationState {
     readonly source: string; readonly key: string; readonly controller: SeatIndex; readonly subject?: string;
     /** The permanent the first half sacrificed, as it last was (D950): "that creature's power". */
     readonly sacrificed?: SacrificedStats;
+    /** The X the first half paid (D1380): "you may pay {X}. When you do, … X damage …". */
+    readonly amount?: number;
   }[];
   /**
    * Permanents **turned over** since the last settle: transform (CR 701.28).
