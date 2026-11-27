@@ -50481,3 +50481,32 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6576 of 6576 pass. Web typecheck clean.
 
 Coverage: 17,604 of 31,900 cards (+4 over D1360's 17,600), 40,480 of 59,888 lines (+5).
+
+## D1362 — A free shield pressed no more than the damage coming
+
+Sweep 100001 (D1351 build) finished 99 of 100 games. Seed 100010 looped: 2,000 moves in one
+declare-blockers step on turn 46, 1,000 of them Outrider en-Kor's "{0}: The next 1 damage that
+would be dealt to ~ this turn is dealt to target creature you control instead", aimed at a
+Blind-Spot Giant.
+
+D1335 marked the en-Kor's ability as damage prevention, so the bot uses it only while damage is
+coming. In combat damage is coming, and each press put up one more shield. The bot's search saw
+each one as worth having, so it pressed, passed, let the shield resolve, and pressed again.
+
+**The rule.** A prevention ability is not activated once the shields its source already has up
+cover the total power of every creature attacking this seat. That total is the most combat damage
+there is to stop. Spells (a Fog) are unchanged, and so is the D1335 rule for when no damage is
+coming.
+
+**Tests.** 1 engine test. Outrider en-Kor blocks a 3/3 Hill Giant, which would kill it. The
+declare-blockers step is played out for 60 moves, the bot's presses and passes and the opponent's
+passes. The bot presses at least once and at most 3 times. Without the rule it pressed 15 times in
+the same 60 moves.
+
+Faults injected by hand: 1, caught (the cap removed). A count of the source's activations still on
+the stack was written and then removed: the bot never presses again over its own shield on the
+stack, so no test reached it.
+
+The scripts tests, compile tests and pins: 6577 of 6577 pass.
+
+Coverage: 17,604 of 31,900 cards (+0 over D1361's 17,604), 40,480 of 59,888 lines (+0).
