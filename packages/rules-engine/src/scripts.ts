@@ -27952,6 +27952,38 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    "Return target spell or creature / permanent / nonland permanent to its owner's hand" (D1339):
+    Venser, Shaper Savant; Unsubstantiate; Brutal Expulsion's mode; Press the Enemy's "… an opponent
+    controls". One target that is either; a spell goes by \`returnSpellToHand\`, a permanent by the
+    ordinary bounce.
+  */
+  const eitherBack = /^return target spell or (creature|permanent|nonland permanent)( an opponent controls)? to its owner['’]s hand$/i.exec(text);
+  if (eitherBack !== null) {
+    const kind = eitherBack[1]!.toLowerCase();
+    const theirs = eitherBack[2] !== undefined;
+    const spec: TargetSpec = {
+      kind: 'spell-or-permanent',
+      description: `target spell or ${kind}${theirs ? ' an opponent controls' : ''}`,
+      filter: (state, t, controller) => {
+        if (t.kind !== 'card') return false;
+        const object = state.stackObjects[t.id];
+        if (object !== undefined) return object.kind === 'spell' && (!theirs || object.controller !== controller);
+        const inst = state.instances[t.id];
+        if (inst === undefined || inst.zone !== 'battlefield' || (theirs && inst.zoneSeat === controller)) return false;
+        const ch = characteristicsOf(state, inst);
+        return kind === 'creature' ? ch.isCreature : kind === 'nonland permanent' ? !hasType(ch.typeLine, 'land') : true;
+      },
+    };
+    return {
+      targets: [spec],
+      effect: (c) => c.targets.reduce((state, t) => {
+        if (t.kind !== 'card') return state;
+        if (state.stackObjects[t.id]?.kind === 'spell') return returnSpellToHand(state, t.id);
+        return state.instances[t.id]?.zone === 'battlefield' ? bounceToHand(state, t.id) : state;
+      }, c.state),
+    };
+  }
   // "Return target spell you don't control to its owner's hand" (D1337): see `returnSpellToHand`.
   const spellBack = /^return (target spell(?: you don['’]t control| an opponent controls)?) to its owner['’]s hand$/i.exec(text);
   if (spellBack !== null) {

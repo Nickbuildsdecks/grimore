@@ -44,6 +44,9 @@ export interface TargetSpec {
   readonly kind:
     | 'creature' | 'permanent' | 'player' | 'any' | 'player-or-planeswalker' | 'spell'
     | 'ability' | 'spell-or-ability'
+    // A spell on the stack or a permanent (D1339): Venser's "target spell or permanent". The
+    // permanent half is narrowed by `filter` ("or creature", "or nonland permanent").
+    | 'spell-or-permanent'
     | 'graveyard-creature' | 'graveyard-land' | 'graveyard-card';
   /** Shown to the player choosing, e.g. "target creature an opponent controls". */
   readonly description: string;

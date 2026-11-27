@@ -148,7 +148,7 @@ function satisfies(
   */
   const asCopy = state.stackObjects[candidate.id];
   if (asCopy?.kind === 'spell' && asCopy.copyOf !== undefined) {
-    if (spec.kind !== 'spell' && spec.kind !== 'spell-or-ability') return false;
+    if (spec.kind !== 'spell' && spec.kind !== 'spell-or-ability' && spec.kind !== 'spell-or-permanent') return false;
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
@@ -159,6 +159,10 @@ function satisfies(
   // is physically in the stack zone and the object beside it describes how it was cast.
   if (spec.kind === 'spell' || spec.kind === 'spell-or-ability') {
     if (inst.zone !== 'stack') return false;
+    return spec.filter ? spec.filter(state, candidate, controller, source) : true;
+  }
+  // Either a spell, by the check just above, or a permanent, by everything below (D1339).
+  if (spec.kind === 'spell-or-permanent' && inst.zone === 'stack') {
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
@@ -218,7 +222,7 @@ export function legalTargets(
     target spell" while the engine looked in the zone. Reading `stackOrder` and keeping the spells
     finds both, and it is the same shape the abilities below already use.
   */
-  if (spec.kind === 'spell' || spec.kind === 'spell-or-ability') {
+  if (spec.kind === 'spell' || spec.kind === 'spell-or-ability' || spec.kind === 'spell-or-permanent') {
     for (const id of state.stackOrder) {
       if (state.stackObjects[id]?.kind !== 'spell') continue;
       const candidate: Target = { kind: 'card', id };

@@ -49474,6 +49474,57 @@ describe('"choose up to one —" on a trigger: Hullbreaker Horror (D1338)', () =
   });
 });
 
+describe('a target that is a spell or a permanent: Venser and Unsubstantiate (D1339)', () => {
+  const UNSUB = { name: 'Test Unsub', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: "Return target spell or creature to its owner's hand." };
+  const deck = customDeck({ id: 'd1339', name: 'Unsub', entries: [{ name: 'Test Unsub', count: 4 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 25 }, { name: 'Island', count: 25 }], data: [UNSUB] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1339', 1: 'd1339' }, deckSpecs: { d1339: deck.deck },
+    hands: { 0: ['Grizzly Bears'], 1: ['Test Unsub'] },
+    battlefield: { 0: ['Forest', 'Forest', 'Grizzly Bears'], 1: ['Island'] }, turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, one target of the new kind', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(UNSUB as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.targets?.map((t) => t.kind)).toEqual(['spell-or-permanent']);
+  });
+
+  it('offers the spell on the stack and the creature, never the land', () => {
+    let s = table();
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    const spell = ids(s, 0, 'stack')[0]!;
+    const creature = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    const unsub = find(s, 1, 'hand', 'Test Unsub');
+    const play = legalActions(s, 1).plays.find((p) => p.card === unsub)!;
+    const offered = (play.candidates[0] ?? []).map((t: Target) => (t.kind === 'card' ? t.id : ''));
+    expect(offered).toContain(spell);
+    expect(offered).toContain(creature);
+    expect(offered.some((id: string) => nameOf(s, id) === 'Forest' || nameOf(s, id) === 'Island')).toBe(false);
+  });
+
+  it('a spell goes back to its owner\'s hand', () => {
+    let s = table();
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    const spell = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Unsub'), targets: [{ kind: 'card', id: spell }] } as Action), 60);
+    expect(s.instances[spell]!.zone).toBe('hand');
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('and so does a creature', () => {
+    let s = table();
+    const creature = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = drain(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Unsub'), targets: [{ kind: 'card', id: creature }] } as Action), 60);
+    expect(s.instances[creature]!.zone).toBe('hand');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
