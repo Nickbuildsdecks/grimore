@@ -49825,3 +49825,35 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6513 of 6513 pass.
 
 Coverage: 17,548 of 31,900 cards (+6 over D1343's 17,542), 40,386 of 59,888 lines (+8).
+
+## D1345 — Najeela: whenever anybody's Warrior attacks
+
+Najeela, the Blade-Blossom is on the second staples list. Its activated ability already read. Its
+trigger did not: "Whenever a Warrior attacks, you may have its controller create a 1/1 white
+Warrior creature token that's tapped and attacking."
+
+**Anybody's Warrior.** D635's "Whenever a Dragon you control attacks" now also takes the type
+without "you control": an `attacks` trigger `of: 'any'` with the subtype.
+
+**Its controller's token.** `attackingTokenEffect` takes "have its controller create …". The
+tokens go to the attacking creature's controller (the trigger's subject), and attack whom it
+attacks. The "you may" is the trigger controller's, read by the ordinary optional wrapper.
+
+**A fault from D1183.** `attackingTokenEffect`'s regex literals had been escaped twice: the
+trailing full stop was never stripped, and "create 2 tapped and attacking …" in digits never read.
+Both are fixed, and a search of the engine's other regex literals found no more.
+
+**Tests.** 4 engine tests:
+- A fixture Najeela reads whole, an `attacks` trigger of any Warrior. A count in digits reads.
+- My Warrior attacks: I am asked, and on yes I get a tapped token attacking the same player.
+- An opponent's Warrior attacks: I am asked, and the token is theirs, attacking me.
+- Declined: no token.
+
+Faults injected by hand: 3, all caught.
+- "Of any" narrowed back to "you".
+- The token given to the trigger's controller.
+- The digits fix reverted.
+
+The scripts tests, compile tests and pins: 6517 of 6517 pass.
+
+Coverage: 17,549 of 31,900 cards (+1 over D1344's 17,548), 40,387 of 59,888 lines (+1).
