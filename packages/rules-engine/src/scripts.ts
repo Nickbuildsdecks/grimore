@@ -13107,7 +13107,13 @@ const ENTERS = 'enters(?: the battlefield)?';
  */
 const selfRef = (name: string): string => {
   const short = shortName(name);
-  return `(?:${escapeName(name)}${short === null ? '' : `|${escapeName(short)}`}`
+  /*
+    And without the accents (D1369): Gríma, Saruman's Footman prints "Whenever Grima deals combat
+    damage", Thrór's Map "Thror's Map". The same name, as two printings spell it.
+  */
+  const fold = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const names = [...new Set([name, ...(short === null ? [] : [short])].flatMap((n) => [n, fold(n)]))];
+  return `(?:${names.map(escapeName).join('|')}`
     + `|this (?:${SELF_TYPE_WORDS.join('|')}))`;
 };
 
@@ -32766,6 +32772,17 @@ function clausesOf(line: string): readonly string[] {
     // spelt out again. The draw moves no counters, so the group is the same set when it is granted.
     .replace(/(for each creature you control with an? ([+\-\w/]+) counter on it)\.\s+Those creatures gain ([^.]+?) until end of turn/gi,
       (_m, head: string, kind: string, kw: string) => `${head}. Creatures you control with ${kind} counters on them gain ${kw} until end of turn`)
+    /*
+      Jeskai Ascendancy (D1369): "creatures you control get +1/+1 until end of turn. Untap those
+      creatures." "Those creatures" are the group the sentence before pumped, with nothing in between
+      to change it, so the second sentence names that group.
+    */
+    .replace(/((?:^|[.;]\s+)(?:other )?(creatures you control|attacking creatures you control|all creatures) get [+-]\d+\/[+-]\d+(?: and gain [a-z ,]+?)? until end of turn)\.\s+Untap (?:those creatures|them)(?=\.|$)/gi,
+      (_m, first: string, group: string) => `${first}. Untap all ${group.replace(/^all /i, '')}`)
+    // And the other way round (D1369): "Untap all creatures you control. They gain flying and double
+    // strike until end of turn" (Flying Crane Technique), "… Those creatures get +1/+1" (Gideon).
+    .replace(/(untap (?:all|each) (creatures you control|creature you control))\.\s+(?:They|Those creatures) (gain|get) ([^.]+?) until end of turn(?=\.|$)/gi,
+      (_m, first: string, _group: string, verb: string, rest: string) => `${first}. Creatures you control ${verb.toLowerCase()} ${rest} until end of turn`)
     // Karlach (D885): "untap all attacking creatures. They gain first strike until end of turn": "they"
     // are the attacking creatures just untapped.
     .replace(/untap all attacking creatures\.\s+They gain ([^.]+?) until end of turn/gi, (_m, kw: string) => `untap all attacking creatures. Attacking creatures gain ${kw} until end of turn`)

@@ -284,3 +284,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1365 pushed in ec2c10c. D1366 a <type> planeswalker condition (boardCondition): scripts.ts only.
 - D1366 pushed in 41d2c4c. D1367 Doomsday (doomsdayPile, CardsDecisionSpec.again): scriptTypes, automation, scripts.ts.
 - D1367 pushed in d69b277. D1368 exile until a kind, cast free (untilCastable, exileUntilOffered): scripts.ts only.
+- D1368 pushed in 6a0571b. D1369 untap those creatures / they gain rewrites, accentless self names (clausesOf, selfRef): scripts.ts only.

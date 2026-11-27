@@ -50923,6 +50923,49 @@ describe('Exile until a kind of card, and cast it free (D1368)', () => {
   });
 });
 
+describe('"Untap those creatures" after a team bonus, "they gain" after an untap, and a name without its accents (D1369)', () => {
+  const card = (name: string, type: string, text: string, pt = false) => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...(pt ? { power: '2', toughness: '2' } : {}), oracle_text: text });
+  const ASCEND = card('Test Ascendancy', 'Enchantment', 'Whenever you cast a noncreature spell, creatures you control get +1/+1 until end of turn. Untap those creatures.');
+  const WAKE = card('Test Wake', 'Sorcery', 'Untap all lands you control.');
+  const CRANE = card('Test Crane', 'Instant', 'Untap all creatures you control. They gain flying until end of turn.');
+  const GRIMA = card('Test Gríma', 'Creature — Human', 'Whenever Test Grima deals combat damage to a player, draw a card.', true);
+  const ROWS = [ASCEND, WAKE, CRANE, GRIMA];
+  const deck = customDeck({ id: 'd1369', name: 'Untap', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Plains', count: 44 }], data: ROWS as never[] });
+  const table = (hand: readonly string[], mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1369', 1: 'd1369' }, deckSpecs: { d1369: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: ['Plains', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  // Resolved within the main phase: a walk to the next turn's untap step would untap everything anyway.
+  const resolve = (s: GameState, name: string): GameState => {
+    let t = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+    for (let i = 0; i < 4 && t.stackOrder.length > 0; i++) t = passBoth(t);
+    expect(t.step).toBe('precombat-main');
+    expect(t.turn).toBe(s.turn);
+    return t;
+  };
+  const tapAll = (s: GameState, seat: SeatIndex): GameState => ids(s, seat, 'battlefield').reduce((state, id) => ({ ...state, instances: { ...state.instances, [id]: { ...state.instances[id]!, tapped: true } } }), s);
+
+  it('all four read whole, the accentless name included', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a noncreature spell under the Ascendancy: each creature gets +1/+1 and untaps', () => {
+    let s = tapAll(table(['Test Wake'], ['Test Ascendancy', 'Grizzly Bears', 'Grizzly Bears']), 0);
+    const bears = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    s = resolve(s, 'Test Wake');
+    expect(bears.every((id) => !s.instances[id]!.tapped && power(s, id) === 3)).toBe(true);
+  });
+
+  it('untap all creatures you control, then they gain flying', () => {
+    let s = tapAll(table(['Test Crane'], ['Grizzly Bears']), 0);
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = resolve(s, 'Test Crane');
+    expect(s.instances[bear]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('flying')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
