@@ -336,10 +336,17 @@ export function checkTargets(
  * less, and a total that is not the whole amount. The last is the one that matters most — a spell
  * cast with two of its three damage assigned is a card that silently did less than it says.
  */
+/** The amount a dividing spec divides (D1358): its own number, or the X announced. */
+export function dividedAmountOf(spec: TargetSpec, x: number): number {
+  return spec.dividedX === true ? x : spec.divided ?? 0;
+}
+
 export function checkDivision(
   specs: readonly TargetSpec[],
   chosen: readonly Target[],
   division: readonly number[] | undefined,
+  /** The X announced, for a spec whose amount is X (D1358). */
+  x = 0,
 ): TargetCheck {
   const dividing = specs.filter((spec) => spec.divided !== undefined);
   if (dividing.length === 0) {
@@ -359,7 +366,9 @@ export function checkDivision(
   if (spec === undefined || specs.length > 1) {
     return { ok: false, reason: 'the engine cannot divide a spell that chooses more than one kind of target' };
   }
-  const amount = spec.divided ?? 0;
+  const amount = dividedAmountOf(spec, x);
+  // An X of nought divides nothing (D1358): no targets, and nothing to assign.
+  if (amount === 0 && chosen.length === 0 && (division ?? []).length === 0) return { ok: true };
   if (division === undefined) {
     return { ok: false, reason: `divide ${amount} among the targets` };
   }

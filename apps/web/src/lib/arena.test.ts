@@ -159,6 +159,29 @@ describe("choosing a play", () => {
       })
     })
 
+    it("divides the X chosen first, for a spell whose amount is X (D1358)", () => {
+      const thunder = play({
+        name: "Rolling Thunder",
+        manaCost: "{X}{R}{R}",
+        xMax: 5,
+        targetSpecs: [{ kind: "any", description: "any target", count: 99, optional: true, divided: 0, dividedX: true }],
+        candidates: [[player(1), card("a"), card("b")]],
+      })
+      let mode: ArenaMode = arenaReducer(IDLE, { kind: "choosePlay", play: thunder }).mode
+      expect(mode.kind).toBe("payingX")
+      mode = arenaReducer(mode, { kind: "setX", amount: 3 }).mode
+      mode = arenaReducer(mode, { kind: "confirm" }).mode
+      expect(mode).toMatchObject({ kind: "targeting", x: 3 })
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      // Two of three spent: Cast does nothing yet.
+      expect(arenaReducer(mode, { kind: "confirm" }).action).toBeNull()
+      const result = arenaReducer(mode, { kind: "pickTarget", target: card("b") })
+      expect(result.action).toEqual({
+        type: "auto:cast", card: "c1", targets: [card("a"), card("b")], x: 3, division: [2, 1],
+      })
+    })
+
     it("does not send a half-spent division when Cast is pressed", () => {
       // The spell is "up to three targets", so `targetsRequired` is zero and the old confirm would
       // have sent it with one damage of three assigned — a division the engine refuses.

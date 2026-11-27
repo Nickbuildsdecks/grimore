@@ -740,7 +740,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     targets: "three damage divided" means nothing until there is a list to divide it among, and a
     division checked first would have to be re-checked once the list arrived.
   */
-  const divided = checkDivision(specs, chosen, action.division);
+  const divided = checkDivision(specs, chosen, action.division, action.x ?? 0);
   if (!divided.ok) throw new EngineError('RULE_NOT_APPLICABLE', divided.reason ?? 'that division does not add up');
 
   /*

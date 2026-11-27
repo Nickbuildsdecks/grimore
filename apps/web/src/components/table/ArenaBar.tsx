@@ -122,7 +122,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           gets the prompt, the running total, and a Back button: re-tapping is how a misclick is
           undone everywhere else here, and it is the one gesture that cannot mean that any more.
         */
-        const amount = dividedAmount(mode.play)
+        const amount = dividedAmount(mode.play, mode.x)
         const shares = mode.shares ?? []
         const spent = shares.reduce((n, d) => n + d, 0)
         return (

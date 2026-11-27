@@ -352,8 +352,11 @@ export function targetName(view: GameView, target: Target): string {
  * Read off the spec the engine sent rather than from a list of card names here: the client's job
  * is to collect the division, not to know which cards have one.
  */
-export function dividedAmount(play: LegalPlay): number | undefined {
-  return play.targetSpecs.find((spec) => spec.divided !== undefined)?.divided
+export function dividedAmount(play: LegalPlay, x?: number): number | undefined {
+  const spec = play.targetSpecs.find((spec) => spec.divided !== undefined)
+  if (spec === undefined) return undefined
+  // "Deals X damage divided as you choose" (D1358): the X chosen before the targets.
+  return spec.dividedX === true ? x ?? 0 : spec.divided
 }
 
 /** Which spec the next pick is for, so the prompt can name it. */
@@ -701,7 +704,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         goes as soon as the last point is spent. Dropping a target is `undoTarget`, which peels
         one point back off, so a misclick costs one tap to undo instead of the whole aim.
       */
-      const amount = dividedAmount(mode.play)
+      const amount = dividedAmount(mode.play, mode.x)
       if (amount !== undefined) {
         const shares = mode.shares ?? []
         if (shares.reduce((n, d) => n + d, 0) >= amount) return { mode, action: null }
@@ -780,7 +783,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         // A dividing spell is sent by its last point rather than by this button, so a press with
         // the amount half spent does nothing: the engine refuses a division that does not add up,
         // and a button that sent one would turn a rule into an error message.
-        const amount = dividedAmount(mode.play)
+        const amount = dividedAmount(mode.play, mode.x)
         if (amount !== undefined && (mode.shares ?? []).reduce((n, d) => n + d, 0) !== amount) {
           return { mode, action: null }
         }

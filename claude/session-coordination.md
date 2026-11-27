@@ -273,3 +273,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1354 pushed in c5ad18e. D1355 "put a counter on each of them" (composeEffects loop): scripts.ts only.
 - D1355 pushed in 7c79c55. D1356 "any number of target" (TARGET_QUANTIFIERS, TargetSpec.botWhileSameSide): scriptTypes, bot, scripts.ts.
 - D1356 pushed in 7599f8f. D1357 Strive (CardScript.extraTargetColoured, castSpell coloured charge, bot one target): scriptTypes, legalActions, autoActions, bot, scripts.ts.
+- D1357 pushed in 9e3d321. D1358 X divided damage (TargetSpec.dividedX, checkDivision x, bot, web dividedAmount): scriptTypes, targeting, autoActions, bot, scripts.ts, web arena.ts, ArenaBar.

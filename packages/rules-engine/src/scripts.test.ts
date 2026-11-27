@@ -29402,9 +29402,10 @@ describe('a bare X, as the X paid (D1055)', () => {
       const read = compileCard({ name: 'Test Unpaid', type_line: type, mana_cost: cost, cmc: 1, colors: ['B'], layout: 'normal', oracle_text: text } as never);
       expect(read.ok && read.unread.map((u) => u.line), `${cost} ${text}`).toEqual([text.split('\n').at(-1)]);
     }
-    // Nor a division whose amount is in the target spec (Fire Covenant's).
+    // A division of the X paid among "any number of" reads since D1358 (`TargetSpec.dividedX`); among
+    // a listed count it does not, since no card prints that with an X.
     const divided = compileCard({ name: 'Test Covenant', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['R'], layout: 'normal',
-      oracle_text: 'Test Covenant deals X damage divided as you choose among any number of target creatures.' } as never);
+      oracle_text: 'Test Covenant deals X damage divided as you choose among one, two, or three target creatures.' } as never);
     expect(divided.ok && divided.unread.length).toBe(1);
   });
 });
@@ -50420,6 +50421,53 @@ describe('Strive: a coloured charge for each target beyond the first (D1357)', (
     expect(act?.type).toBe('auto:cast');
     expect(act!.targets).toHaveLength(1);
     expect(() => apply(t, act as Action)).not.toThrow();
+  });
+});
+
+describe('X damage divided as you choose (D1358)', () => {
+  const THUNDER = { name: 'Test Thunder', type_line: 'Sorcery', mana_cost: '{X}{R}', cmc: 1, colors: ['R'], layout: 'normal',
+    oracle_text: 'Test Thunder deals X damage divided as you choose among any number of targets.' };
+  const deck = customDeck({ id: 'd1358', name: 'Thunder', entries: [{ name: 'Test Thunder', count: 4 }, { name: 'Grizzly Bears', count: 12 }, { name: 'Mountain', count: 44 }], data: [THUNDER] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1358', 1: 'd1358' }, deckSpecs: { d1358: deck.deck },
+    hands: { 0: ['Test Thunder'] }, battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'], 1: ['Grizzly Bears', 'Grizzly Bears'] },
+    turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const theirs = (s: GameState) => ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+  const thunderAt = (s: GameState, x: number, targets: readonly Target[], division?: readonly number[]) =>
+    apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Thunder'), x, targets: [...targets], ...(division === undefined ? {} : { division: [...division] }) } as Action);
+
+  it('reads whole, the amount marked as X; and not where nothing pays an X', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(THUNDER as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.targets?.[0]).toMatchObject({ count: 99, optional: true, divided: 0, dividedX: true });
+    const unpaid = compileCard({ ...THUNDER, name: 'Test Covenant', mana_cost: '{1}{R}', oracle_text: 'Test Covenant deals X damage divided as you choose among any number of targets.' } as never);
+    expect(unpaid.ok && unpaid.unread.length).toBe(1);
+  });
+
+  it('X=3 divided two and one: one Bears dies, the other has 1 damage; a division of four refused', () => {
+    let s = table();
+    const [a, b] = theirs(s).map((id) => ({ kind: 'card' as const, id }));
+    expect(() => thunderAt(s, 3, [a!, b!], [2, 2])).toThrow(/all 3 must be assigned/);
+    s = drain(passBoth(thunderAt(s, 3, [a!, b!], [2, 1])), 20);
+    expect(s.instances[a!.id]!.zone).toBe('graveyard');
+    expect(s.instances[b!.id]!.damage).toBe(1);
+  });
+
+  it('X=0 is cast with no targets and nothing divided', () => {
+    const s = table();
+    expect(() => thunderAt(s, 0, [])).not.toThrow();
+  });
+
+  it('the bot casts it for all its mana, divided to the X', () => {
+    let s = table();
+    let act = botAction(s, 0) as { type: string; x?: number; division?: number[] } | null;
+    for (let i = 0; i < 4 && act !== null && act.type !== 'auto:cast'; i++) { s = apply(s, act as Action); act = botAction(s, 0) as { type: string; x?: number; division?: number[] } | null; }
+    expect(act?.type).toBe('auto:cast');
+    expect(act!.x).toBe(3);
+    expect((act!.division ?? []).reduce((n, d) => n + d, 0)).toBe(3);
+    expect(() => apply(s, act as Action)).not.toThrow();
   });
 });
 

@@ -27245,12 +27245,21 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     or blocking creatures", "target creatures with flying"), read as the singular phrase.
   */
   const shared = new RegExp(
-    `^(?:${self}|it) deals (\\d+) damage divided as you choose among (any number of|[a-z, ]+?) (targets|target .+?)$`, 'i',
+    `^(?:${self}|it) deals (\\d+|X) damage divided as you choose among (any number of|[a-z, ]+?) (targets|target .+?)$`, 'i',
   ).exec(clause.trim().replace(/\.\s*$/, ''));
+  /*
+    And X (D1358): Rolling Thunder, Conflagrate, Hail of Arrows. The amount is the X paid, so only
+    where something pays one (`xPayable`), and only among "any number of": the ceiling is the
+    engine's, and each target still takes at least one of the X.
+  */
+  const xDivided = shared !== null && shared[1]!.toUpperCase() === 'X';
+  if (xDivided && (!xPayable || !/^any number of$/i.test(shared![2]!))) return null;
   if (shared !== null) {
-    const amount = Number(shared[1]);
+    const amount = xDivided ? 0 : Number(shared[1]);
     let count: number;
-    if (/^any number of$/i.test(shared[2]!)) {
+    if (xDivided) {
+      count = ANY_NUMBER_OF_TARGETS;
+    } else if (/^any number of$/i.test(shared[2]!)) {
       count = amount;
     } else {
       // Split on both separators the list uses, and on "or" wherever it sits: "one, two, or three"
@@ -27267,7 +27276,7 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     if (spec === null || count < 2 || spec.kind === 'spell' || spec.kind === 'ability') return null;
     return {
       // "Any number of" is a ceiling, not advice: the bot puts it all on one target (D579's hint).
-      targets: [{ ...spec, count, optional: true, divided: amount, ...(/^any number of$/i.test(shared[2]!) ? { botTakes: 1 } : {}) }],
+      targets: [{ ...spec, count, optional: true, divided: amount, ...(xDivided ? { dividedX: true as const } : {}), ...(/^any number of$/i.test(shared[2]!) ? { botTakes: 1 } : {}) }],
       effect: (c) => dividedAmong(c).reduce(
         (state, { target, amount }) => dealDamage(state, target, amount, {
           controller: c.controller, source: c.source,

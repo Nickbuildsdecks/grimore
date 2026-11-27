@@ -2262,7 +2262,11 @@ function aimings(
   state: GameState, seat: SeatIndex, play: LegalPlay, opts: BotOptions = {},
 ): Aiming[] {
   const spec = play.targetSpecs[0];
-  if (spec?.divided !== undefined) return dividedAimings(state, seat, play, spec.divided);
+  // An amount that is X (D1358) is the X this file casts with: see the cast below.
+  if (spec?.divided !== undefined) {
+    const amount = spec.dividedX === true ? play.xDefault ?? play.xMax ?? 0 : spec.divided;
+    return amount > 0 ? dividedAimings(state, seat, play, amount) : [];
+  }
   const first = chooseTargets(state, seat, play, opts);
   if (first === null) return [];
   if (first.length === 0) return [{ targets: [] }];

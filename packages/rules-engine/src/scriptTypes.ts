@@ -201,6 +201,12 @@ export interface TargetSpec {
    * be re-dividing after the window to respond had closed.
    */
   readonly divided?: number;
+  /**
+   * The amount divided is the X announced for the spell (D1358): "Rolling Thunder deals X damage
+   * divided as you choose among any number of targets". `divided` is then 0 and only marks the
+   * spec as one that divides; `dividedAmountOf` gives the amount for an X.
+   */
+  readonly dividedX?: true;
 }
 
 /**
