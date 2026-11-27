@@ -50636,3 +50636,48 @@ Faults injected by hand: 3, 2 caught.
 The scripts tests, compile tests and pins: 6588 of 6588 pass.
 
 Coverage: 17,613 of 31,900 cards (+2 over D1365's 17,611), 40,496 of 59,888 lines (+2).
+
+## D1367 — Doomsday
+
+"Search your library and graveyard for five cards and exile the rest. Put the chosen cards on top
+of your library in any order. You lose half your life, rounded up." On the second staples list.
+
+**The reading** (`doomsdayPile`), three questions:
+- The library cards, as a search. At least as many as the graveyard cannot supply (five minus its
+  size), at most five.
+- The graveyard cards: exactly what makes five, or the whole graveyard if it has fewer. Skipped when
+  the library gave five.
+- The order. This is Ponder's question (`chosenGoTo: 'top'`, D651): every card picked, the first
+  picked becomes the top card.
+
+As the order question is reached, everything else in the library and graveyard is exiled and the
+graveyard picks go onto the library, so the cards looked at are exactly the pile. The exile is run
+again as the spell finishes. That does nothing by then, but it covers an empty pile, where the
+order question is never asked. Half the life, rounded up, is lost last.
+
+**One engine change.** Every question took out the cards the same seat had already chosen in the
+resolution, so "each player sacrifices" asked twice cannot name one creature twice. Doomsday's
+order question is about exactly those cards. The new `CardsDecisionSpec.again` lets a question
+offer them.
+
+**Tests.** 3 engine tests:
+- The card reads whole, as three questions.
+- Four library cards and one of two graveyard cards: the library question asks for 3 to 5. Once
+  the graveyard pick is in, the library holds just the five and the other graveyard card is
+  exiled. The order given is the library's order. The graveyard holds only Doomsday. Life goes
+  20 to 10.
+- With an empty graveyard: exactly five from the library, no graveyard question, the order as
+  given, and 7 life loses 4.
+
+Faults injected by hand: 4, all caught.
+- `again` ignored.
+- Nothing exiled as the order is reached.
+- The library minimum ignoring the graveyard.
+- Half the life rounded down.
+
+The scripts tests, compile tests and pins: 6591 of 6591 pass. Web typecheck clean.
+
+Staples: the second list is at 124 of 125 (Food Chain left). The first is at 243 of 244
+(Castle Garenbrig left).
+
+Coverage: 17,614 of 31,900 cards (+1 over D1366's 17,613), 40,497 of 59,888 lines (+1).
