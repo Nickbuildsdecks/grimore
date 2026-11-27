@@ -67817,3 +67817,40 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6565 of 6565 pass. Web: 281 of 281.
 
 Coverage: 17,595 of 31,900 cards (+3 over D1357's 17,592), 40,470 of 59,888 lines (+3).
+
+## D1359 — Tokens for what "any number of target" destroyed or exiled
+
+"Destroy any number of target creatures. For each creature destroyed this way, its controller
+creates a 4/4 red Dragon creature token with flying." (Descent of the Dragons), and Hour of Need's
+exile with a Sphinx. D704 read Terastodon's version, but its glue knew "up to three target" and not
+"any number of target", and it was for destroy only.
+
+**The rule.**
+- "Any number of target" joins D682's destroy glue.
+- An exile glue is added, joining only the sentence "For each creature (or permanent) exiled this
+  way, its controller creates …". Other sentences about cards exiled this way read as they did.
+- What left the battlefield now also records whether it was exiled (`toExile`, beside D704's
+  `toGraveyard`). A token exiled ceases to exist there and was still exiled (CR 111.7).
+
+So an indestructible creature that survives Descent gives no Dragon, and the same creature exiled
+by Hour of Need gives a Sphinx.
+
+Read whole now: Descent of the Dragons, Hour of Need. Curse of the Swine's "Exile X target
+creatures" is still unread.
+
+**Tests.** 3 engine tests:
+- Both fixtures read whole. "Exile any number of target creatures. You gain 1 life for each
+  creature exiled this way" is still refused.
+- Destroyed: one Dragon each for the two controllers whose Grizzly Bears died, and none for the
+  indestructible Wall, which is still on the battlefield.
+- Exiled: a Sphinx for each, the Wall included (one for seat 0, two for seat 1).
+
+Faults injected by hand: 4, all caught.
+- "Exiled" dropped from the token reader.
+- The exile glue removed.
+- "Any number of target" taken out of the destroy glue.
+- "Exiled" read as "put into a graveyard".
+
+The scripts tests, compile tests and pins: 6568 of 6568 pass.
+
+Coverage: 17,597 of 31,900 cards (+2 over D1358's 17,595), 40,472 of 59,888 lines (+2).
