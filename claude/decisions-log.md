@@ -67437,3 +67437,40 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6528 of 6528 pass.
 
 Coverage: 17,555 of 31,900 cards (+2 over D1347's 17,553), 40,396 of 59,888 lines (+3).
+
+## D1349 — Approach of the Second Sun: the second cast from hand wins
+
+Approach of the Second Sun is on the second staples list: "If this spell was cast from your hand
+and you've cast another spell named Approach of the Second Sun this game, you win the game.
+Otherwise, put Approach of the Second Sun into its owner's library seventh from the top and you
+gain 7 life."
+
+**What the game remembers.** `GameState.spellNamesCastThisGame` counts each seat's spells by name
+for the whole game, recorded where the turn's cast counts are and never cleared. "Cast from your
+hand" is the stack object's `castFrom`, D607's.
+
+**The reading.** `approachOfTheSecondSun` takes the two sentences as one:
+- Cast from hand, with this name cast twice or more by its controller (this one and another), every
+  opponent loses the game.
+- Otherwise the card goes seventh from the top (the bottom of a shorter library) and the life is
+  gained.
+
+**A spell that moves itself** (CR 608.2n). The resolved spell's exit sent the card to its graveyard
+whether or not it was still on the stack. A spell whose effect put the card somewhere was then
+moved again. The exit now runs only while the card is on the stack.
+
+**Tests.** 4 engine tests:
+- A fixture reads whole.
+- The first cast: seventh from the top, 27 life, and the name counted once.
+- The second copy cast out of exile, not the hand: no win, 34 life.
+- The second cast from hand: the opponent loses the game, and the caster is still in it.
+
+Faults injected by hand: 4, all caught.
+- The stack check in the exit removed.
+- A win on the first cast.
+- The count not kept.
+- "From your hand" ignored.
+
+The scripts tests, compile tests and pins: 6531 of 6531 pass, before the exile test was added.
+
+Coverage: 17,556 of 31,900 cards (+1 over D1348's 17,555), 40,397 of 59,888 lines (+1).
