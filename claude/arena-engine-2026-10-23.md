@@ -51368,3 +51368,36 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6647 of 6647 pass. Test typecheck clean.
 
 Coverage: 17,724 of 31,900 cards (+5 over D1383's 17,719), 40,672 of 59,888 lines (+6).
+
+## D1385 — "If you haven't cast a spell from your hand this turn", and the life they lost
+
+Two end-step shapes, each on several cards.
+
+**"If you haven't cast a spell from your hand this turn"**: Canyon Crab, Jem Lightfoote, Prairie
+Dog, Wrangler of the Damned, Inventive Wingsmith, Emergent Haunting. The turn's cast tallies (D678)
+had no record of where a spell was cast from, so `countCast` now counts one cast from its owner's
+hand under `<seat>:from-hand`, read off the stack object's `castFrom`. A spell cast from a
+graveyard, from exile or from the command zone doesn't count. The positive form ("if you've cast a
+spell from your hand this turn") reads too.
+
+**"Each opponent loses life equal to the life that player lost this turn"**: Archfiend of Despair,
+Wound Reflection, Warlock Class. Each opponent's own amount from `lifeLostThisTurn`, read before any
+of it is lost.
+
+Read whole now: Canyon Crab, Jem Lightfoote, Wrangler of the Damned, Archfiend of Despair, Wound
+Reflection.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole.
+- The Crab draws at the end step when no spell was cast from the hand, and doesn't after one was.
+- An opponent who lost 3 this turn loses 3 more at the end step, and one who lost none loses
+  none.
+
+Faults injected by hand: 3, all caught.
+- The cast from hand not recorded.
+- The condition inverted.
+- The controller's loss read for each opponent.
+
+The scripts tests, compile tests and pins: 6650 of 6650 pass. Test typecheck clean.
+
+Coverage: 17,730 of 31,900 cards (+6 over D1384's 17,724), 40,679 of 59,888 lines (+7).
