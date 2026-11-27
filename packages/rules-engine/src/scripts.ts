@@ -34693,6 +34693,28 @@ function untilCastable(
   };
 }
 
+/**
+ * Kroxa, Titan of Death's Hunger (D1371): "each opponent discards a card, then each opponent who
+ * didn't discard a nonland card this way loses 3 life." One discard question for each opponent,
+ * then the life from each one whose discard was a land, or who had no card to discard.
+ */
+function discardOrLose(clauses: readonly string[]): ReadEffect | null {
+  const text = clauses.map((clause) => plain(clause).trim().replace(/[.,]$/, '')).join(', ');
+  const read = /^each opponent discards a card, (?:then )?each opponent who didn't discard a nonland card this way loses (\d+) life$/i.exec(text);
+  if (read === null) return null;
+  const n = Number(read[1]);
+  return {
+    decisions: [{ who: 'each-opponent', from: 'hand', prompt: 'Discard a card', min: 1, max: 1 }],
+    effect: (c) => opponentsOf(c.state, c.controller).reduce((state, seat) => {
+      const ids = c.decisions.filter((answer) => answer.seat === seat).flatMap((answer) => answer.ids)
+        .filter((id) => state.instances[id]?.zone === 'hand');
+      const nonland = ids.some((id) => !hasType(parseTypeLine(state.cardDefs[state.instances[id]!.defKey]?.typeLine), 'land'));
+      const after = moveToGraveyard(state, ids);
+      return nonland ? after : loseLife(after, seat, n);
+    }, c.state),
+  };
+}
+
 function doomsdayPile(clauses: readonly string[]): ReadEffect | null {
   const text = clauses.map((clause) => plain(clause).trim().replace(/\.$/, '')).join('. ');
   if (!/^search your library and graveyard for five cards and exile the rest\. put the chosen cards on top of your library in any order\. you lose half your life, rounded up$/i.test(text)) return null;
@@ -35626,6 +35648,9 @@ function composeEffectsAsPrinted(
   // A vote (D1361): see `voteGroup`.
   const voted = voteGroup(clauses, name, where);
   if (voted !== null) return voted;
+  // Kroxa (D1371): see `discardOrLose`.
+  const kroxa = discardOrLose(clauses);
+  if (kroxa !== null) return kroxa;
   // Doomsday (D1367): see `doomsdayPile`.
   const pile = doomsdayPile(clauses);
   if (pile !== null) return pile;

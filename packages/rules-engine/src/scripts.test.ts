@@ -50997,6 +50997,44 @@ describe('"Sacrifice it unless it escaped": the Theros titans (D1370)', () => {
   });
 });
 
+describe("Kroxa: each opponent discards, and loses 3 unless it was a nonland card (D1371)", () => {
+  const KROXA = { name: 'Test Kroxa', type_line: 'Creature — Elder Giant', mana_cost: '{0}', cmc: 0, colors: ['B', 'R'], layout: 'normal', power: '6', toughness: '6',
+    oracle_text: "Whenever Test Kroxa enters or attacks, each opponent discards a card, then each opponent who didn't discard a nonland card this way loses 3 life." };
+  const deck = customDeck({ id: 'd1371', name: 'Kroxa', entries: [{ name: 'Test Kroxa', count: 2 }, { name: 'Grizzly Bears', count: 14 }, { name: 'Forest', count: 44 }], data: [KROXA] as never[] });
+  const table = (theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1371', 1: 'd1371' }, deckSpecs: { d1371: deck.deck },
+    hands: { 0: ['Test Kroxa'], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const enter = (s: GameState): GameState => {
+    let t = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kroxa') } as Action));
+    for (let i = 0; i < 4 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(KROXA as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a nonland card discarded: no life lost; a land discarded: 3 life', () => {
+    for (const [pick, lost] of [['Grizzly Bears', 0], ['Forest', 3]] as const) {
+      let s = enter(table(['Grizzly Bears', 'Forest']));
+      const life0 = life(s, 1);
+      expect(s.pendingDecision?.seat).toBe(1);
+      s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [find(s, 1, 'hand', pick)] } as Action), 20);
+      expect(namesIn(s, 1, 'graveyard'), pick).toContain(pick);
+      expect(life0 - life(s, 1), pick).toBe(lost);
+    }
+  });
+
+  it('with an empty hand there is nothing to discard, and 3 life is lost', () => {
+    let s = table([]);
+    const life0 = life(s, 1);
+    s = drain(enter(s), 20);
+    expect(life0 - life(s, 1)).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
