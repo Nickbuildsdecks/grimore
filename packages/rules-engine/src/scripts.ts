@@ -34203,6 +34203,37 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * "You may copy the exiled card. If you do, you may cast the copy without paying its mana cost."
+ * (D1341): Isochron Scepter's ability, Spellbinder's trigger. The exiled card is the one this
+ * permanent imprinted as it is now (`CardInstance.imprintedOn`, D717), and the copy is made in
+ * exile and offered as a free cast, as cipher's is (D936): declining the cast is declining the copy,
+ * which leaves the same game. Nothing imprinted, or an imprint from before the permanent last
+ * changed zones (CR 400.7), copies nothing.
+ */
+function castImprintedCopy(clauses: readonly string[], name: string): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  if (!/^you may copy the exiled card\. if you do, you may cast the copy without paying its mana cost\.?$/i.test(text)) return null;
+  return {
+    effect: (c) => {
+      const seq = c.state.instances[c.source]?.objectSeq ?? 0;
+      const exiled = Object.values(c.state.instances).find((inst) => inst.zone === 'exile'
+        && inst.imprintedOn?.id === c.source && inst.imprintedOn.seq === seq);
+      if (exiled === undefined) return c.state;
+      const made = copyCardInExile(c.state, exiled.id, c.controller);
+      if (made.id === null) return c.state;
+      const copied = c.state.cardDefs[exiled.defKey]?.name ?? 'the exiled card';
+      return {
+        ...made.state,
+        pendingOfferedCast: {
+          seat: c.controller, card: made.id, source: c.source,
+          prompt: `${name}: you may cast a copy of ${copied} without paying its mana cost`,
+        },
+      };
+    },
+  };
+}
+
+/**
  * "Search your library for three cards and reveal them. Target opponent chooses one. Put that card
  * into your hand and the rest into your graveyard. Then shuffle." (D1340): Intuition; and the up-to-
  * four "with different names" family: Gifts Ungiven, Realms Uncharted, Elemental Teachings ("the
@@ -34901,6 +34932,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // Isochron Scepter and Spellbinder (D1341): see `castImprintedCopy`.
+  const imprinted = castImprintedCopy(clauses, name);
+  if (imprinted !== null) return imprinted;
   // Intuition and Gifts Ungiven (D1340): see `searchOpponentSplits`.
   const split = searchOpponentSplits(clauses);
   if (split !== null) return split;

@@ -49585,6 +49585,72 @@ describe('Intuition and Gifts Ungiven: a search the opponent splits (D1340)', ()
   });
 });
 
+describe('Isochron Scepter: a copy of the imprinted card, cast for nothing (D1341)', () => {
+  const SCEPTER = { name: 'Test Scepter', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal',
+    oracle_text: 'Imprint — When Test Scepter enters, you may exile an instant card with mana value 2 or less from your hand.\n{2}, {T}: You may copy the exiled card. If you do, you may cast the copy without paying its mana cost.' };
+  const BOLT = { name: 'Test Bolt', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', oracle_text: 'Test Bolt deals 3 damage to any target.' };
+  const deck = customDeck({ id: 'd1341', name: 'Scepter', entries: [{ name: 'Test Scepter', count: 2 }, { name: 'Test Bolt', count: 4 }, { name: 'Island', count: 54 }], data: [SCEPTER, BOLT] as never[] });
+  /** The Scepter on the battlefield with a Bolt imprinted on it as it is now. */
+  const table = (stale = false): { s: GameState; scepter: string; bolt: string } => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1341', 1: 'd1341' }, deckSpecs: { d1341: deck.deck },
+      battlefield: { 0: ['Test Scepter', 'Island', 'Island'] }, hands: { 0: ['Test Bolt'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const scepter = find(s, 0, 'battlefield', 'Test Scepter');
+    const bolt = find(s, 0, 'hand', 'Test Bolt');
+    const seq = (s.instances[scepter]!.objectSeq ?? 0) + (stale ? 1 : 0);
+    return {
+      scepter, bolt,
+      s: {
+        ...s,
+        zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').filter((id) => id !== bolt), '0:exile': [bolt] },
+        instances: { ...s.instances, [bolt]: { ...s.instances[bolt]!, zone: 'exile' as const, imprintedOn: { id: scepter, seq } } },
+      },
+    };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SCEPTER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('activated: a copy is offered for nothing, and cast it deals its damage; the card stays imprinted', () => {
+    let { s, scepter, bolt } = table();
+    const play = legalActions(s, 0).plays.find((p) => p.card === scepter && p.kind === 'activate')!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: scepter, abilityIndex: play.abilityIndex! } as Action)), 20);
+    const offer = s.pendingOfferedCast;
+    expect(offer?.seat).toBe(0);
+    expect(offer?.card).not.toBe(bolt);
+    const life = s.seats[1]!.life;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: offer!.card, offered: true, targets: [{ kind: 'player', seat: 1 }] } as Action)), 40);
+    expect(s.seats[1]!.life).toBe(life - 3);
+    // The original never left exile, and the copy is gone.
+    expect(s.instances[bolt]!.zone).toBe('exile');
+    expect(s.instances[offer!.card]).toBeUndefined();
+  });
+
+  it('cast from hand, its imprint exiles the instant and links it', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1341', 1: 'd1341' }, deckSpecs: { d1341: deck.deck },
+      battlefield: { 0: ['Island', 'Island'] }, hands: { 0: ['Test Scepter', 'Test Bolt', 'Test Bolt'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Scepter') } as Action)), 20);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    const bolt = s.pendingDecision!.candidates[0]!;
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 0, cards: [bolt] } as Action)), 20);
+    const scepter = find(s, 0, 'battlefield', 'Test Scepter');
+    expect(s.instances[bolt]!.zone).toBe('exile');
+    expect(s.instances[bolt]!.imprintedOn).toEqual({ id: scepter, seq: s.instances[scepter]!.objectSeq ?? 0 });
+  });
+
+  it('an imprint from before the Scepter last moved copies nothing', () => {
+    let { s, scepter } = table(true);
+    const play = legalActions(s, 0).plays.find((p) => p.card === scepter && p.kind === 'activate')!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: scepter, abilityIndex: play.abilityIndex! } as Action)), 20);
+    expect(s.pendingOfferedCast).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
