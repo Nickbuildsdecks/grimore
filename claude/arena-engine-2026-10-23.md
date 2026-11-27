@@ -50221,3 +50221,43 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6553 of 6553 pass.
 
 Coverage: 17,573 of 31,900 cards (+7 over D1354's 17,566), 40,420 of 59,888 lines (+9).
+
+## D1356 — "Any number of target …"
+
+"Any number of target creatures", "… target creature cards from your graveyard", "… target
+nonland permanents you control" are printed on about 160 legal lines. The target reader knew
+"up to one", "up to two", "one or two" and the rest, and not this one, so none read unless a card
+had a hand-written spec (Fireball's "any number of targets", the divided-damage family).
+
+**The rule.** "Any number of" is one more entry in `TARGET_QUANTIFIERS`: optional, with the same
+ceiling of 99 Fireball uses (`ANY_NUMBER_OF_TARGETS`), so the graveyard reader and every reader
+that shares `TARGET_QUANTIFIER_PREFIX` get it at once. With D1354's total it reads March from the
+Tomb: "any number of target Ally creature cards with total mana value 8 or less".
+
+**The bot.** It fills a spec to its count, which is wrong for a count that is only a ceiling. The
+new `TargetSpec.botWhileSameSide` tells it to take the best candidate and go on only while the next
+is on the same side of its ranking as the first. So "destroy any number of target creatures" takes
+the opponents' creatures and stops before its own. When the first is its own permanent on a spec
+not marked friendly, it takes that one only (Scapegoat saves one creature, not the board). Its own
+graveyard cards are not that case, so March from the Tomb takes as many as the total allows.
+
+Read whole now: March from the Tomb, Scapegoat, Bone Harvest, Gravepurge, Forever Young, Footbottom
+Feast, Frantic Salvage, Iname, Life Aspect, Divine Resilience, and others. Strive, printed beside
+many of these lines ("costs {2}{U} more to cast for each target beyond the first"), is still unread.
+
+**Tests.** 4 engine tests:
+- Three fixtures read whole, each spec with a ceiling of 99, optional, and the bot advice.
+- Three cards come back within a total of 5; all four (6) are refused.
+- The bot's "destroy any number of target creatures" takes both of its opponent's creatures and
+  neither of its own.
+- The bot's "return any number of target creatures you control" takes one; its March takes more
+  than one, within the total.
+
+Faults injected by hand: 3, all caught.
+- No same-side stop.
+- No stop after one own permanent.
+- The quantifier left out.
+
+The scripts tests, compile tests and pins: 6557 of 6557 pass.
+
+Coverage: 17,582 of 31,900 cards (+9 over D1355's 17,573), 40,435 of 59,888 lines (+15).
