@@ -50988,3 +50988,41 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6617 of 6617 pass.
 
 Coverage: 17,669 of 31,900 cards (+11 over D1375's 17,658), 40,572 of 59,888 lines (+13).
+
+## D1377 — Evoke by exiling a card of a colour, and Solitude
+
+"Evoke—Exile a black card from your hand." Fury, Grief, Solitude, Subtlety and Endurance, the five
+Modern Horizons 2 Elemental Incarnations, all heavily played. D548 read evoke with a mana cost
+only, and pinned this form as refused.
+
+**The rule.** `CardScript.evoke.pitch` is the colour. The evoked cast costs no mana and exiles
+another card of that colour from the hand, the way D691's pitch spells do. It is offered only while
+there is such a card, and the play carries the choices (`discardOptions`), so the table and the bot
+pick the card as they do for Force of Will. The sacrifice on arrival is evoke's own.
+
+**Solitude's enter trigger.** "Exile up to one other target creature. That creature's controller
+gains life equal to its power." This is Swords to Plowshares' trade, which was read on spells only.
+It now reads on a trigger, with "up to one other" and either spelling of the controller. The power
+is read before the exile.
+
+Read whole now: Grief, Solitude. Fury's divided damage on a trigger, Subtlety's and Endurance's
+enter triggers are still unread.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole.
+- Evoked for another black card with no mana: the card is exiled, the creature enters, its trigger
+  gains 1 life, and it is sacrificed.
+- With no other black card in hand, evoke is not offered, and a card of another colour is refused.
+- Solitude exiles the opponent's Grizzly Bears, and that player gains 2 life.
+
+D548's pin now covers Infestation alone ("Evoke—{1}{B}{B}, Pay 3 life"), which is still refused.
+
+Faults injected by hand: 4, all caught.
+- Any card accepted as the pitch.
+- The pitched card kept.
+- Evoke offered with nothing to pitch.
+- No life for Solitude's target.
+
+The scripts tests, compile tests and pins: 6620 of 6620 pass. Web typecheck clean.
+
+Coverage: 17,671 of 31,900 cards (+2 over D1376's 17,669), 40,580 of 59,888 lines (+8).
