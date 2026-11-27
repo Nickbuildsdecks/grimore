@@ -51663,6 +51663,52 @@ describe('Upkeep prices against damage, phasing and a mill (D1384)', () => {
   });
 });
 
+describe('"If you haven\'t cast a spell from your hand this turn", and the life they lost (D1385)', () => {
+  const CRAB = { name: 'Test Crab', type_line: 'Creature — Crab', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '1', toughness: '4',
+    oracle_text: "At the beginning of your end step, if you haven't cast a spell from your hand this turn, draw a card." };
+  const DESPAIR = { name: 'Test Despair', type_line: 'Enchantment', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal',
+    oracle_text: 'At the beginning of each end step, each opponent loses life equal to the life that player lost this turn.' };
+  const PING = { name: 'Test Ping', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Test Ping deals 3 damage to target player.' };
+  const ROWS = [CRAB, DESPAIR, PING];
+  const deck = customDeck({ id: 'd1385', name: 'Crab', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 54 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1385', 1: 'd1385' }, deckSpecs: { d1385: deck.deck }, battlefield: { 0: [...mine] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ping = (s: GameState): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ping'), targets: [{ kind: 'player', seat: 1 }],
+  } as Action)), 20);
+  const toEnd = (s: GameState): GameState => {
+    // A creature on the battlefield is asked about its attack first; it declares none.
+    const armed = ids(s, 0, 'battlefield').some((id) => nameOf(s, id) === 'Test Crab');
+    const declared = armed
+      ? apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action)
+      : s;
+    return drain(advanceTo(declared, 'end'), 40);
+  };
+
+  it('all three read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Crab draws at the end step when no spell was cast from the hand, and not after one was', () => {
+    const quiet = table(['Test Crab']);
+    const hand = ids(quiet, 0, 'hand').length;
+    expect(ids(toEnd(quiet), 0, 'hand').length).toBe(hand + 1);
+    const cast = ping(table(['Test Crab'], ['Test Ping']));
+    const after = ids(cast, 0, 'hand').length;
+    expect(ids(toEnd(cast), 0, 'hand').length).toBe(after);
+  });
+
+  it('Despair: an opponent who lost 3 this turn loses 3 more at the end step', () => {
+    const s = ping(table(['Test Despair'], ['Test Ping']));
+    expect(life(s, 1)).toBe(17);
+    expect(life(toEnd(s), 1)).toBe(14);
+    expect(life(toEnd(table(['Test Despair'])), 1)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

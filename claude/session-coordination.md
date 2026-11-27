@@ -300,3 +300,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1381 pushed in 6e30946. D1382 loses the game, didn't cast it from your hand, Phage's rider: scripts.ts.
 - D1382 pushed in 0d716a6. D1383 cost-reduction conditions and counts: scripts.ts.
 - D1383 pushed in cdd19b6. D1384 upkeep prices against damage and phasing, and the mill cost: scripts.ts.
+- D1384 pushed in a34b730. D1385 from-hand cast tally and the life they lost: autoActions (countCast), scripts.ts.

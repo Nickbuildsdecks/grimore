@@ -106,6 +106,8 @@ const statsAsItLeaves = (state: GameState, inst: CardInstance): SacrificedStats 
 function countCast(
   state: GameState, seat: SeatIndex, kind: 'creature' | 'noncreature', instantOrSorcery = false,
   nonartifact = true,
+  /** Cast from its owner's hand (D1385): "if you haven't cast a spell from your hand this turn". */
+  fromHand = false,
 ): Pick<GameState, 'spellsCastThisTurn' | 'spellsCastThisTurnBy' | 'spellsCastThisTurnByKind'> {
   const key = String(seat);
   const byKind = `${seat}:${kind}`;
@@ -113,6 +115,7 @@ function countCast(
   const byNonartifact = `${seat}:nonartifact`;
   // And instants and sorceries together (D1114): "your first instant or sorcery spell each turn".
   const bySorcery = `${seat}:instant-or-sorcery`;
+  const byHand = `${seat}:from-hand`;
   return {
     spellsCastThisTurn: state.spellsCastThisTurn + 1,
     spellsCastThisTurnBy: {
@@ -124,6 +127,7 @@ function countCast(
       [byKind]: (state.spellsCastThisTurnByKind?.[byKind] ?? 0) + 1,
       ...(instantOrSorcery ? { [bySorcery]: (state.spellsCastThisTurnByKind?.[bySorcery] ?? 0) + 1 } : {}),
       ...(nonartifact ? { [byNonartifact]: (state.spellsCastThisTurnByKind?.[byNonartifact] ?? 0) + 1 } : {}),
+      ...(fromHand ? { [byHand]: (state.spellsCastThisTurnByKind?.[byHand] ?? 0) + 1 } : {}),
     },
   };
 }
@@ -1423,7 +1427,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // storm spell never counts itself. See `countCast`.
     ...countCast(next, action.by, !bestowed && characteristics.isCreature ? 'creature' : 'noncreature',
       hasType(characteristics.typeLine, 'instant') || hasType(characteristics.typeLine, 'sorcery'),
-      !hasType(characteristics.typeLine, 'artifact')),
+      !hasType(characteristics.typeLine, 'artifact'), object.castFrom === 'hand'),
     // And by name for the game (D1349): Approach of the Second Sun.
     spellNamesCastThisGame: {
       ...(next.spellNamesCastThisGame ?? {}),
@@ -1614,7 +1618,7 @@ function castFaceDown(
     ...next,
     stackObjects: { ...next.stackObjects, [object.id]: object },
     stackOrder: [...next.stackOrder, object.id],
-    ...countCast(next, action.by, 'creature'),
+    ...countCast(next, action.by, 'creature', false, true, object.castFrom === 'hand'),
   };
   // A creature spell was cast, which is all a prowess or a "whenever an opponent casts a creature
   // spell" may know about it — the types come from the face-down profile, not from the card.

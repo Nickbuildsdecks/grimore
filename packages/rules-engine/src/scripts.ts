@@ -30721,6 +30721,19 @@ function readEffect(
     player, that player loses the game". `loseTheGame` keeps Platinum Angel's rule (CR 104.3a's
     "can't lose") and the seat leaves as a conceding one does.
   */
+  /*
+    "Each opponent loses life equal to the life that player lost this turn" (D1385): Archfiend of
+    Despair, Wound Reflection, Warlock Class. Each opponent's own amount, read before any of it is
+    lost.
+  */
+  if (/^each opponent loses life equal to the life (?:that player|they) lost this turn$/i.test(clause.trim().replace(/\.$/, ''))) {
+    return {
+      effect: (c) => {
+        const owed = opponentsOf(c.state, c.controller).map((seat) => [seat, c.state.lifeLostThisTurn[String(seat)] ?? 0] as const);
+        return owed.reduce((state, [seat, n]) => (n > 0 ? loseLife(state, seat, n) : state), c.state);
+      },
+    };
+  }
   const losesGame = /^(target player|target opponent|you) loses? the game$/i.exec(clause.trim().replace(/\.$/, ''));
   if (losesGame !== null) {
     const who = losesGame[1]!.toLowerCase();
@@ -41059,6 +41072,16 @@ function interveningConditionFor(
     Hellraiser). An attack on your planeswalker is not an attack on you (CR 506.3).
   */
   const fact = printed.trim().replace(/\.$/, '');
+  /*
+    "If you haven't cast a spell from your hand this turn" (D1385): Canyon Crab, Jem Lightfoote,
+    Prairie Dog, Wrangler of the Damned, the Thunder Junction end steps. A spell cast from anywhere
+    else (a graveyard, exile, the command zone) doesn't count.
+  */
+  const fromHand = /^you (haven't|have not|have|'ve) cast a spell from your hand this turn$/i.exec(fact.replace(/^you've/i, "you 've"));
+  if (fromHand !== null) {
+    const none = /n[o']t/i.test(fromHand[1]!);
+    return (c) => ((c.state.spellsCastThisTurnByKind?.[`${c.controller}:from-hand`] ?? 0) === 0) === none;
+  }
   if (/^a creature is attacking you$/i.test(fact)) {
     return (c) => c.state.combat.attacks.some((a) => a.defender === c.controller && a.planeswalker === undefined);
   }
