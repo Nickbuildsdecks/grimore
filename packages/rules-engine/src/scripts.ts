@@ -33,7 +33,7 @@ import {
   SQUADDED,
   addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
-  counterSpell, putOnTopOfLibrary,
+  counterSpell, returnSpellToHand, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
   IMPENDED, REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
   firstPlayerTarget,
@@ -27944,9 +27944,22 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
             ? state
             // `c.exileWhenCountered` is the printed rider on a sibling clause (D545), carried on
             // the context because it belongs to the resolution rather than to this sentence.
-            : counterSpell(state, object.id, { exile: c.exileWhenCountered === true })),
+            : counterSpell(state, object.id, {
+              exile: c.exileWhenCountered === true, ...(c.counteredTo === undefined ? {} : { to: c.counteredTo }),
+            })),
           c.state,
         ),
+      };
+    }
+  }
+  // "Return target spell you don't control to its owner's hand" (D1337): see `returnSpellToHand`.
+  const spellBack = /^return (target spell(?: you don['’]t control| an opponent controls)?) to its owner['’]s hand$/i.exec(text);
+  if (spellBack !== null) {
+    const spec = targetSpecFrom(spellBack[1]!, false);
+    if (spec !== null && spec.kind === 'spell') {
+      return {
+        targets: [spec],
+        effect: (c) => c.targets.reduce((state, object) => (object.kind === 'player' ? state : returnSpellToHand(state, object.id)), c.state),
       };
     }
   }
@@ -33897,6 +33910,9 @@ function noRegenerationRider(
  */
 const COUNTER_EXILE =
   /^if (?:that|a) spell is countered this way, exile it instead of putting it into its owner['’]s graveyard$/i;
+// Remand and Memory Lapse (D1337): the same rider, to the hand or the top of the library.
+const COUNTER_ELSEWHERE =
+  /^if (?:that|a) spell is countered this way, put it (into its owner['’]s hand|on top of its owner['’]s library) instead of into that player['’]s graveyard$/i;
 
 /**
  * A composition containing "If that spell is countered this way, exile it instead …" (D545).
@@ -33933,9 +33949,12 @@ function counterExileRider(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
   const at = clauses.findIndex(
-    (clause) => COUNTER_EXILE.test(plain(clause).trim().replace(/\.\s*$/, '')),
+    (clause) => COUNTER_EXILE.test(plain(clause).trim().replace(/\.\s*$/, ''))
+      || COUNTER_ELSEWHERE.test(plain(clause).trim().replace(/\.\s*$/, '')),
   );
   if (at < 0) return null;
+  const elsewhere = COUNTER_ELSEWHERE.exec(plain(clauses[at]!).trim().replace(/\.\s*$/, ''));
+  const to = elsewhere === null ? undefined : /hand/i.test(elsewhere[1]!) ? 'hand' as const : 'library-top' as const;
   const rest = clauses.filter((_, i) => i !== at);
   if (rest.length === 0) return null;
   if (!rest.some((clause) => /\bcounter\b/i.test(clause))) return null;
@@ -33944,7 +33963,7 @@ function counterExileRider(
   // `beforeDecisions` stays refused, for `noRegenerationRider`'s reason: a half the wrapper cannot
   // see through is a question moved in front of an effect that was meant to come first.
   if (read.beforeDecisions !== undefined) return null;
-  const exiling = (fn: EffectFn): EffectFn => (c) => fn({ ...c, exileWhenCountered: true });
+  const exiling = (fn: EffectFn): EffectFn => (c) => fn(to === undefined ? { ...c, exileWhenCountered: true } : { ...c, counteredTo: to });
   return {
     ...read,
     effect: exiling(read.effect),

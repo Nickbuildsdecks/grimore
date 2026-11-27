@@ -49375,6 +49375,53 @@ describe('a hand question beside a second target (D1336)', () => {
   });
 });
 
+describe('Remand, Memory Lapse and a spell returned to hand (D1337)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text });
+  const REMAND = card('Test Remand', "Counter target spell. If that spell is countered this way, put it into its owner's hand instead of into that player's graveyard. Draw a card.");
+  const LAPSE = card('Test Lapse', "Counter target spell. If that spell is countered this way, put it on top of its owner's library instead of into that player's graveyard.");
+  const BACK = card('Test Back', "Return target spell you don't control to its owner's hand.");
+  const ROWS = [REMAND, LAPSE, BACK];
+  const deck = customDeck({ id: 'd1337', name: 'Lapse', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 24 }, { name: 'Island', count: 24 }], data: ROWS as never[] });
+  const onTheStack = (answer: string): { s: GameState; bears: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1337', 1: 'd1337' }, deckSpecs: { d1337: deck.deck },
+      hands: { 0: ['Grizzly Bears'], 1: [answer] },
+      battlefield: { 0: ['Forest', 'Forest'], 1: ['Island'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    const bears = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', answer), targets: [{ kind: 'card', id: bears }] } as Action);
+    return { s: drain(s, 60), bears };
+  };
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Remand: the spell goes back to its owner\'s hand, and Remand draws', () => {
+    const { s, bears } = onTheStack('Test Remand');
+    expect(s.instances[bears]?.zone).toBe('hand');
+    expect(s.stackOrder).toEqual([]);
+    // Remand's own draw: seat 1 held only Remand, so the one card in hand is the one drawn.
+    expect(ids(s, 1, 'hand')).toHaveLength(1);
+    expect(nameOf(s, ids(s, 1, 'hand')[0]!)).not.toBe('Test Remand');
+  });
+
+  it('Memory Lapse: on top of its owner\'s library', () => {
+    const { s, bears } = onTheStack('Test Lapse');
+    expect(s.instances[bears]?.zone).toBe('library');
+    expect(ids(s, 0, 'library')[0]).toBe(bears);
+  });
+
+  it('returned, not countered: the spell goes back to its owner\'s hand', () => {
+    const { s, bears } = onTheStack('Test Back');
+    expect(s.instances[bears]?.zone).toBe('hand');
+    expect(s.stackOrder).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

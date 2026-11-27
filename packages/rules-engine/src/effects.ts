@@ -88,6 +88,11 @@ export interface EffectContext {
    */
   readonly exileWhenCountered?: true;
   /**
+   * Remand's and Memory Lapse's rider (D1337): "If that spell is countered this way, put it into
+   * its owner's hand / on top of its owner's library instead of into that player's graveyard."
+   */
+  readonly counteredTo?: 'hand' | 'library-top';
+  /**
    * The seat a **possessive referent** names — "Its controller loses 2 life" — computed once, as
    * the resolution begins (D537).
    *
@@ -1758,7 +1763,7 @@ export function counterSpell(
     fact about the **countering card's printed text** and about nothing else on the table — there is
     nothing here to read it off.
   */
-  opts: { readonly exile?: boolean } = {},
+  opts: { readonly exile?: boolean; readonly to?: 'hand' | 'library-top' } = {},
 ): GameState {
   const object = state.stackObjects[id];
   if (object === undefined) return state;
@@ -1804,8 +1809,30 @@ export function counterSpell(
     spell that is countered never reached its `resolved` branch anyway.
   */
   if (opts.exile === true) return relocate(next, inst, 'exile', inst.owner, 'bottom');
+  // Remand's hand and Memory Lapse's library (D1337), unless flashback exiles it (CR 702.34a).
+  if (opts.to !== undefined && object.flashback !== true && object.yardExile !== true) {
+    return relocate(next, inst, opts.to === 'hand' ? 'hand' : 'library', inst.owner, 'top');
+  }
   // Exiled rather than buried when it was cast with flashback, countered or not (CR 702.33a).
   return spellLeavesStack(next, object, inst);
+}
+
+/**
+ * "Return target spell to its owner's hand" (D1337): Unsubstantiate, Venser, Hullbreaker Horror.
+ * Not a counter, so "can't be countered" does not stop it and nothing that watches for a counter
+ * sees one: the spell leaves the stack for its owner's hand, or for exile when flashback or a
+ * graveyard permission says it must (CR 702.34a). A copy has no card and simply ceases to exist.
+ */
+export function returnSpellToHand(state: GameState, id: string): GameState {
+  const object = state.stackObjects[id];
+  if (object === undefined || object.kind !== 'spell') return state;
+  const objects = { ...state.stackObjects };
+  delete objects[id];
+  const next: GameState = { ...state, stackObjects: objects, stackOrder: state.stackOrder.filter((o) => o !== id) };
+  const inst = next.instances[id];
+  if (inst === undefined) return next;
+  const exiled = object.flashback === true || object.yardExile === true;
+  return relocate(next, inst, exiled ? 'exile' : 'hand', inst.owner, 'bottom');
 }
 
 /**
