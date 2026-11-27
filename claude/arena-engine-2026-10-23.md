@@ -51532,3 +51532,40 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6663 of 6663 pass. Test typecheck clean.
 
 Coverage: 17,766 of 31,900 cards (+6 over D1388's 17,760), 40,725 of 59,888 lines (+12).
+
+## D1390 — Gideon: a creature that's still a planeswalker, and damage to him prevented
+
+"+1: Until end of turn, Gideon, Ally of Zendikar becomes a 5/5 Human Soldier Ally creature with
+indestructible that's still a planeswalker. Prevent all damage that would be dealt to him this
+turn." Five Gideons print this, among them Ally of Zendikar, a Commander staple. None of them read.
+
+**The animation.** The creature-land reader (D754, D1048) adds the Creature type, sets the size and
+colours, adds the creature types and keywords, and keeps every other type. That is exactly what
+"that's still a planeswalker" means, so it now accepts that ending beside "that's still a land".
+The loyalty counters stay. The engine already lets a planeswalker that's a creature attack.
+
+**The prevention.** D738's this-turn prevention family ("Prevent all damage that would be dealt to
+target creature this turn") now takes the card itself. On Gideon's line, the pronoun after the
+animation ("to him") is the planeswalker that has just become a creature, so the loyalty reader
+reads it as the card's name.
+
+Read whole now: Gideon, Ally of Zendikar, and Gideon, Martial Paragon. The 0 or +1 of Gideon Jura,
+Gideon of the Trials and Gideon, the Oathsworn reads too; each has another line left. Gideon
+Blackblade's "During your turn, ~ is a 4/4 … that's still a planeswalker" is a static and stays
+unread.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- The +1 makes him a 5/5 indestructible creature that is still a planeswalker on 5 loyalty, and he
+  hits for 5.
+- Blocked by a Bear, the damage to him is prevented: no loyalty lost and no damage marked, and the
+  Bear dies.
+
+Faults injected by hand: 3, all caught.
+- The prevention on nothing.
+- The planeswalker ending refused.
+- "Him" not read as the card.
+
+The scripts tests, compile tests and pins: 6666 of 6666 pass. Test typecheck clean.
+
+Coverage: 17,768 of 31,900 cards (+2 over D1389's 17,766), 40,730 of 59,888 lines (+5).
