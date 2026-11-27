@@ -66867,3 +66867,40 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6475 of 6475 pass.
 
 Coverage: 17,514 of 31,900 cards (+2 over D1331's 17,512), 40,339 of 59,888 lines (+3).
+
+## D1333 — Scapeshift: a question sized by the answer before it
+
+Scapeshift reads whole now: "Sacrifice any number of lands. Search your library for up to that
+many land cards, put them onto the battlefield tapped, then shuffle." D1332 refused it, because
+its search is a question of its own, and questions were all worked out before any was answered.
+
+**Questions see the answers so far.** A question worked out as it is asked (`DecisionSpecOf`) now
+gets the resolution's answers so far as its context's `decisions`, where they had been empty.
+`askOrFinish` works each question out as it is reached, with those answers. Nothing already written
+read the empty list, so no existing question changes. The gate's full run is the check on that.
+
+**The search.** `sacrificeAnyThenThatMany` (D1332) takes one following question: a search "for up
+to that many". It is read as "any number of", then capped as it is asked at how many permanents the
+first answer chose. A library is not changed by what is sacrificed, so asking before the sacrifice
+is made gives the same answer. The rest of the effect gets its own answers, without the
+sacrifice's, so its "the cards chosen" are the ones found. Any other following question is still
+refused. Lich-Knights' Conquest's "Return that many creature cards from your graveyard" is one,
+because a creature sacrificed to it could be one of the cards it returns.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- Two lands sacrificed:
+  - the search allows two, and three is refused;
+  - two Forests come in tapped;
+  - the Swamps go to the graveyard.
+- None sacrificed: no search is asked, and the board is unchanged.
+
+D1332's refusal row for this text was removed, because it reads now.
+
+Faults injected by hand: 4, all caught.
+- The answers kept out of the context.
+- `askOrFinish` working questions out without them.
+- The cap removed.
+- The rest of the effect given the sacrifice's answer.
+
+Coverage: 17,515 of 31,900 cards (+1 over D1332's 17,514), 40,340 of 59,888 lines (+1).
