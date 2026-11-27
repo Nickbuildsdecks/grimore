@@ -13489,6 +13489,11 @@ const permanentDescribedOne = (
  * Returns `null` when a tail matched but the count is one `countOfThing` cannot read, which is the
  * D487 answer: the line is refused whole rather than read with a number guessed at.
  */
+/*
+  "Where X is ~'s power" (D1386): Auriok Bladewarden, Brambleguard Captain, Ashroot Animist's "this
+  creature's power". `boardCount` has read the source's own size since D1197; the tail here did not
+  offer it.
+*/
 function countTailOf(text: string, name: string): {
   readonly body: string;
   readonly counted: (c: EffectContext) => number;
@@ -13496,7 +13501,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = new RegExp(`^(.*?),\\s*where X is ((?:\\w+ plus |twice )?the number of .+|your devotion to .+|your life total|the greatest mana value of a commander you own .+|the amount of life you gained this turn|the (?:greatest|highest) (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is ((?:\\w+ plus |twice )?the number of .+|your devotion to .+|your life total|the greatest mana value of a commander you own .+|the amount of life you gained this turn|the (?:greatest|highest) (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE}|(?:${selfRef(name)})'s (?:power|toughness))$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -29649,14 +29654,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   if (countedTarget !== null) {
     const sizedBy = new RegExp(
       // Any one target creature (D1031), where this was four spellings of "target creature".
+      // And the grant printed first (D1386): "gains trample and gets +X/+X" (Ashroot Animist).
       "^((?:another |up to one (?:other )?)?target [^,]+?)"
-        + " gets ([-+](?:X|\\d+))/([-+](?:X|\\d+))(?: and gains ([a-z][a-z', ]*?))? until end of turn$",
+        + " (?:gains ([a-z][a-z', ]*?) and )?gets ([-+](?:X|\\d+))/([-+](?:X|\\d+))(?: and gains ([a-z][a-z', ]*?))? until end of turn$",
       'i',
     ).exec(countedTarget.body);
-    if (sizedBy !== null) {
-      const shrinks = countedSizeShrinks(sizedBy[2]!, sizedBy[3]!);
-      const bonus = shrinks && sizedBy[4] !== undefined ? null : countedPumpOptions(
-        sizedBy[2]!, sizedBy[3]!, countedTarget.grammar, countedTarget.counted, sizedBy[4],
+    if (sizedBy !== null && !(sizedBy[2] !== undefined && sizedBy[5] !== undefined)) {
+      const grant = sizedBy[2] ?? sizedBy[5];
+      const shrinks = countedSizeShrinks(sizedBy[3]!, sizedBy[4]!);
+      const bonus = shrinks && grant !== undefined ? null : countedPumpOptions(
+        sizedBy[3]!, sizedBy[4]!, countedTarget.grammar, countedTarget.counted, grant,
       );
       const aimed = targetSpecFrom(sizedBy[1]!, !shrinks);
       // A creature only; a plural target prints "get" and does not reach here.

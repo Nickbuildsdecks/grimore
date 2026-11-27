@@ -51709,6 +51709,43 @@ describe('"If you haven\'t cast a spell from your hand this turn", and the life 
   });
 });
 
+describe('"Where X is ~\'s power" on a pump, and the grant printed first (D1386)', () => {
+  const WARDEN = { name: 'Test Warden', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: "{T}: Target creature gets +X/+X until end of turn, where X is Test Warden's power." };
+  const ANIMIST = { name: 'Test Animist', type_line: 'Creature — Snake Shaman', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: "Whenever Test Animist attacks, another target creature you control gains trample and gets +X/+X until end of turn, where X is this creature's power." };
+  const ROWS = [WARDEN, ANIMIST];
+  const deck = customDeck({ id: 'd1386', name: 'Warden', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 50 }], data: ROWS as never[] });
+  const table = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1386', 1: 'd1386' }, deckSpecs: { d1386: deck.deck }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const size = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!);
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the Warden's ability gives a Bear +3/+3, its own power", () => {
+    let s = table(['Test Warden', 'Grizzly Bears']);
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Warden'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action);
+    s = drain(passBoth(s), 20);
+    expect(size(s, bear).power).toBe(5);
+    expect(size(s, bear).toughness).toBe(5);
+  });
+
+  it("the Animist's attack gives the other creature trample and +4/+4", () => {
+    let s = table(['Test Animist', 'Grizzly Bears']);
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Animist'), defender: 1 }] } as Action);
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] } as Action);
+    s = drain(s, 20);
+    expect(size(s, bear).power).toBe(6);
+    expect(size(s, bear).keywords.has('trample')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

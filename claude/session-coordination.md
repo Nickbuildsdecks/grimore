@@ -301,3 +301,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1382 pushed in 0d716a6. D1383 cost-reduction conditions and counts: scripts.ts.
 - D1383 pushed in cdd19b6. D1384 upkeep prices against damage and phasing, and the mill cost: scripts.ts.
 - D1384 pushed in a34b730. D1385 from-hand cast tally and the life they lost: autoActions (countCast), scripts.ts.
+- D1385 pushed in 68c96d0. D1386 where-X self size on a pump, grant first: scripts.ts.
