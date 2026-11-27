@@ -67251,3 +67251,43 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6511 of 6511 pass.
 
 Coverage: 17,542 of 31,900 cards (+4 over D1342's 17,538), 40,378 of 59,888 lines (+6).
+
+## D1344 — Mind's Desire and Urza: a card exiled to be played for nothing
+
+Urza, Lord High Artificer is on the second staples list: "{5}: Shuffle your library, then exile the
+top card. Until end of turn, you may play that card without paying its mana cost." D583's
+play-from-exile reader left "without paying its mana cost" unread, as a different cost, and two
+compile pins held it there. "Shuffle your library" as a sentence of its own did not read either.
+
+**The permission.** `playFromExile` gains `free`. `exileTopToPlay` sets it where the permission
+ends "without paying its/their mana cost(s)". Every D583 deadline takes it. The card is then:
+- offered with no cost (`legalActions`, as a plotted card is, D922);
+- cast for `{0}` (`castSpell`, beside the commander's free cast and the plotted one);
+- played as a land drop like any other, when it is a land.
+
+**The reader.** `impulseDraw` strips the free words before matching the deadline. It also takes
+Urza's "exile the top card", which names no library because the shuffle before it did. "Shuffle
+your library" reads on its own.
+
+Mind's Desire, Urza and Oracle's Vault read whole now.
+
+Two D583 pins retired, D446-style: "Until end of turn, you may play that card without paying its
+mana cost" and "You may play them this turn without paying their mana costs" read now. Their row is
+now a free play whose deadline the reader does not take, "until the beginning of your next upkeep".
+
+**Tests.** 3 engine tests:
+- A fixture Mind's Desire reads whole.
+- Resolved:
+  - the exiled card carries the free permission;
+  - it is offered with no cost;
+  - it is cast with no mana at all.
+- The same exile without the words: no free permission, and with no mana it is not offered.
+
+Faults injected by hand: 3, all caught.
+- The cast charged the printed cost.
+- The offer showed the printed cost.
+- The flag never set.
+
+The scripts tests, compile tests and pins: 6513 of 6513 pass.
+
+Coverage: 17,548 of 31,900 cards (+6 over D1343's 17,542), 40,386 of 59,888 lines (+8).
