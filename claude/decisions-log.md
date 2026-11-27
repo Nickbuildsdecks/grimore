@@ -67893,3 +67893,57 @@ and the file was restored from the backup before the gate.
 The scripts tests, compile tests and pins: 6572 of 6572 pass.
 
 Coverage: 17,600 of 31,900 cards (+3 over D1359's 17,597), 40,475 of 59,888 lines (+3).
+
+## D1361 — Voting
+
+"Will of the council — Starting with you, each player votes for time or knowledge." Voting
+(CR 701.38) is printed on 36 legal lines and had no support at all.
+
+**The question.** One choice question with the two words, asked of each living player in turn
+order **starting with the controller** (CR 701.38a), so a player who votes later has seen the
+votes before theirs. That is a new `who`, `each-player-from-you`: `each-player` starts from the
+active player, which is the wrong order for a vote cast on someone else's turn.
+
+**What follows it** (`voteGroup`). The sentences after the vote are read one at a time, with
+the two words known to the readers:
+- "for each strength vote" is a count, in any sentence that already reads with a "for each"
+  ("Put two +1/+1 counters on ~ for each sprout vote", "You gain 3 life for each harvest vote").
+- "For each evidence vote, investigate." does the effect that many times.
+- "If time gets more votes, …" and "If knowledge gets more votes or the vote is tied, …" compare
+  the two counts. The vote reader handles these itself, because on a trigger a leading "if" is
+  intervening, and this one is counted as the effect resolves.
+
+Each sentence must read whole with no target and no question of its own. That is why Tyrant's
+Choice (each opponent sacrifices) is refused. The composer cannot place a later question's answers
+after an each-player question when the card is read, and the sacrifice would be asked whichever
+side won.
+
+**The bot** votes the first word. None of these cards says which word is better for whom, and a
+person answers for themselves.
+
+Read whole now: Plea for Power, Coercive Portal, Lieutenants of the Guard, Orchard Elemental.
+Still unread:
+- Expropriate, whose money vote chooses a permanent for each voter.
+- Secret council, where votes are revealed together.
+- Votes for a permanent or a player.
+- Tyrant's Choice and the others that ask a question after the vote.
+
+**Tests.** 4 engine tests:
+- Three fixtures read whole, the vote one `each-player-from-you` question with the two words. A
+  sacrifice after the vote, and a count of a word nobody votes on, are refused.
+- A tie goes to "knowledge or the vote is tied": three cards. Two votes for time: an extra turn
+  for the controller and no cards.
+- Cast on the opponent's turn, the controller still votes first.
+- "Two +1/+1 counters for each sprout vote, 3 life for each harvest vote" gives 2 counters and 3
+  life for one of each. Two evidence votes make two Clues and no Treasure.
+
+Faults injected by hand: 5, all caught.
+- The vote asked in turn order rather than from the controller.
+- A tie not counted.
+- "For each" done once.
+- No vote count.
+- A count of any word allowed.
+
+The scripts tests, compile tests and pins: 6576 of 6576 pass. Web typecheck clean.
+
+Coverage: 17,604 of 31,900 cards (+4 over D1360's 17,600), 40,480 of 59,888 lines (+5).
