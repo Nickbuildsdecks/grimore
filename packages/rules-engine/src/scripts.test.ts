@@ -50664,6 +50664,54 @@ describe('a free shield pressed no more than the damage coming (D1362, sweep 100
   });
 });
 
+describe("Expropriate: a question for each money vote (D1363)", () => {
+  const EXPRO = { name: 'Test Expropriate', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: "Council's dilemma — Starting with you, each player votes for time or money. For each time vote, take an extra turn after this one. For each money vote, choose a permanent owned by the voter and gain control of it. Exile Test Expropriate." };
+  const deck = customDeck({ id: 'd1363', name: 'Expro', entries: [{ name: 'Test Expropriate', count: 4 }, { name: 'Grizzly Bears', count: 12 }, { name: 'Island', count: 44 }], data: [EXPRO] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1363', 1: 'd1363' }, deckSpecs: { d1363: deck.deck },
+    hands: { 0: ['Test Expropriate'] }, battlefield: { 0: ['Grizzly Bears', 'Island'], 1: ['Grizzly Bears', 'Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const run = (votes: readonly string[]): GameState => {
+    let s = table();
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Expropriate') } as Action));
+    votes.forEach((option, i) => { s = apply(s, { type: 'auto:decide', by: i as SeatIndex, cards: [], option } as Action); });
+    return s;
+  };
+
+  it('reads whole: the vote, then a question per possible money vote', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(EXPRO as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.decisions?.length).toBe(9);
+  });
+
+  it('time and money: one extra turn, and the caster takes a permanent the money voter owns', () => {
+    let s = run(['time', 'money']);
+    // Asked of the caster, from the permanents seat 1 owns, whoever controls them.
+    expect(s.pendingDecision?.seat).toBe(0);
+    const theirs = ids(s, 1, 'battlefield');
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...theirs].sort());
+    const bear = theirs.find((id) => nameOf(s, id) === 'Grizzly Bears')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [bear] } as Action), 20);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    expect(s.extraTurns).toEqual([0]);
+    expect(namesIn(s, 0, 'exile')).toContain('Test Expropriate');
+  });
+
+  it('two time votes: two extra turns and no question', () => {
+    const s = drain(run(['time', 'time']), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.extraTurns).toEqual([0, 0]);
+  });
+
+  it("the caster's own money vote asks about the caster's own permanents", () => {
+    const s = run(['money', 'time']);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...ids(s, 0, 'battlefield')].sort());
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

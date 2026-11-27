@@ -278,3 +278,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1359 pushed in 4de176c, checkpoint at D1359 in 2d7a60a. D1360 plural "choose target creatures", granted persist/undying: scripts.ts only.
 - D1360 pushed in db6a76b. D1361 voting (ChoiceDecisionSpec who each-player-from-you, voteGroup, vote counts and majorities): scriptTypes, automation, scripts.ts.
 - D1361 pushed in 579a189. D1362 bot shield cap (preventionCanMatter counts shields up against attacking power): bot.ts only. Sweep 101001 running on 579a189.
+- D1362 pushed in d5fa705. D1363 Expropriate (voteGroup money questions as DecisionSpecOf): scripts.ts only.

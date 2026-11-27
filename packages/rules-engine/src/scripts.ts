@@ -22566,6 +22566,9 @@ let destroyedThisWay = false;
  */
 let voteWords: readonly string[] | null = null;
 
+/** The most players a vote's follow-up questions are written for (D1363): more than a pod seats. */
+const MAX_VOTERS = 8;
+
 /** How many of a vote's answers were this word (D1361). */
 const votesFor = (c: EffectContext, word: string): number =>
   c.decisions.filter((answer) => answer.option?.toLowerCase() === word).length;
@@ -34480,8 +34483,39 @@ function voteGroup(clauses: readonly string[], name: string, where: SubjectZone 
   voteWords = words;
   try {
     const parts: EffectFn[] = [];
+    const asks: DecisionSpecOf[] = [];
     for (const clause of clauses.slice(1)) {
       const text = plain(clause).trim().replace(/\.$/, '');
+      /*
+        Expropriate's money (D1363): "For each money vote, choose a permanent owned by the voter and
+        gain control of it." One question for each such vote, asked of the controller after the
+        vote, each worked out from the votes given (`DecisionSpecOf` sees the answers so far): the
+        k-th question is about the k-th player who voted that word, and is skipped where there is
+        none. One such sentence per card, since its answers are the only cards answered.
+      */
+      const owned = /^for each (.+?) vote, choose a permanent owned by the voter and gain control of it$/i.exec(text);
+      if (owned !== null) {
+        const word = owned[1]!.toLowerCase();
+        if (!words.includes(word) || asks.length > 0) return null;
+        for (let k = 0; k < MAX_VOTERS; k += 1) {
+          asks.push((_state, _source, at) => {
+            const voter = (at?.decisions ?? []).filter((answer) => answer.option?.toLowerCase() === word)[k]?.seat;
+            return {
+              who: 'controller',
+              prompt: `Choose a permanent owned by ${voter === undefined ? 'the voter' : `player ${voter + 1}`} (a ${word} vote) and gain control of it`,
+              from: 'any-battlefield',
+              min: 1, max: 1,
+              filter: (state, id) => voter !== undefined && state.instances[id]?.owner === voter,
+              askOnlyIf: () => voter !== undefined,
+            };
+          });
+        }
+        parts.push((c) => c.decisions
+          .filter((answer) => answer.option === undefined)
+          .flatMap((answer) => answer.ids)
+          .reduce((state, id) => gainControl(state, id, c.controller), c.state));
+        continue;
+      }
       const each = /^for each (.+?) vote, (.+)$/i.exec(text);
       if (each !== null && !words.includes(each[1]!.toLowerCase())) return null;
       // "If grace gets more votes, …" read here rather than by the spell's leading "if", which a
@@ -34510,7 +34544,7 @@ function voteGroup(clauses: readonly string[], name: string, where: SubjectZone 
         who: 'each-player-from-you',
         prompt: `Vote for ${words[0]} or ${words[1]}`,
         options: [words[0]!, words[1]!],
-      }],
+      }, ...asks],
       effect: (c) => parts.reduce((state, part) => part({ ...c, state }), c.state),
     };
   } finally {
