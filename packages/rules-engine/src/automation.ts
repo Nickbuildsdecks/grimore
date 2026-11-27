@@ -38,7 +38,7 @@ import {
 } from './combat.js';
 import {
   BLITZED,
-  SURGED, ESCAPED,
+  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID,
   SQUADDED,
   createToken,
   DASHED, EVOKED, EXILED_ON_LEAVING, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
@@ -7199,6 +7199,11 @@ function resolveObject(
         const answer = chosenOption(ctx);
         const chosen = answer === null ? undefined : chosenRecord(script.entersChoice, answer);
         if (chosen !== undefined) next = withInstance(next, inst.id, { chosen });
+      } else if (script?.entersChoice === 'tribute') {
+        // Tribute (D1374): the opponent's answer, as it arrives; nothing when it was declined.
+        if (chosenOption(ctx) === TRIBUTE_PAID) {
+          next = addCounters(addCounters(next, inst.id, '+1/+1', script.tribute ?? 0), inst.id, TRIBUTED, 1);
+        }
       } else if (script?.entersChoice !== undefined) {
         const answer = chosenOption(ctx);
         if (answer === ENTERS_COUNTER_OPTION) next = addCounters(next, inst.id, '+1/+1', 1);

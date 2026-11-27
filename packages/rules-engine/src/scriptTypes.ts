@@ -3940,7 +3940,14 @@ export interface CardScript {
    * conditional static and lives in `statics`, where a counter from any source turns it on, which
    * is what the card says.
    */
-  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color' | 'card-name';
+  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color' | 'card-name' | 'tribute';
+  /**
+   * Tribute N (D1374, CR 702.104a): "As this creature enters, an opponent of your choice may put N
+   * +1/+1 counters on it." The number, with `entersChoice: 'tribute'` and the opponent's yes-or-no
+   * as the spell's one question. Paid, the counters and the `TRIBUTED` marker go on as it arrives,
+   * for "if tribute wasn't paid".
+   */
+  readonly tribute?: number;
   /**
    * Kicker: an optional additional cost, announced as the spell is cast (CR 702.32a).
    *

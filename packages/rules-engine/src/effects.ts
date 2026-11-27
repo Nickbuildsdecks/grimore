@@ -1093,6 +1093,12 @@ export const SURGED = 'surged';
  */
 export const ESCAPED = 'escaped';
 
+/** Tribute paid (D1374), for "When ~ enters, if tribute wasn't paid, …". See `CardScript.tribute`. */
+export const TRIBUTED = 'tributed';
+/** The answer that pays a tribute (D1374). */
+export const TRIBUTE_PAID = 'Pay the tribute';
+export const TRIBUTE_DECLINED = 'Decline';
+
 /** A permanent cast for its blitz cost (D933), for its dies draw. See `CardScript.dash.blitz`. */
 export const BLITZED = 'blitzed';
 
@@ -1175,7 +1181,7 @@ export const IMPENDED = 'impended';
 /** Which kicker of a double kicker was paid (D1099): "if it was kicked with its {B} kicker". */
 export const KICKED_FIRST = 'kicked-first';
 export const KICKED_SECOND = 'kicked-second';
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EXILED_ON_LEAVING, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND, ESCAPED]);
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EXILED_ON_LEAVING, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND, ESCAPED, TRIBUTED]);
 registerCounterMarkers(MARKERS);
 
 /**

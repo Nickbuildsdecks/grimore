@@ -8154,6 +8154,9 @@ describe('deck coverage', () => {
       // D1357: Strive's coloured half (Aerial Formation, Consign to Dust and eight more read whole); driven
       // by "two targets cost {1}{U}{U}: refused off two Islands, cast off three". No pool deck plays one.
       'script extraTargetColoured',
+      // D1374: Tribute N (Shrike Harpy, Snake of the Golden Grove and eight more read whole); driven by
+      // "paid: two +1/+1 counters, and no life; declined: no counters, and 4 life". No pool deck plays one.
+      'script tribute',
     ]);
 
     const declared = [
@@ -51093,6 +51096,39 @@ describe('"You may reveal a noncreature, nonland card from among them" (D1373)',
     expect(ids(s, 0, 'library').slice(0, 4)).toEqual(top);
     s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Look') } as Action));
     expect([...s.pendingDecision!.candidates].sort()).toEqual([top[0]!, top[3]!].sort());
+  });
+});
+
+describe('Tribute (D1374, CR 702.104a)', () => {
+  const SNAKE = { name: 'Test Snake', type_line: 'Creature — Snake', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: "Tribute 2 (As this creature enters, an opponent of your choice may put two +1/+1 counters on it.)\nWhen Test Snake enters, if tribute wasn't paid, you gain 4 life." };
+  const deck = customDeck({ id: 'd1374', name: 'Snake', entries: [{ name: 'Test Snake', count: 2 }, { name: 'Grizzly Bears', count: 14 }, { name: 'Forest', count: 44 }], data: [SNAKE] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1374', 1: 'd1374' }, deckSpecs: { d1374: deck.deck }, hands: { 0: ['Test Snake'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, answer: string): GameState => {
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Snake') } as Action);
+    for (let i = 0; i < 4 && t.pendingDecision === null; i++) t = passBoth(t);
+    // The opponent is asked, as the creature spell resolves.
+    expect(t.pendingDecision?.seat).toBe(1);
+    t = apply(t, { type: 'auto:decide', by: 1, cards: [], option: answer } as Action);
+    for (let i = 0; i < 4 && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SNAKE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('paid: two +1/+1 counters, and no life; declined: no counters, and 4 life', () => {
+    const paid = cast(table(), 'Pay the tribute');
+    const snake = find(paid, 0, 'battlefield', 'Test Snake');
+    expect(paid.instances[snake]!.counters['+1/+1']).toBe(2);
+    expect(life(paid, 0)).toBe(20);
+    const declined = cast(table(), 'Decline');
+    expect(declined.instances[find(declined, 0, 'battlefield', 'Test Snake')]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(life(declined, 0)).toBe(24);
   });
 });
 

@@ -29,7 +29,7 @@ import { isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from '.
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
   BLITZED,
-  SURGED, ESCAPED,
+  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID, TRIBUTE_DECLINED,
   SQUADDED,
   addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
@@ -11924,6 +11924,24 @@ export { cardTargets, destroy };
 export function keywordScriptFor(line: string, name: string): Partial<CardScript> | null {
   const text = line.trim();
   const word = text.toLowerCase();
+  /*
+    Tribute N (D1374, CR 702.104a): the opponent's yes-or-no, asked as the creature spell resolves,
+    and its answer applied as it arrives. "An opponent of your choice" is asked of the next opponent
+    in turn order: in a duel that is the only one, and in a pod the choice of which is not offered.
+    Put onto the battlefield without being cast, it was asked nothing and tribute was not paid.
+  */
+  const tributeN = /^tribute (\d+)$/i.exec(text);
+  if (tributeN !== null) {
+    const n = Number(tributeN[1]);
+    return {
+      entersChoice: 'tribute',
+      tribute: n,
+      decisions: [{
+        who: 'an-opponent', prompt: `Tribute ${n}: put ${n} +1/+1 counter${n === 1 ? '' : 's'} on ${name}?`,
+        options: [TRIBUTE_PAID, TRIBUTE_DECLINED],
+      }],
+    };
+  }
   /*
     A comma list where a part needs a script (D875): Apex Devastator's "Cascade, cascade, cascade,
     cascade" is four cascade triggers, each its own (CR 702.85c); "Flying, cascade" is the printed
@@ -40788,6 +40806,10 @@ function guardedBy(then: ReadEffect, condition: (c: EffectContext) => boolean): 
 function interveningConditionFor(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
+  // "If tribute wasn't paid" (D1374): the marker tribute leaves, read off the permanent.
+  if (/^tribute wasn't paid$/i.test(printed.trim())) {
+    return (c) => (c.state.instances[c.source]?.counters[TRIBUTED] ?? 0) === 0;
+  }
   /*
     "If grace gets more votes" and "if knowledge gets more votes or the vote is tied" (D1361), only
     while a vote is being read: the word against the other word.
