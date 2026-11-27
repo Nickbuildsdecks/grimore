@@ -50118,3 +50118,37 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6542 of 6542 pass.
 
 Coverage: 17,559 of 31,900 cards (+1 over D1351's 17,558), 40,400 of 59,888 lines (+1).
+
+## D1353 — untargeted returns from the graveyard: counts, the battlefield, a total
+
+"Return a creature card from your graveyard to your hand" read. Nothing else in that family did:
+- a count ("two creature cards", "up to two", "any number of");
+- the battlefield as the destination ("… to the battlefield", even with one card);
+- D1352's total ("with total mana value 4 or less"): Technomancer, Lively Dirge's mode, Legion's
+  Chant's X spelling aside.
+
+**The reading.** One more reader after the single-card one. It is chosen as it resolves, not
+targeted, so it is a question from the graveyard:
+- **The count.** A fixed count is exactly that many, or as many as there are (CR 609.3). "Up to"
+  and "any number of" start from nought, and so does "you may".
+- **The destination.** Hand, the battlefield, or the battlefield tapped.
+- **The total.** It bounds the answer with D1352's `totalManaValueAtMost`.
+- **The bot** takes the costliest cards that the count and the total allow.
+
+**Tests.** 4 engine tests, with Hill Giant, two Grizzly Bears and a Swamp in the graveyard:
+- Two fixtures read whole.
+- "Up to two, total 4, to the battlefield":
+  - the Swamp is not offered;
+  - Giant and Bears (6) are refused;
+  - the two Bears return.
+- "Two to hand": exactly two, and the Giant and a Bears return.
+- The bot returns the Giant, 4 of the 4 allowed.
+
+Faults injected by hand: 3, all caught.
+- The total not carried.
+- "Two" treated as "up to two".
+- Everything sent to the hand.
+
+The scripts tests, compile tests and pins: 6546 of 6546 pass.
+
+Coverage: 17,565 of 31,900 cards (+6 over D1352's 17,559), 40,410 of 59,888 lines (+10).
