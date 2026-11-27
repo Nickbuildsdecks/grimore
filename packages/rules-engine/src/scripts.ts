@@ -34288,6 +34288,43 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
   };
 }
 
+/**
+ * Approach of the Second Sun (D1349): "If this spell was cast from your hand and you've cast another
+ * spell named Approach of the Second Sun this game, you win the game. Otherwise, put Approach of the
+ * Second Sun into its owner's library seventh from the top and you gain 7 life."
+ *
+ * Cast from the hand is the stack object's `castFrom` (D607). "Another spell named ~ this game" is
+ * `GameState.spellNamesCastThisGame`, which counts this one too, so two or more. Otherwise the card
+ * goes seventh from the top (the bottom of a shorter library), and the spell's resolution leaves it
+ * there (CR 608.2n).
+ */
+function approachOfTheSecondSun(clauses: readonly string[], name: string): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const self = selfRef(name);
+  const m = new RegExp(`^if this spell was cast from your hand and you've cast another spell named (?:${self}) this game, you win the game\\. otherwise, put (?:${self}) into its owner's library seventh from the top and you gain (\\d+) life\\.?$`, 'i').exec(text);
+  if (m === null) return null;
+  const life = Number(m[1]);
+  return {
+    effect: (c) => {
+      const fromHand = c.resolving?.castFrom === 'hand';
+      const casts = c.state.spellNamesCastThisGame?.[`${c.controller}:${name}`] ?? 0;
+      if (fromHand && casts >= 2) {
+        return c.state.seats.reduce(
+          (state, seat) => (seat.index === c.controller || seat.eliminated ? state : loseTheGame(state, seat.index)), c.state);
+      }
+      const card = c.state.instances[c.source];
+      let next = c.state;
+      if (card !== undefined && card.zone === 'stack') {
+        next = putOnTopOfLibrary(next, card.id);
+        const key = zoneKey(card.owner, 'library');
+        const rest = listAt(next, key).filter((id) => id !== card.id);
+        next = withZones(next, { [key]: [...rest.slice(0, 6), card.id, ...rest.slice(6)] });
+      }
+      return gainLife(next, c.controller, life);
+    },
+  };
+}
+
 /** The most times Ad Nauseam's process is offered again (D1347): a ceiling no real game reaches. */
 const AD_NAUSEAM_ROUNDS = 60;
 
@@ -35058,6 +35095,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // Approach of the Second Sun (D1349): see `approachOfTheSecondSun`.
+  const approach = approachOfTheSecondSun(clauses, name);
+  if (approach !== null) return approach;
   // Ad Nauseam (D1347): see `revealRepeatedly`.
   const repeated = revealRepeatedly(clauses);
   if (repeated !== null) return repeated;

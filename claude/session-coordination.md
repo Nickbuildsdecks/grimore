@@ -264,3 +264,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1345 pushed in 7fe2ed1. D1346 commander ninjutsu (AbilityCost.alsoFromCommandZone) and the Confidant reveal widened: scriptTypes, legalActions, autoActions, scripts.ts.
 - D1346 pushed in b0ff07d. D1347 Ad Nauseam (revealRepeatedly, a fixed list of repeat questions): scripts.ts only.
 - D1347 pushed in 9469bb6. D1348 Mana Echoes (announced "add X {C}", shared-type count, mana-ability amount counts): scripts.ts, fromCardData.ts.
+- D1348 pushed in 63f31eb. D1349 Approach of the Second Sun (spellNamesCastThisGame; a resolved spell's exit only from the stack, CR 608.2n): turnTypes, autoActions, automation, scripts.ts.

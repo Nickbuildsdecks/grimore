@@ -1409,6 +1409,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...countCast(next, action.by, !bestowed && characteristics.isCreature ? 'creature' : 'noncreature',
       hasType(characteristics.typeLine, 'instant') || hasType(characteristics.typeLine, 'sorcery'),
       !hasType(characteristics.typeLine, 'artifact')),
+    // And by name for the game (D1349): Approach of the Second Sun.
+    spellNamesCastThisGame: {
+      ...(next.spellNamesCastThisGame ?? {}),
+      [`${action.by}:${characteristics.name}`]: (next.spellNamesCastThisGame?.[`${action.by}:${characteristics.name}`] ?? 0) + 1,
+    },
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   // A bestowed creature spell is an **Aura** spell (CR 702.103b), so a prowess creature sees a

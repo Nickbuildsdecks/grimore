@@ -7234,7 +7234,9 @@ function resolveObject(
       // this permanent's own statics are installed — see the arrivals loop there. Applying them
       // here as well was the bug: a permanent that arrived any *other* way got none.
 
-    } else if (inst !== undefined && !replacedArrival) {
+    // Only while the card is still on the stack (CR 608.2n, D1349): Approach of the Second Sun puts
+    // itself into its library as it resolves, and is not then sent to the graveyard as well.
+    } else if (inst !== undefined && !replacedArrival && next.instances[inst.id]?.zone === 'stack') {
       /*
         Rebound, which is a third destination and a promise (CR 702.88a): the card goes to exile
         rather than to a graveyard, and a delayed trigger for its controller's **next upkeep**

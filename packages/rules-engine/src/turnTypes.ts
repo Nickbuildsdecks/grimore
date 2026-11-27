@@ -1401,6 +1401,12 @@ export interface AutomationState {
    */
   readonly spellsCastThisTurnByKind?: Readonly<Record<string, number>>;
   /**
+   * The spells each seat has cast **this game**, by name (D1349), keyed `seat:name`: Approach of the
+   * Second Sun's "you've cast another spell named Approach of the Second Sun this game". Never
+   * cleared. Optional: absent is none.
+   */
+  readonly spellNamesCastThisGame?: Readonly<Record<string, number>>;
+  /**
    * "Can't cast spells this turn" (D791): Silence, Orim's Chant, Mandate of Peace. The turn number
    * each seat is barred in, so it needs no reset: a ban from an earlier turn is a different number.
    * Asked by `castProhibition`.

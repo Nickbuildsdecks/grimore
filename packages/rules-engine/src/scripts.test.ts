@@ -49991,6 +49991,51 @@ describe('Mana Echoes: mana as many as the creatures that share a type (D1348)',
   });
 });
 
+describe('Approach of the Second Sun: the second cast from hand wins (D1349)', () => {
+  const APPROACH = { name: 'Test Approach', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: "If this spell was cast from your hand and you've cast another spell named Test Approach this game, you win the game. Otherwise, put Test Approach into its owner's library seventh from the top and you gain 7 life." };
+  const deck = customDeck({ id: 'd1349', name: 'Approach', entries: [{ name: 'Test Approach', count: 2 }, { name: 'Plains', count: 58 }], data: [APPROACH] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1349', 1: 'd1349' }, deckSpecs: { d1349: deck.deck }, hands: { 0: ['Test Approach', 'Test Approach'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState): GameState => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Approach') } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(APPROACH as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the first: seventh from the top, and 7 life', () => {
+    let s = table();
+    const first = find(s, 0, 'hand', 'Test Approach');
+    s = cast(s);
+    expect(s.instances[first]!.zone).toBe('library');
+    expect(ids(s, 0, 'library').indexOf(first)).toBe(6);
+    expect(s.seats[0]!.life).toBe(27);
+    expect(s.spellNamesCastThisGame?.['0:Test Approach']).toBe(1);
+  });
+
+  it('the second, cast out of exile rather than from hand: no win, and 7 more life', () => {
+    let s = cast(table());
+    const second = find(s, 0, 'hand', 'Test Approach');
+    s = {
+      ...s,
+      zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').filter((id) => id !== second), '0:exile': [second] },
+      instances: { ...s.instances, [second]: { ...s.instances[second]!, zone: 'exile' as const, playFromExile: { by: 0 as SeatIndex, grantedTurn: s.turn, through: 'this-turn' as const } } },
+    };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: second } as Action)), 20);
+    expect(s.seats[1]!.eliminated).toBe(false);
+    expect(s.seats[0]!.life).toBe(34);
+  });
+
+  it('the second, from hand: the opponent loses the game', () => {
+    let s = cast(table());
+    s = cast(s);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.seats[0]!.eliminated).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
