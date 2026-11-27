@@ -51035,6 +51035,46 @@ describe("Kroxa: each opponent discards, and loses 3 unless it was a nonland car
   });
 });
 
+describe('"Mill three cards. You may put a land card from among them into your hand. If you don\'t, …" (D1372)', () => {
+  const PROWLER = { name: 'Test Prowler', type_line: 'Creature — Wolf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: "When Test Prowler enters, mill three cards. You may put a land card from among them into your hand. If you don't, put a +1/+1 counter on Test Prowler." };
+  const lands = customDeck({ id: 'd1372a', name: 'Lands', entries: [{ name: 'Test Prowler', count: 2 }, { name: 'Forest', count: 58 }], data: [PROWLER] as never[] });
+  const bears = customDeck({ id: 'd1372b', name: 'Bears', entries: [{ name: 'Test Prowler', count: 2 }, { name: 'Grizzly Bears', count: 58 }], data: [PROWLER] as never[] });
+  const table = (deck: 'd1372a' | 'd1372b'): GameState => advanceTo(arena({
+    decks: { 0: deck, 1: 'd1372a' }, deckSpecs: { d1372a: lands.deck, d1372b: bears.deck },
+    hands: { 0: ['Test Prowler'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const enter = (s: GameState): GameState => {
+    let t = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Prowler') } as Action));
+    for (let i = 0; i < 4 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+  const counters = (s: GameState) => s.instances[find(s, 0, 'battlefield', 'Test Prowler')]!.counters['+1/+1'] ?? 0;
+
+  it('reads whole', () => {
+    expect([...lands.unknown, ...bears.unknown]).toEqual([]);
+    expect(compileCard(PROWLER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a land taken: into the hand, and no counter; none taken: the counter', () => {
+    let s = enter(table('d1372a'));
+    expect(s.pendingDecision?.min).toBe(0);
+    const land = s.pendingDecision!.candidates[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [land] } as Action), 20);
+    expect(s.instances[land]!.zone).toBe('hand');
+    expect(counters(s)).toBe(0);
+    let t = enter(table('d1372a'));
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(counters(t)).toBe(1);
+    expect(namesIn(t, 0, 'graveyard').filter((n) => n === 'Forest')).toHaveLength(3);
+  });
+
+  it('no land among the three milled: nothing to take, and the counter', () => {
+    const s = drain(enter(table('d1372b')), 20);
+    expect(counters(s)).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

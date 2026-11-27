@@ -34694,6 +34694,32 @@ function untilCastable(
 }
 
 /**
+ * "Mill three cards. You may put a land card from among them into your hand. If you don't, put a
+ * +1/+1 counter on ~." (D1372): Ainok Wayfarer, Blanchwood Prowler, Ravenous Gigamole, Tomakul
+ * Scrapsmith, Fallaji Archaeologist. The first two sentences already read as one question with
+ * nothing required (the mill-and-pick glue). "If you don't" is that question answered with no
+ * card, and then the last sentence happens. It must read with no target and no question of its own.
+ */
+function millPickOrElse(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  if (clauses.length !== 2) return null;
+  const otherwise = /^if you don't, (.+)$/i.exec(plain(clauses[1]!).trim().replace(/\.$/, ''));
+  if (otherwise === null || !/^mill (?:a card|\w+ cards) and you may put /i.test(plain(clauses[0]!).trim())) return null;
+  const pick = composeEffects([clauses[0]!], name, where);
+  const then = readEffect(otherwise[1]!, name, where);
+  // The mill is the pick's `beforeDecisions` (it happens before the question), and is kept as it is.
+  if (pick === null || then === null || (pick.decisions ?? []).length !== 1
+    || (then.targets ?? []).length > 0 || (then.decisions ?? []).length > 0 || then.beforeDecisions !== undefined
+    || (pick.targets ?? []).length > 0) return null;
+  return {
+    ...pick,
+    effect: (c) => {
+      const after = pick.effect(c);
+      return chosenCards(c).length === 0 ? then.effect({ ...c, state: after }) : after;
+    },
+  };
+}
+
+/**
  * Kroxa, Titan of Death's Hunger (D1371): "each opponent discards a card, then each opponent who
  * didn't discard a nonland card this way loses 3 life." One discard question for each opponent,
  * then the life from each one whose discard was a land, or who had no card to discard.
@@ -35648,6 +35674,9 @@ function composeEffectsAsPrinted(
   // A vote (D1361): see `voteGroup`.
   const voted = voteGroup(clauses, name, where);
   if (voted !== null) return voted;
+  // "Mill three cards. You may put … into your hand. If you don't, …" (D1372): see `millPickOrElse`.
+  const milled = millPickOrElse(clauses, name, where);
+  if (milled !== null) return milled;
   // Kroxa (D1371): see `discardOrLose`.
   const kroxa = discardOrLose(clauses);
   if (kroxa !== null) return kroxa;
