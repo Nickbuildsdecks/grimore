@@ -294,3 +294,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1375 pushed in 8eb7b00. D1376 create a token then attach (Equipment ETB, priced): scripts.ts only.
 - D1376 pushed in f8e6dc1. D1377 pitch evoke (CardScript.evoke.pitch) and Solitude's trigger: scriptTypes, legalActions, autoActions, scripts.ts, compile.test.ts pin.
 - D1377 pushed in e40afff. D1378 divided damage on triggered and activated abilities: turnTypes, autoActions, scripts.ts, bot.ts, the web choosing prompt (arena.ts, ArenaBar.tsx, PlayTable.tsx), refusal pins.
+- D1378 pushed in a6d2ca1. D1379 "you may pay {X}" (NumberDecisionSpec.payX): scriptTypes, automation, scripts.ts.

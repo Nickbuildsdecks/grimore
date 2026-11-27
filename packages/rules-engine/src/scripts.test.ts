@@ -51366,6 +51366,64 @@ describe('Divided damage on triggered and activated abilities (D1378)', () => {
   });
 });
 
+describe('"You may pay {X}. If you do" (D1379)', () => {
+  const DEVIL = { name: 'Test Devil', type_line: 'Creature — Devil', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'When Test Devil enters, you may pay {X}. If you do, create X 1/1 red Goblin creature tokens.' };
+  const SPARK = { name: 'Test Spark', type_line: 'Creature — Elemental', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'When Test Spark enters, you may pay {X}{R}. If you do, it deals X damage to target player.' };
+  const ROWS = [DEVIL, SPARK];
+  const deck = customDeck({ id: 'd1379', name: 'Devil', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 56 }], data: ROWS as never[] });
+  const table = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1379', 1: 'd1379' }, deckSpecs: { d1379: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const untapped = (s: GameState): number => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Mountain' && !s.instances[id]!.tapped).length;
+  const goblins = (s: GameState): number => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Goblin').length;
+  const resolveTo = (s: GameState, until: (s: GameState) => boolean): GameState => {
+    for (let i = 0; i < 6 && !until(s) && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const cast = (hand: string): GameState => {
+    const s = table(hand);
+    return resolveTo(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', hand) } as Action)),
+      (t) => t.pendingDecision !== null || t.pendingChoice !== null);
+  };
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('pays X of three for two Goblins: two lands tapped, and no more than three offered', () => {
+    let s = cast('Test Devil');
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {X}']);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {X}' } as Action);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 3 });
+    s = resolveTo(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 2 } as Action), () => false);
+    expect(goblins(s)).toBe(2);
+    expect(untapped(s)).toBe(1);
+  });
+
+  it('declined, nothing is paid and nothing made', () => {
+    let s = cast('Test Devil');
+    s = resolveTo(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Decline' } as Action), () => false);
+    expect(goblins(s)).toBe(0);
+    expect(untapped(s)).toBe(3);
+  });
+
+  it('{X}{R} with three lands: X is at most two, and the fixed {R} is paid beside it', () => {
+    let s = cast('Test Spark');
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    s = resolveTo(s, (t) => t.pendingDecision !== null);
+    const theirs = life(s, 1);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {X}{R}' } as Action);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 2 });
+    s = resolveTo(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 2 } as Action), () => false);
+    expect(life(s, 1)).toBe(theirs - 2);
+    expect(untapped(s)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

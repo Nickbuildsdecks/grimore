@@ -24652,6 +24652,8 @@ function eventRelativeEffect(
  */
 function optionalEffect(
   clause: string, reader: (text: string) => ReadEffect | null, allowReflexive = false,
+  /** The card's name, for a "you may pay {X}" whose effect only the X spell reader reads (D1379). */
+  xName?: string,
 ): ReadEffect | null {
   /*
     **"When you do"** (D948, CR 603.12): "you may pay {2}. When you do, target creature can't
@@ -25004,7 +25006,17 @@ function optionalEffect(
   */
   const read = sequence?.read
     ?? reader(causative === null ? inner : `${causative[1]!} ${causative[2]!}s ${causative[3]!}`)
-    ?? reader(`you ${inner}`);
+    ?? reader(`you ${inner}`)
+    /*
+      "You may pay {X}. If you do, create X …" (D1379). A bare X is read on the spell path only,
+      where it is the spell's own; here it is the X just paid. So X is marked as "that many" is
+      (D903) and the effect is handed the paid X as that amount below; failing that, the spell
+      path's X reader.
+    */
+    ?? (priced !== null && /\{X\}/i.test(priced[1]!)
+      ? reader(inner.replace(/\bX (life|damage)\b/g, '\u000e much $1').replace(/\bX\b/g, '\u000e many'))
+        ?? (xName === undefined ? null : xSpellResolution([inner], xName))
+      : null);
   if (read === null) return null;
   /*
     Either kind of "may" is refused when its own effect asks a question, and for one reason: the
@@ -25053,7 +25065,9 @@ function optionalEffect(
   const pricedCost = priced === null ? null : priced[1]!;
   if (pricedCost !== null) {
     const parsed = parseManaCost(pricedCost);
-    if (parsed.unsupported !== undefined || parsed.x) return null;
+    if (parsed.unsupported !== undefined) return null;
+    // An X (D1379) only as plain {X}s beside a fixed part: "{X}", "{X}{X}", "{X}{W}{U}{U}".
+    if (parsed.x && !/^(?:\{X\})+(?:\{[^X}]+\})*$/i.test(pricedCost)) return null;
   }
   // `{E}{E}` is two energy. The symbols are counted rather than parsed, for the reason above.
   const energyCost = energyPriced === null
@@ -25118,6 +25132,41 @@ function optionalEffect(
     gap and not a wrong card, which is the right side of D362 to be on.
   */
   const targets = read.targets === undefined ? {} : { targets: read.targets };
+  /*
+    **"You may pay {X}. If you do, …"** (D1379): Squealing Devil, Decree of Justice, Rise of the
+    Hobgoblins, Flameblast Dragon, Azor. The yes-or-no first, priced with any fixed part ("{X}{R}"),
+    then X, which the engine offers up to what the seat can pay and pays (`NumberDecisionSpec.payX`).
+    The effect reads that X as its own.
+
+    Refused when the effect asks something of its own, or when X is in what a target must be
+    ("target creature card with mana value X"): the target is chosen as the trigger goes on the
+    stack, before X is.
+  */
+  if (pricedCost !== null && /\{X\}/i.test(pricedCost)) {
+    if ((read.decisions ?? []).length > 0) return null;
+    if (!/\bX\b/.test(inner) || /\b(?:mana value|power|toughness) X\b|\bX or (?:less|greater|more)\b/i.test(inner)) return null;
+    const perX = (pricedCost.match(/\{X\}/gi) ?? []).length;
+    const fixed = pricedCost.replace(/\{X\}/gi, '');
+    const word = `Pay ${pricedCost}`;
+    return {
+      ...targets,
+      decisions: [{
+        who: 'controller',
+        prompt: `${word} — ${sentence(inner)}?`,
+        options: ['Decline', word],
+        ...(fixed === '' ? {} : { payIfChosen: { option: word, cost: fixed } }),
+      }, {
+        who: 'controller',
+        askOnlyIfChosen: word,
+        prompt: `Choose X for ${pricedCost}`,
+        range: () => ({ min: 0, max: X_PAID_AT_MOST }),
+        payX: { perX, ...(fixed === '' ? {} : { alsoDue: fixed }) },
+      }],
+      effect: (c) => (chosenOption(c) === word
+        ? read.effect({ ...c, decisions: c.decisions.slice(2), x: c.decisions[1]?.amount ?? 0, eventAmount: c.decisions[1]?.amount ?? 0 })
+        : c.state),
+    };
+  }
   return pay !== null ? {
     ...targets,
     decisions: [{
@@ -25660,7 +25709,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     const asRead = aboutAnother && thatCreature >= 0
       ? clause.replace(/\bthat (?:creature|permanent)\b(?!['\u2019]s)/gi, 'it')
       : clause;
-    const read = reader(asRead) ?? optionalEffect(asRead, reader, true) ?? punisherEffect(asRead, reader, on, name);
+    const read = reader(asRead) ?? optionalEffect(asRead, reader, true, name) ?? punisherEffect(asRead, reader, on, name);
     if (read === null) return null;
     /*
       A trigger that divides a quantity is emitted (D1378). It was refused here from D533 until
@@ -27303,6 +27352,9 @@ function sweepDestination(
     return state;
   };
 }
+
+/** The most a "you may pay {X}" offers (D1379), before the engine stops it at what can be paid. */
+const X_PAID_AT_MOST = 30;
 
 /**
  * Whether a reading carries a **divided** quantity.

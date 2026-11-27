@@ -2398,6 +2398,13 @@ export interface NumberDecisionSpec {
    * range or absent falls back to the bottom of the range, which is the answer that does least.
    */
   readonly best?: (state: GameState, chooser: SeatIndex) => number | undefined;
+  /**
+   * The number is **X in a mana cost the engine pays** (D1379): "you may pay {X}. If you do, …".
+   * The range offered stops at the most the seat can pay, counting `alsoDue` beside it (a fixed
+   * part, "{X}{R}", paid by the yes-or-no before it), and the engine pays `perX` generic mana for
+   * each one before the effect runs, as it pays `ChoiceDecisionSpec.payIfChosen`.
+   */
+  readonly payX?: { readonly perX: number; readonly alsoDue?: string };
   /** Never set on this shape; the four are told apart by which of these is present. */
   readonly from?: never;
   readonly options?: never;

@@ -6228,7 +6228,12 @@ function askOrFinish(
     if (isNumberDecision(spec)) {
       const { min, max } = spec.range(state, entry.seat);
       const low = Math.max(0, Math.floor(min));
-      const high = Math.max(low, Math.floor(max));
+      let high = Math.max(low, Math.floor(max));
+      // An X the engine pays (D1379): no more than the seat can pay, with any fixed part beside it.
+      const payX = spec.payX;
+      if (payX !== undefined) {
+        while (high > low && !canPayForAnswer(state, entry.seat, { cost: `${payX.alsoDue ?? ''}{${high * payX.perX}}` })) high -= 1;
+      }
       if (low === high) {
         answers = [...answers, { seat: entry.seat, ids: [], amount: low }];
         continue;
@@ -6864,6 +6869,28 @@ function resolveObject(
         : spendEnergy(next, seat, price.energy);
   }
   answers = paidAnswers;
+  /*
+    And an X answered for a price (D1379): "you may pay {X}". Only where every question up to it is
+    the controller's alone, so the answer's position is the question's. Paid after the yes-or-no's
+    own price, which is the fixed part of "{X}{R}"; an X no longer payable reads as nought.
+  */
+  {
+    const specs = decisionSpecsFor(next, object, answers);
+    for (let i = 0; i < specs.length; i++) {
+      const spec = specs[i]!;
+      if (!isNumberDecision(spec) || spec.payX === undefined) continue;
+      if (!specs.slice(0, i + 1).every((s) => s.who === 'controller')) continue;
+      const answer = answers[i];
+      const amount = answer?.amount ?? 0;
+      if (answer === undefined || amount <= 0) continue;
+      const cost = `{${amount * spec.payX.perX}}`;
+      if (!canPayForAnswer(next, answer.seat, { cost })) {
+        answers = answers.map((a, j) => (j === i ? { ...a, amount: 0 } : a));
+        continue;
+      }
+      next = payFrom(next, answer.seat, parseManaCost(cost), 0).state;
+    }
+  }
 
   const ctx: EffectContext = {
     state: next,
