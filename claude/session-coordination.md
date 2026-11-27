@@ -248,3 +248,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1328 pushed in 80229a0. D1329 the Borderposts (altCost.lands.basic): scriptTypes, legalActions bouncePlan/landCostPlan, autoActions, scripts.ts altCostFromLine.
 - D1329 pushed in 23374ba. D1330 "Discard two cards" cost (discardCount, ActivateAction.discards): scriptTypes, turnTypes, scripts, autoActions, legalActions, bot; web arena.ts counted discard feed; two compile pins retired.
 - D1330 pushed in 89118e3. D1331 "Discard your hand" cost, Lion's Eye Diamond (AbilityCost.discardHand): scriptTypes, scripts.ts cost reader, autoActions activate, legalActions manaSources.
+- D1331 pushed in 9792612. D1332 "Sacrifice any number of …, then … that many" (sacrificeAnyThenThatMany, pluralPermanentKinds): scripts.ts group reader only.

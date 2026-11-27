@@ -49165,6 +49165,83 @@ describe("\"Discard your hand\" as a cost: Lion's Eye Diamond (D1331)", () => {
   });
 });
 
+describe('"Sacrifice any number of …, then … that many" (D1332)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
+  const OFFER = card('Test Offering', 'Sorcery', 'Sacrifice any number of lands, then draw that many cards.');
+  const EFFORT = card('Test Effort', 'Instant', 'Sacrifice any number of creatures. Test Effort deals that much damage to any target.');
+  const BONTU = card('Test Bontu', 'Creature — Zombie God', 'When Test Bontu enters, sacrifice any number of other permanents, then draw that many cards.', { power: '5', toughness: '6' });
+  const ROWS = [OFFER, EFFORT, BONTU];
+  const deck = customDeck({ id: 'd1332', name: 'Offering', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 6 }, { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  const table = (hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1332', 1: 'd1332' }, deckSpecs: { d1332: deck.deck },
+    battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Hill Giant', 'Hill Giant'] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, extra: object = {}): GameState => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...extra } as Action);
+    for (let i = 0; i < 12 && next.pendingDecision === null; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    // Not when what follows asks its own question, nor with an X of its own.
+    for (const text of [
+      'Sacrifice any number of lands. Search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle.',
+      'Sacrifice any number of creatures. Draw a card.',
+      'Sacrifice any number of creatures, then discard that many cards.',
+      'Sacrifice any number of wizards, then draw that many cards.',
+    ]) {
+      const read = compileCard(card('Test Refused', 'Sorcery', text) as never);
+      expect(read.ok && read.unread.length).toBe(1);
+    }
+  });
+
+  it('the lands chosen are sacrificed, and that many cards drawn', () => {
+    let s = cast(table(['Test Offering']), 'Test Offering');
+    const swamps = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Swamp');
+    expect(s.pendingDecision?.seat).toBe(0);
+    // Lands only: no creature is offered.
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...swamps].sort());
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: swamps.slice(0, 2) } as Action), 20);
+    expect(swamps.slice(0, 2).every((id) => s.instances[id]!.zone === 'graveyard')).toBe(true);
+    expect(s.instances[swamps[2]!]!.zone).toBe('battlefield');
+    expect(ids(s, 0, 'hand').length).toBe(hand + 2);
+  });
+
+  it('none chosen: nothing sacrificed, nothing drawn', () => {
+    let s = cast(table(['Test Offering']), 'Test Offering');
+    const hand = ids(s, 0, 'hand').length;
+    const lands = ids(s, 0, 'battlefield').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+    expect(ids(s, 0, 'battlefield').length).toBe(lands);
+  });
+
+  it('that much damage to the target, one for each creature sacrificed', () => {
+    let s = cast(table(['Test Effort']), 'Test Effort', { targets: [{ kind: 'player', seat: 1 }] });
+    const giants = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Hill Giant');
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...giants].sort());
+    const before = s.seats[1]!.life;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: giants } as Action), 20);
+    expect(s.seats[1]!.life).toBe(before - 2);
+    expect(giants.every((id) => s.instances[id]!.zone === 'graveyard')).toBe(true);
+  });
+
+  it('"other permanents": the creature that entered is not among them', () => {
+    let s = cast(table(['Test Bontu']), 'Test Bontu');
+    const bontu = find(s, 0, 'battlefield', 'Test Bontu');
+    expect(s.pendingDecision?.candidates).not.toContain(bontu);
+    expect(s.pendingDecision?.candidates.length).toBe(5);
+    const hand = ids(s, 0, 'hand').length;
+    const giant = s.pendingDecision!.candidates.find((id) => nameOf(s, id) === 'Hill Giant')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [giant] } as Action), 20);
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

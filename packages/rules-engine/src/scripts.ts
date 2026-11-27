@@ -34147,6 +34147,80 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * "Lands", "creatures", "Mountains", "artifacts, enchantments, and/or tokens" (D1332): what a
+ * "sacrifice any number of" may take, as a test of a permanent. `null` for anything else.
+ */
+function pluralPermanentKinds(words: string): ((state: GameState, id: string) => boolean) | null {
+  const parts = words.trim().split(/,\s*(?:and\/or\s+|or\s+|and\s+)?|\s+and\/or\s+|\s+or\s+|\s+and\s+/i)
+    .map((part) => part.trim().toLowerCase()).filter((part) => part !== '');
+  const TYPES: Readonly<Record<string, string>> = {
+    lands: 'land', creatures: 'creature', artifacts: 'artifact', enchantments: 'enchantment', planeswalkers: 'planeswalker',
+  };
+  const BASICS: Readonly<Record<string, string>> = {
+    plains: 'Plains', islands: 'Island', swamps: 'Swamp', mountains: 'Mountain', forests: 'Forest',
+  };
+  const tests: ((state: GameState, inst: CardInstance) => boolean)[] = [];
+  for (const part of parts) {
+    const type = TYPES[part];
+    const basic = BASICS[part];
+    if (type !== undefined) {
+      tests.push((state, inst) => {
+        const ch = characteristicsOf(state, inst);
+        return type === 'creature' ? ch.isCreature : hasType(ch.typeLine, type);
+      });
+    } else if (basic !== undefined) tests.push((state, inst) => hasSubtype(characteristicsOf(state, inst).typeLine, basic));
+    else if (part === 'permanents') tests.push(() => true);
+    else if (part === 'nonland permanents') tests.push((state, inst) => !hasType(characteristicsOf(state, inst).typeLine, 'land'));
+    else if (part === 'tokens') tests.push((_state, inst) => inst.isToken === true);
+    else return null;
+  }
+  if (tests.length === 0) return null;
+  return (state, id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && inst.zone === 'battlefield' && tests.some((test) => test(state, inst));
+  };
+}
+
+/**
+ * "Sacrifice any number of <kinds>, then <something> that many" (D1332): God-Eternal Bontu's "…
+ * other permanents, then draw that many cards", Last-Ditch Effort's "Sacrifice any number of
+ * creatures. Last-Ditch Effort deals that much damage to any target", Landslide's Mountains,
+ * Malevolent Witchkite's artifacts, enchantments and tokens.
+ *
+ * The permanents are the controller's choice as it resolves, nought to all of them (CR 608.2c), and
+ * "that many" is how many were sacrificed, run as the event amount the "that many" readers already
+ * take after a damage trigger (D903). Not when what follows asks a question of its own: that
+ * question would be sized before anything was sacrificed. The bot sacrifices nothing: what a
+ * permanent is worth against a card or a point of damage is not something it can weigh.
+ */
+function sacrificeAnyThenThatMany(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  if (clauses.length < 2) return null;
+  const first = /^sacrifice any number of (other )?(.+?)\.?$/i.exec(clauses[0]!.trim());
+  if (first === null) return null;
+  const kinds = pluralPermanentKinds(first[2]!);
+  if (kinds === null) return null;
+  const rest = clauses.slice(1);
+  if (!rest.some((clause) => /\bthat (?:many|much)\b/i.test(clause)) || rest.some((clause) => /\bX\b/.test(clause))) return null;
+  const then = composeEffects(rest.map((clause) => clause.replace(/\bthat (many|much)\b/gi, '\u000e $1')), name, where);
+  if (then === null || (then.decisions ?? []).length > 0 || then.reflexive !== undefined || then.cardFields !== undefined) return null;
+  const other = first[1] !== undefined;
+  const prompt = `Sacrifice any number of ${first[1] ?? ''}${first[2]!}`;
+  return {
+    ...(then.targets === undefined ? {} : { targets: then.targets }),
+    ...(then.spellFlags === undefined ? {} : { spellFlags: then.spellFlags }),
+    decisions: [(_state: GameState, source: string): DecisionSpec => ({
+      who: 'controller', from: 'battlefield', min: 0, max: ANY_NUMBER, prompt,
+      filter: (state: GameState, id: string) => (!other || id !== source) && kinds(state, id),
+      pick: () => [],
+    })],
+    effect: (c) => {
+      const gone = chosenCards(c).filter((id) => c.state.instances[id]?.zone === 'battlefield');
+      return then.effect({ ...c, state: sacrifice(c.state, gone), eventAmount: gone.length });
+    },
+  };
+}
+
+/**
  * A search whose count or bound is an X the next words define, and whose destination is the next
  * sentence (D1268): "Search your library for up to X basic land cards, where X is the greatest power
  * among creatures you control. Put those cards onto the battlefield tapped, then shuffle." (Traverse
@@ -34683,6 +34757,9 @@ function composeEffectsAsPrinted(
   // Tymna (D1259): see `payXLifeDrawX`.
   const paid = payXLifeDrawX(clauses, name);
   if (paid !== null) return paid;
+  // "Sacrifice any number of lands. … that many" (D1332): see `sacrificeAnyThenThatMany`.
+  const sacrificedAny = sacrificeAnyThenThatMany(clauses, name, where);
+  if (sacrificedAny !== null) return sacrificedAny;
   // Demonic Consultation (D1247): see `consultation`.
   const consulted = consultation(clauses);
   if (consulted !== null) return consulted;
