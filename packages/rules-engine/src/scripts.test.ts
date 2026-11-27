@@ -49829,6 +49829,67 @@ describe('Najeela: whenever anybody\'s Warrior attacks, its controller may get a
   });
 });
 
+describe('Yuriko: commander ninjutsu, and a revealed card that costs the opponents (D1346)', () => {
+  const YURIKO = { name: 'Test Yuriko', type_line: 'Legendary Creature — Human Ninja', mana_cost: '{1}{U}{B}', cmc: 3, colors: ['U', 'B'], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: "Commander ninjutsu {U}{B}\nWhenever a Ninja you control deals combat damage to a player, reveal the top card of your library and put that card into your hand. Each opponent loses life equal to that card's mana value." };
+  const SCOUT = { name: 'Test Scout', type_line: 'Creature — Human Rogue', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const deck = customDeck({ id: 'd1346', name: 'Yuriko', commander: 'Test Yuriko', entries: [{ name: 'Test Scout', count: 4 }, { name: 'Hill Giant', count: 25 }, { name: 'Island', count: 20 }, { name: 'Swamp', count: 15 }], data: [YURIKO, SCOUT] as never[] });
+  const unblocked = (): GameState => {
+    let s = advanceTo(arena({
+      format: 'edh', decks: { 0: 'd1346', 1: 'd1346' }, deckSpecs: { d1346: deck.deck },
+      battlefield: { 0: ['Island', 'Swamp', 'Test Scout'] }, turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Scout'), defender: 1 }] });
+    return advanceTo(s, 'declare-blockers');
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(YURIKO as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.abilities?.[0]?.cost).toMatchObject({ mana: '{U}{B}', returnsUnblockedAttacker: true, alsoFromCommandZone: true });
+  });
+
+  it('offered from the command zone once the attack is through, and swaps the Scout for Yuriko', () => {
+    let s = unblocked();
+    const yuriko = find(s, 0, 'command', 'Test Yuriko');
+    const scout = find(s, 0, 'battlefield', 'Test Scout');
+    const all = legalActions(s, 0);
+    const play = all.plays.find((p) => p.card === yuriko && p.kind === 'activate');
+    expect(play).toBeDefined();
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: yuriko, abilityIndex: play!.abilityIndex!, returned: scout } as Action), 40);
+    expect(s.instances[scout]!.zone).toBe('hand');
+    expect(s.instances[yuriko]!.zone).toBe('battlefield');
+    expect(s.combat.attacks.find((a) => a.attacker === yuriko)?.defender).toBe(1);
+  });
+
+  it('the trigger: the top card to hand, and each opponent loses its mana value', () => {
+    let s = unblocked();
+    const yuriko = find(s, 0, 'command', 'Test Yuriko');
+    const play = legalActions(s, 0).plays.find((p) => p.card === yuriko && p.kind === 'activate')!;
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: yuriko, abilityIndex: play.abilityIndex!, returned: find(s, 0, 'battlefield', 'Test Scout') } as Action), 40);
+    // Hill Giant on top, so the opponent loses 4 on top of Yuriko's 1 combat damage.
+    const top = ids(s, 0, 'library')[0]!;
+    s = { ...s, zones: { ...s.zones, '0:library': [find(s, 0, 'library', 'Hill Giant'), ...ids(s, 0, 'library').filter((id) => id !== find(s, 0, 'library', 'Hill Giant'))] } };
+    const giant = ids(s, 0, 'library')[0]!;
+    expect(top).toBeDefined();
+    const life = s.seats[1]!.life;
+    s = drain(advanceTo(s, 'postcombat-main'), 40);
+    expect(s.instances[giant]!.zone).toBe('hand');
+    expect(s.seats[1]!.life).toBe(life - 1 - 4);
+  });
+
+  it('the cousins: Augury Adept gains, Dark Confidant loses', () => {
+    for (const [text, verb] of [
+      ["Reveal the top card of your library and put that card into your hand. You gain life equal to its mana value.", 'gain'],
+      ["Reveal the top card of your library and put that card into your hand. You lose life equal to the card's mana value.", 'lose'],
+    ] as const) {
+      const row = { ...SCOUT, name: `Test ${verb}`, type_line: 'Sorcery', oracle_text: text };
+      expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

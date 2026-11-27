@@ -12262,7 +12262,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     what the card is; either half alone is a card that does less than it reads.
   */
   const alternative =
-    /^(flashback|madness|miracle|foretell|spectacle|surge|prowl|freerunning|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
+    /^(flashback|madness|miracle|foretell|spectacle|surge|prowl|freerunning|buyback|dash|ninjutsu|commander ninjutsu)\s+((?:\{[^}]*\})+)$/i
       .exec(text);
   if (alternative !== null) {
     const mana = alternative[2]!;
@@ -12279,6 +12279,14 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       case 'freerunning': return { spectacle: { cost: mana, freerunning: true } };
       case 'dash': return { dash: { cost: mana }, triggers: [dashReturn()] };
       case 'ninjutsu': return { ninjutsu: { cost: mana }, abilities: [ninjutsuAbility(mana)] };
+      // Commander ninjutsu (D1346): the same, from the command zone too.
+      case 'commander ninjutsu': {
+        const ability = ninjutsuAbility(mana);
+        return {
+          ninjutsu: { cost: mana },
+          abilities: [{ ...ability, cost: { ...ability.cost, alsoFromCommandZone: true }, description: `Commander ninjutsu ${mana} (return an unblocked attacker you control to hand)` }],
+        };
+      }
       // The one of the eight that stores its printed line as well, as Capsize does.
       default: return { buyback: { cost: mana, description: text } };
     }
@@ -30635,14 +30643,20 @@ function readEffect(
     into the hand, not drawn (CR 121.1): nothing that counts draws sees it, and an empty library
     is not a draw from one, so it costs nothing and loses nothing.
   */
-  if (/^reveal the top card of your library and put it into your hand and lose life equal to its mana value$/i.test(clause.trim())) {
+  const confidant = /^reveal the top card of your library and put it into your hand and (lose|gain|each opponent loses) life equal to its mana value$/i.exec(clause.trim());
+  if (confidant !== null) {
+    const how = confidant[1]!.toLowerCase();
     return {
       effect: (c) => {
         const top = listAt(c.state, zoneKey(c.controller, 'library'))[0];
         if (top === undefined) return c.state;
         const cost = c.state.cardDefs[c.state.instances[top]!.defKey]?.cmc ?? 0;
         const next = moveToHand(c.state, [top]);
-        return cost === 0 ? next : loseLife(next, c.controller, cost);
+        if (cost === 0) return next;
+        // And "you gain" and "each opponent loses" (D1346).
+        if (how === 'gain') return gainLife(next, c.controller, cost);
+        if (how === 'each opponent loses') return opponentsOf(next, c.controller).reduce((state, seat) => loseLife(state, seat, cost), next);
+        return loseLife(next, c.controller, cost);
       },
     };
   }
@@ -32540,7 +32554,10 @@ function clausesOf(line: string): readonly string[] {
     // Creeping Bloodsucker (D831): the life gained is the damage the first sentence dealt.
     .replace(/\b(deals \d+ damage to each (?:opponent|other player))\.\s+You gain life equal to the damage dealt this way/gi, '$1 and you gain life equal to the damage dealt this way')
     // Dark Confidant (D816): the life lost is for the card the first sentence put in the hand.
-    .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+You lose life equal to (?:its|that card's) mana value/gi, 'reveal the top card of your library and put it into your hand and lose life equal to its mana value')
+    .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+You lose life equal to (?:its|that card's|the card's) mana value/gi, 'reveal the top card of your library and put it into your hand and lose life equal to its mana value')
+    // And "you gain" and "each opponent loses" (D1346): Augury Adept, Sorin, Yuriko.
+    .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+You gain life equal to (?:its|that card's|the card's) mana value/gi, 'reveal the top card of your library and put it into your hand and gain life equal to its mana value')
+    .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+Each opponent loses life equal to (?:its|that card's|the card's) mana value/gi, 'reveal the top card of your library and put it into your hand and each opponent loses life equal to its mana value')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card(?: of the chosen type)?), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."

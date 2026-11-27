@@ -261,3 +261,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1342 pushed in 289cb49. D1343 sacrifice costs by colour and nontoken/noncreature kinds: scriptTypes, automation sacrificeOptions/sacrificeWords, scripts.ts cost reader.
 - D1343 pushed in 68d1b3a, checkpoint at D1343 in 7f241a5. D1344 playFromExile.free (Mind's Desire, Urza): cards.ts, effects exileTopToPlay, autoActions castSpell, legalActions offer, scripts.ts impulseDraw and a shuffle sentence; two D583 pins retired.
 - D1344 pushed in 361512b. D1345 Najeela (attacks of any Warrior; its controller's attacking token; D1183's double-escaped regex fixed): scripts.ts only.
+- D1345 pushed in 7fe2ed1. D1346 commander ninjutsu (AbilityCost.alsoFromCommandZone) and the Confidant reveal widened: scriptTypes, legalActions, autoActions, scripts.ts.

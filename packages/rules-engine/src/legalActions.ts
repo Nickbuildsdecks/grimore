@@ -3091,6 +3091,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       Zombie is in the graveyard and its 2/1 body is offered only from the hand.
     */
     ...listAt(state, zoneKey(seat, 'graveyard')).map((id) => ({ id, zone: 'graveyard' as const })),
+    // And the command zone, for a commander's commander ninjutsu (D1346).
+    ...listAt(state, zoneKey(seat, 'command')).filter((id) => state.instances[id]?.isCommander === true)
+      .map((id) => ({ id, zone: 'command' as const })),
   ];
 
   for (const { id, zone } of reachable) {
@@ -3161,7 +3164,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       const wants = ability.cost.discardSelf === true || ability.cost.returnsUnblockedAttacker === true
         ? 'hand'
         : ability.cost.fromGraveyard === true ? 'graveyard' : 'battlefield';
-      if (wants !== zone) continue;
+      if (wants !== zone && !(zone === 'command' && ability.cost.alsoFromCommandZone === true)) continue;
       /*
         Split second (CR 702.19): a mana ability still works, and nothing else does.
 

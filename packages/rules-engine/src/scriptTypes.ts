@@ -2630,6 +2630,11 @@ export interface TriggerDef {
 export interface AbilityCost {
   /** Mana part, in the printed `{1}{R}` form. */
   readonly mana?: string;
+  /**
+   * Commander ninjutsu (D1346, CR 702.49d): the ninjutsu ability is also activated from the command
+   * zone, by its owner, while the card is their commander there.
+   */
+  readonly alsoFromCommandZone?: true;
   /** The `{T}` symbol: requires the permanent to be untapped and not summoning sick. */
   readonly tap?: boolean;
   /**

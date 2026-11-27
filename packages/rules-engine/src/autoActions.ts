@@ -2088,7 +2088,9 @@ function activate(
     || ability?.cost.returnsUnblockedAttacker === true;
   const fromGraveyard = ability?.cost.fromGraveyard === true;
   const wantedZone = fromHand ? 'hand' : fromGraveyard ? 'graveyard' : 'battlefield';
-  if (inst.zone !== wantedZone || inst.zoneSeat !== action.by) {
+  // Commander ninjutsu (D1346): from the command zone as well, while it is that seat's commander there.
+  const fromCommand = ability?.cost.alsoFromCommandZone === true && inst.zone === 'command' && inst.isCommander;
+  if (!fromCommand && (inst.zone !== wantedZone || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE',
       fromHand ? 'that card is not in your hand'
         : fromGraveyard ? 'that card is not in your graveyard'
