@@ -67323,3 +67323,43 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6517 of 6517 pass.
 
 Coverage: 17,549 of 31,900 cards (+1 over D1344's 17,548), 40,387 of 59,888 lines (+1).
+
+## D1346 — Yuriko: commander ninjutsu, and a revealed card that costs the opponents
+
+Yuriko, the Tiger's Shadow is on the second staples list. Neither of its lines read: "Commander
+ninjutsu {U}{B}", and "Whenever a Ninja you control deals combat damage to a player, reveal the
+top card of your library and put that card into your hand. Each opponent loses life equal to that
+card's mana value."
+
+**Commander ninjutsu** (CR 702.49d). Ninjutsu used from the hand or the command zone. The keyword
+reads as D421's ninjutsu ability with `AbilityCost.alsoFromCommandZone`, so the timing, the
+unblocked attacker returned and the entry attacking are all ninjutsu's own:
+- `legalActions` walks the seat's command zone too, for its commander only.
+- `activate` accepts the commander there.
+- The web table needed nothing: the command zone row shows a card's plays as the other zones do.
+
+**The reveal.** D816's Dark Confidant clause takes "you gain" (Augury Adept) and "each opponent
+loses" (Sorin, Yuriko) beside "you lose", and "its / that card's / the card's" mana value (Ruin
+Raider). Ad Nauseam's "You may repeat this process any number of times" stays unread: a repeat
+whose count is the player's, as it goes, is a question the plan cannot express yet.
+
+Yuriko, Augury Adept and Ruin Raider read whole now.
+
+**Tests.** 4 engine tests, in a Commander game with a fixture Yuriko as commander:
+- It reads whole, its ability from the command zone as well.
+- A 1/1 attacks unblocked:
+  - commander ninjutsu is offered from the command zone;
+  - activated, the 1/1 returns to hand;
+  - Yuriko enters attacking the same player.
+- With Hill Giant on top, her combat damage puts the Giant into hand, and the opponent loses 1 and
+  then 4.
+- The gain and "the card's" spellings read.
+
+Faults injected by hand: 3, all caught.
+- The command zone not offered.
+- The activation refused from there.
+- The opponents' loss dropped.
+
+The scripts tests, compile tests and pins: 6521 of 6521 pass.
+
+Coverage: 17,552 of 31,900 cards (+3 over D1345's 17,549), 40,392 of 59,888 lines (+5).
