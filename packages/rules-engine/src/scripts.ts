@@ -24280,6 +24280,11 @@ function eventRelativeEffect(
     goes to that player's exile with a permission to cast it this turn (never to play it as a land).
     "Play" is the same with the land drop allowed.
   */
+  // "That player exiles cards … until they exile an instant or sorcery card. You may cast that card …" (D1368).
+  if (aboutTheHitPlayer) {
+    const offered = untilCastable(clausesOf(text), name, (c) => c.attacked?.defender);
+    if (offered !== null) return offered;
+  }
   if (aboutTheHitPlayer) {
     const pilfer = /^(create a treasure token and )?exile the top card of that player's library\. until end of turn, you may (cast|play) that card\.?$/i.exec(text.trim());
     if (pilfer !== null) {
@@ -34593,6 +34598,75 @@ function voteGroup(clauses: readonly string[], name: string, where: SubjectZone 
  * as the spell finishes, which does nothing then but covers a pile of no cards, where the order is
  * never asked.
  */
+/**
+ * Exile cards from the top of a library until one of a kind turns up, and offer it to the
+ * controller free (D1368): cascade's walk (`cascadeFrom`) without the mana value, from any player's
+ * library, with the card kind the sentence names. "Exile cards from the top of your library until
+ * you exile a nonland card" (Nico Minoru), "target opponent exiles … until they exile an instant or
+ * sorcery card" (Chaos Wand), "that player exiles …" on a combat-damage trigger (Dazzling Sphinx,
+ * Gríma). The cast is the ordinary offered cast (`pendingOfferedCast`), so its choices are the
+ * player's. With "Then … put the exiled cards that weren't cast this way on the bottom … in a
+ * random order", the rest go to the bottom, and so does the hit if it is not cast. Without that
+ * sentence they all stay exiled (`stays`).
+ */
+function exileUntilOffered(
+  c: EffectContext, seat: SeatIndex, test: NonNullable<CardsDecisionSpec['filter']>, bottomRest: boolean,
+): GameState {
+  let next = c.state;
+  const exiled: string[] = [];
+  let hit: string | undefined;
+  const key = zoneKey(seat, 'library');
+  const size = listAt(next, key).length;
+  for (let i = 0; i < size; i += 1) {
+    const top = listAt(next, key)[0];
+    if (top === undefined) break;
+    next = exileCard(next, top);
+    exiled.push(top);
+    if (test(next, top, c.controller)) { hit = top; break; }
+  }
+  if (hit === undefined) return bottomRest ? bottomPile(next, exiled) : next;
+  const hitName = next.cardDefs[next.instances[hit]?.defKey ?? '']?.name ?? 'it';
+  return {
+    ...next,
+    pendingOfferedCast: {
+      seat: c.controller,
+      card: hit,
+      prompt: `You may cast ${hitName} without paying its mana cost`,
+      bottom: bottomRest ? exiled.filter((id) => id !== hit) : [],
+      source: c.source,
+      ...(bottomRest ? {} : { stays: true as const }),
+    },
+  };
+}
+
+/**
+ * The sentences `exileUntilOffered` reads: who exiles, the kind, the free cast, and the bottom.
+ * `hit` is the player a combat-damage trigger hit, for "that player" there (`aboutTheHitPlayer`).
+ */
+function untilCastable(
+  clauses: readonly string[], name: string, hit: ((c: EffectContext) => SeatIndex | undefined) | null,
+): ReadEffect | null {
+  if (clauses.length < 2 || clauses.length > 3) return null;
+  const [first, second, third] = clauses.map((clause) => plain(clause).trim().replace(/\.$/, ''));
+  const who = /^(?:(that player|target opponent|target player) exiles cards from the top of their library until they exile|exile cards from the top of your library until you exile) (an? .+? card)$/i.exec(first!);
+  if (who === null || !/^you may cast (?:that card|it) without paying its mana cost$/i.test(second!)) return null;
+  const bottomRest = third !== undefined;
+  if (bottomRest && !/^(?:then )?(?:that player puts|put) the exiled cards that weren't cast this way on the bottom of (?:their|your|that) library in a random order$/i.test(third!)) return null;
+  const subject = who[1]?.toLowerCase();
+  if (subject === 'that player' && hit === null) return null;
+  const kind = libraryFilter(who[2]!, name);
+  const test = kind?.filter;
+  if (kind === null || test === null || test === undefined || kind.xBound === true) return null;
+  const aimed = subject === 'target opponent' || subject === 'target player';
+  return {
+    ...(aimed ? { targets: [subject === 'target opponent' ? TARGET_OPPONENT : TARGET_PLAYER] } : {}),
+    effect: (c) => {
+      const seat = subject === undefined ? c.controller : subject === 'that player' ? hit!(c) : firstPlayerTarget(c) ?? undefined;
+      return seat === undefined ? c.state : exileUntilOffered(c, seat, test, bottomRest);
+    },
+  };
+}
+
 function doomsdayPile(clauses: readonly string[]): ReadEffect | null {
   const text = clauses.map((clause) => plain(clause).trim().replace(/\.$/, '')).join('. ');
   if (!/^search your library and graveyard for five cards and exile the rest\. put the chosen cards on top of your library in any order\. you lose half your life, rounded up$/i.test(text)) return null;
@@ -35529,6 +35603,9 @@ function composeEffectsAsPrinted(
   // Doomsday (D1367): see `doomsdayPile`.
   const pile = doomsdayPile(clauses);
   if (pile !== null) return pile;
+  // "Exile cards … until you exile a nonland card. You may cast that card …" (D1368): see `untilCastable`.
+  const untilCast = untilCastable(clauses, name, null);
+  if (untilCast !== null) return untilCast;
   // Flash (D1351): see `flashIn`.
   const flashed = flashIn(clauses);
   if (flashed !== null) return flashed;

@@ -50851,6 +50851,78 @@ describe('Doomsday: a pile of five from library and graveyard, in order (D1367)'
   });
 });
 
+describe('Exile until a kind of card, and cast it free (D1368)', () => {
+  const card = (name: string, type: string, text: string) => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text });
+  const WAND = card('Test Wand', 'Sorcery', "Target opponent exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then put the exiled cards that weren't cast this way on the bottom of that library in a random order.");
+  const NICO = card('Test Nico', 'Sorcery', 'Exile cards from the top of your library until you exile a nonland card. You may cast that card without paying its mana cost.');
+  const GAIN = { ...card('Test Gain', 'Sorcery', 'You gain 3 life.'), mana_cost: '{5}', cmc: 5 };
+  const SPHINX = { ...card('Test Sphinx', 'Creature \u2014 Sphinx', "Whenever Test Sphinx deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."), power: '4', toughness: '4' };
+  const ROWS = [WAND, NICO, GAIN, SPHINX];
+  const wands = customDeck({ id: 'd1368a', name: 'Wand', entries: [{ name: 'Test Wand', count: 4 }, { name: 'Test Nico', count: 4 }, { name: 'Test Sphinx', count: 2 }, { name: 'Island', count: 50 }], data: ROWS as never[] });
+  const victims = customDeck({ id: 'd1368b', name: 'Victim', entries: [{ name: 'Test Gain', count: 6 }, { name: 'Grizzly Bears', count: 24 }, { name: 'Forest', count: 30 }], data: ROWS as never[] });
+  const table = (hand: string, deck0 = 'd1368a'): GameState => advanceTo(arena({
+    decks: { 0: deck0, 1: 'd1368b' }, deckSpecs: { d1368a: wands.deck, d1368b: victims.deck },
+    hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const firstSorcery = (s: GameState, seat: SeatIndex) => {
+    const library = ids(s, seat, 'library');
+    const at = library.findIndex((id) => nameOf(s, id) === 'Test Gain');
+    return { hit: library[at]!, above: library.slice(0, at) };
+  };
+
+  it('reads both whole; the opponent is a target', () => {
+    expect([...wands.unknown, ...victims.unknown]).toEqual([]);
+    for (const r of [WAND, NICO]) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(WAND as never);
+    expect(read.ok && read.script?.targets?.map((t) => t.kind)).toEqual(['player']);
+  });
+
+  it("the opponent's first sorcery is offered to the caster, free; cast, the rest go to the bottom", () => {
+    let s = table('Test Wand');
+    const { hit, above } = firstSorcery(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wand'), targets: [{ kind: 'player', seat: 1 }] } as Action));
+    expect(s.pendingOfferedCast).toMatchObject({ seat: 0, card: hit });
+    const lifeBefore = life(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: hit, offered: true } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(life(s, 0)).toBe(lifeBefore + 3);
+    // To its owner's graveyard, and the cards above it to the bottom of that library.
+    expect(s.instances[hit]!.zone).toBe('graveyard');
+    expect(s.instances[hit]!.zoneSeat).toBe(1);
+    const library = ids(s, 1, 'library');
+    expect([...library.slice(library.length - above.length)].sort()).toEqual([...above].sort());
+  });
+
+  it('on combat damage, "that player" is the player hit', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1368a', 1: 'd1368b' }, deckSpecs: { d1368a: wands.deck, d1368b: victims.deck },
+      battlefield: { 0: ['Test Sphinx'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    expect(compileCard(SPHINX as never)).toMatchObject({ ok: true, unread: [] });
+    const { hit } = firstSorcery(s, 1);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Sphinx'), defender: 1 }] });
+    for (let i = 0; i < 8 && s.pendingOfferedCast === null; i++) s = passBoth(s);
+    expect(s.pendingOfferedCast).toMatchObject({ seat: 0, card: hit });
+  });
+
+  it('declined: with the bottom sentence, the hit goes to the bottom too; without it, everything stays exiled', () => {
+    let s = table('Test Wand');
+    const { hit } = firstSorcery(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wand'), targets: [{ kind: 'player', seat: 1 }] } as Action));
+    s = drain(apply(s, { type: 'auto:pass', by: 0 } as Action), 20);
+    expect(s.instances[hit]!.zone).toBe('library');
+    let t = table('Test Nico');
+    const top = ids(t, 0, 'library')[0]!;
+    t = passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Nico') } as Action));
+    // Seat 0's library is the Wands and Nicos and Islands: the first nonland card is offered.
+    const offered = t.pendingOfferedCast?.card;
+    expect(offered).toBeDefined();
+    t = drain(apply(t, { type: 'auto:pass', by: 0 } as Action), 20);
+    expect(t.instances[offered!]!.zone).toBe('exile');
+    expect(t.instances[top]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
