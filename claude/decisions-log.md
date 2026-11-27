@@ -67172,3 +67172,45 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6504 of 6504 pass.
 
 Coverage: 17,535 of 31,900 cards (+2 over D1340's 17,533), 40,369 of 59,888 lines (+2).
+
+## D1342 — mana as much as what was sacrificed: Priest of Yawgmoth and Sacrifice
+
+"Add an amount of {B} equal to the sacrificed artifact's mana value" did not read on a mana ability
+or on a spell. D1139 had read "an amount of … equal to ~'s power", but nothing counted the
+permanent a cost had sacrificed.
+
+**On a mana ability.** `AbilityDef.producesPerSacrificed` ('power' or 'manaValue') says the
+ability's mana is made once for each point of the sacrificed permanent, as it last was.
+`producedBy` takes that permanent's stats, and `activate` passes the ones it already records as the
+sacrifice is paid (`sacrificedStats`). The result is "two {B} for a two-mana artifact".
+
+A spending restriction refuses the line, because restricted mana is made only by the auto-payer
+(D595). This leaves Slobad unread.
+
+**Never the auto-payer's.** No reader of the ability needs a guard. Asked with nothing sacrificed,
+`producedBy` makes nothing, and the auto-payer does not offer a source that makes nothing. A skip
+written for it was removed when its fault check showed it changed nothing.
+
+**On a spell.** The spell Sacrifice's "Add an amount of {B} equal to the sacrificed creature's
+mana value" reads off the stack object's `sacrificedStats`, which its additional cost records.
+
+Priest of Yawgmoth, Red Priest of Yawgmoth, Illuminor Szeras and Sacrifice read whole now. Soldevi
+Adnate waits on "Sacrifice a black or artifact creature" as a cost.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole, with `producesPerSacrificed` 'manaValue'.
+- The Priest, sacrificing a three-mana artifact:
+  - it is not an auto-payer source;
+  - three {B} are made;
+  - the artifact goes to the graveyard.
+- Sacrifice, sacrificing Hill Giant: four {B}.
+
+Faults injected by hand: 4, three caught.
+- The stats not passed: caught.
+- One mana however much was sacrificed: caught.
+- The spell counting toughness: caught.
+- The auto-payer skip removed: not caught, for the reason above.
+
+The scripts tests, compile tests and pins: 6507 of 6507 pass.
+
+Coverage: 17,538 of 31,900 cards (+3 over D1341's 17,535), 40,372 of 59,888 lines (+3).
