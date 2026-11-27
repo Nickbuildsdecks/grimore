@@ -50966,6 +50966,37 @@ describe('"Untap those creatures" after a team bonus, "they gain" after an untap
   });
 });
 
+describe('"Sacrifice it unless it escaped": the Theros titans (D1370)', () => {
+  const URO = { name: 'Test Titan', type_line: 'Legendary Creature — Elder Giant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '6', toughness: '6',
+    oracle_text: 'When Test Titan enters, sacrifice it unless it escaped.\nEscape—{0}, Exile two other cards from your graveyard.' };
+  const deck = customDeck({ id: 'd1370', name: 'Titan', entries: [{ name: 'Test Titan', count: 1 }, { name: 'Grizzly Bears', count: 15 }, { name: 'Forest', count: 44 }], data: [URO] as never[] });
+  const table = (zone: 'hand' | 'graveyard'): GameState => advanceTo(arena({
+    decks: { 0: 'd1370', 1: 'd1370' }, deckSpecs: { d1370: deck.deck },
+    ...(zone === 'hand' ? { hands: { 0: ['Test Titan'] } } : { graveyard: { 0: ['Test Titan', 'Grizzly Bears', 'Grizzly Bears'] } }),
+    turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState): GameState => { let t = s; for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = passBoth(t); return t; };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(URO as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast from hand, it is sacrificed as it enters', () => {
+    let s = table('hand');
+    const titan = find(s, 0, 'hand', 'Test Titan');
+    s = settle(passBoth(apply(s, { type: 'auto:cast', by: 0, card: titan } as Action)));
+    expect(s.instances[titan]!.zone).toBe('graveyard');
+  });
+
+  it('escaped, it stays', () => {
+    let s = table('graveyard');
+    const titan = find(s, 0, 'graveyard', 'Test Titan');
+    s = settle(passBoth(apply(s, { type: 'auto:cast', by: 0, card: titan, escape: true } as Action)));
+    expect(s.instances[titan]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

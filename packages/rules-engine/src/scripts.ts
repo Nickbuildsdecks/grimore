@@ -29,7 +29,7 @@ import { isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from '.
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
   BLITZED,
-  SURGED,
+  SURGED, ESCAPED,
   SQUADDED,
   addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
@@ -15435,6 +15435,15 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       ];
       return { effect: (c) => ({ ...c.state, extraPhases: [...(c.state.extraPhases ?? []), ...phases] }) };
     }
+  }
+  /*
+    "Sacrifice it unless it escaped" (D1370): Uro, Kroxa, Phlage, the Theros titans' enter trigger.
+    Escaped is what the permanent remembers of its cast (`ESCAPED`); cast from hand or put onto the
+    battlefield any other way, it is sacrificed.
+  */
+  if (/^sacrifice (?:it|this creature) unless it escaped$/i.test(text)) {
+    return { effect: (c) => ((c.state.instances[c.source]?.counters[ESCAPED] ?? 0) > 0 || c.state.instances[c.source]?.zone !== 'battlefield'
+      ? c.state : sacrifice(c.state, [c.source])) };
   }
   // "Untap all creatures that attacked this turn" (D726): Relentless Assault's first sentence.
   if (/^untap all creatures that attacked this turn$/i.test(text)) {

@@ -38,7 +38,7 @@ import {
 } from './combat.js';
 import {
   BLITZED,
-  SURGED,
+  SURGED, ESCAPED,
   SQUADDED,
   createToken,
   DASHED, EVOKED, EXILED_ON_LEAVING, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
@@ -7082,6 +7082,8 @@ function resolveObject(
       if (object.escaped === true && (script?.escape?.counters ?? 0) > 0) {
         next = addCounters(next, inst.id, '+1/+1', script!.escape!.counters!);
       }
+      // And that it escaped at all (D1370), for "sacrifice it unless it escaped".
+      if (object.escaped === true) next = addCounters(next, inst.id, ESCAPED, 1);
       // Surge (D928), and prowl and freerunning (D935): cast for that cost, for "if its surge cost
       // was paid" and "if its prowl cost was paid". One marker: a card has only one of the three.
       if (object.spectacled === true && (script?.spectacle?.surge === true || script?.spectacle?.prowl === true

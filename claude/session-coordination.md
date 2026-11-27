@@ -285,3 +285,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1366 pushed in 41d2c4c. D1367 Doomsday (doomsdayPile, CardsDecisionSpec.again): scriptTypes, automation, scripts.ts.
 - D1367 pushed in d69b277. D1368 exile until a kind, cast free (untilCastable, exileUntilOffered): scripts.ts only.
 - D1368 pushed in 6a0571b. D1369 untap those creatures / they gain rewrites, accentless self names (clausesOf, selfRef): scripts.ts only.
+- D1369 pushed in bad0764, checkpoint at D1369 in d9f535f. D1370 sacrifice unless it escaped (ESCAPED marker): effects, automation, scripts.ts.

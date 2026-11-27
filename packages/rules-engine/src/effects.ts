@@ -1087,6 +1087,12 @@ export const SQUADDED = 'squad';
 /** A permanent cast for its surge cost (D928), recorded as it arrives. See `CardScript.spectacle.surge`. */
 export const SURGED = 'surged';
 
+/**
+ * A permanent cast with escape (D1370), for the Theros titans' "When ~ enters, sacrifice it unless it
+ * escaped". The stack object knows (`StackObject.escaped`); this is what the permanent remembers.
+ */
+export const ESCAPED = 'escaped';
+
 /** A permanent cast for its blitz cost (D933), for its dies draw. See `CardScript.dash.blitz`. */
 export const BLITZED = 'blitzed';
 
@@ -1169,7 +1175,7 @@ export const IMPENDED = 'impended';
 /** Which kicker of a double kicker was paid (D1099): "if it was kicked with its {B} kicker". */
 export const KICKED_FIRST = 'kicked-first';
 export const KICKED_SECOND = 'kicked-second';
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EXILED_ON_LEAVING, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND]);
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EXILED_ON_LEAVING, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND, ESCAPED]);
 registerCounterMarkers(MARKERS);
 
 /**
