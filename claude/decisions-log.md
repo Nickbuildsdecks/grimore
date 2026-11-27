@@ -68013,3 +68013,34 @@ Staples: the second list is at 123 of 125. Food Chain, Doomsday and Castle Garen
 on the first list).
 
 Coverage: 17,605 of 31,900 cards (+1 over D1362's 17,604), 40,481 of 59,888 lines (+1).
+
+## D1364 — "Where X is the total mana value of …"
+
+"This spell costs {X} less to cast, where X is the total mana value of noncreature artifacts you
+control" (Metalwork Colossus), "… of Dragons you control" (Earthquake Dragon), "… of historic
+permanents you control" (Excalibur, Sword of Eden), "… of noncreature enchantments you control"
+(Nyxborn Behemoth). D1076 read "the total power of creatures you control" for Ghalta, but not a
+total of mana values.
+
+**The rule.** `totalAmong` also reads "the total mana value of <group>", for any group `massScope`
+reads. Each permanent counts its printed cost (CR 202.3, X as 0), and a face-down permanent counts
+nothing (CR 708.2). It is reached through `boardCount`, so a "where X is" cost reduction and an
+"equal to" amount both get it.
+
+Read whole now: Metalwork Colossus, Earthquake Dragon, Excalibur. Nyxborn Behemoth has its
+sacrifice ability left.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- Noncreature artifacts printed {3} and {X}{4} take 7 off; an artifact creature does not count.
+- The {11} spell is offered off four lands with those two out, and not off three. With no
+  artifacts it is not offered off four.
+
+Faults injected by hand: 3, all caught.
+- A count rather than a total.
+- Each value off by one.
+- The reader removed.
+
+The scripts tests, compile tests and pins: 6584 of 6584 pass.
+
+Coverage: 17,608 of 31,900 cards (+3 over D1363's 17,605), 40,484 of 59,888 lines (+3).
