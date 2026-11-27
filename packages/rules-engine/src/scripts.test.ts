@@ -50744,6 +50744,34 @@ describe('"Where X is the total mana value of …" (D1364): Metalwork Colossus',
   });
 });
 
+describe('"As long as enchanted permanent is a creature, it gets …" (D1365)', () => {
+  const WRATH = { name: 'Test Wrath', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Enchant permanent\nAs long as enchanted permanent is a creature, it gets +2/+2 and has menace.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const deck = customDeck({ id: 'd1365', name: 'Wrath', entries: [{ name: 'Test Wrath', count: 4 }, { name: 'Test Rock', count: 4 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Mountain', count: 44 }], data: [WRATH, ROCK] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1365', 1: 'd1365' }, deckSpecs: { d1365: deck.deck },
+    hands: { 0: ['Test Wrath', 'Test Wrath'] }, battlefield: { 0: ['Grizzly Bears', 'Test Rock'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const enchant = (s: GameState, id: string): GameState => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wrath'), targets: [{ kind: 'card', id }] } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(WRATH as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('on a creature: +2/+2 and menace; on an artifact that is not a creature: no menace', () => {
+    let s = table();
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const rock = find(s, 0, 'battlefield', 'Test Rock');
+    s = enchant(s, bear);
+    expect([power(s, bear), toughness(s, bear)]).toEqual([4, 4]);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('menace')).toBe(true);
+    s = enchant(s, rock);
+    expect(characteristicsOf(s, s.instances[rock]!).keywords.has('menace')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

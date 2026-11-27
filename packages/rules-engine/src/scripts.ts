@@ -18510,11 +18510,20 @@ function hostConditionalParts(
   const parts: PumpOptions[] = [];
   const claimed: string[] = [];
   for (const line of lines) {
-    const m = new RegExp(`^as long as ${host} creature is (.+?), it (.+?)\\.?$`, 'i').exec(plain(line).trim());
+    /*
+      And "As long as enchanted permanent is a creature, it gets +2/+1" (D1365): an Aura that may
+      enchant any permanent, and helps it only while it is a creature. A keyword on an artifact
+      that is not a creature (indestructible, hexproof) would matter, so the filter is real.
+    */
+    const permanent = host === 'enchanted'
+      ? /^as long as enchanted permanent is a creature, it (.+?)\.?$/i.exec(plain(line).trim()) : null;
+    const m = permanent !== null ? [line, 'a creature', permanent[1]!] as const
+      : new RegExp(`^as long as ${host} creature is (.+?), it (.+?)\\.?$`, 'i').exec(plain(line).trim());
     if (m === null) continue;
     const what = m[1]!.toLowerCase();
     let filter: PumpOptions | null = null;
-    if (what === 'legendary' || what === 'tapped' || what === 'untapped') filter = { onlyKind: [what] };
+    if (permanent !== null) filter = { onlyKind: ['creature'] };
+    else if (what === 'legendary' || what === 'tapped' || what === 'untapped') filter = { onlyKind: [what] };
     else if (what === 'attacking') filter = { onlyAttacking: true };
     else if (COLOUR_WORDS[what] !== undefined) filter = { onlyColours: [COLOUR_WORDS[what]!] };
     else {

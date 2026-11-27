@@ -2821,7 +2821,9 @@ function layerFiveColours(
 
 /** The words `onlyKind` reads (D735). */
 export type CreatureKindWord = 'artifact' | 'legendary' | 'land' | 'enchantment' | 'colorless' | 'multicolored'
-  | 'monocolored' | 'untapped' | 'tapped' | 'nontoken' | 'token' | 'nonartifact' | 'nonlegendary' | 'snow';
+  | 'monocolored' | 'untapped' | 'tapped' | 'nontoken' | 'token' | 'nonartifact' | 'nonlegendary' | 'snow'
+  // A creature at all (D1365): an Aura that enchants any permanent and helps only while it is one.
+  | 'creature';
 
 /** Whether a creature is every word of `onlyKind` (D735). */
 function isEveryKind(
@@ -2842,6 +2844,7 @@ function isEveryKind(
       case 'colorless': return layerFiveColours(state, instance, creature, typeLine).length === 0;
       case 'multicolored': return layerFiveColours(state, instance, creature, typeLine).length > 1;
       case 'monocolored': return layerFiveColours(state, instance, creature, typeLine).length === 1;
+      case 'creature': return creature;
       default: return false;
     }
   });
