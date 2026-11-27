@@ -51075,6 +51075,27 @@ describe('"Mill three cards. You may put a land card from among them into your h
   });
 });
 
+describe('"You may reveal a noncreature, nonland card from among them" (D1373)', () => {
+  const LOOK = { name: 'Test Look', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: 'Look at the top four cards of your library. You may reveal a noncreature, nonland card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' };
+  const GAIN = { name: 'Test Gain', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'You gain 3 life.' };
+  const deck = customDeck({ id: 'd1373', name: 'Look', entries: [{ name: 'Test Look', count: 1 }, { name: 'Test Gain', count: 20 }, { name: 'Grizzly Bears', count: 20 }, { name: 'Island', count: 19 }], data: [LOOK, GAIN] as never[] });
+
+  it('reads whole, and offers only the noncreature, nonland cards among the four', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(LOOK as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({ decks: { 0: 'd1373', 1: 'd1373' }, deckSpecs: { d1373: deck.deck }, hands: { 0: ['Test Look'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    // The top four stacked: a sorcery, a creature, a land, another sorcery.
+    const library = ids(s, 0, 'library');
+    const pick = (name: string, n = 0) => library.filter((id) => nameOf(s, id) === name)[n]!;
+    const top = [pick('Test Gain'), pick('Grizzly Bears'), pick('Island'), pick('Test Gain', 1)];
+    s = [...top].reverse().reduce((state, id) => putOnTopOfLibrary(state, id), s);
+    expect(ids(s, 0, 'library').slice(0, 4)).toEqual(top);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Look') } as Action));
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([top[0]!, top[3]!].sort());
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

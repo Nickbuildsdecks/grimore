@@ -288,3 +288,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1369 pushed in bad0764, checkpoint at D1369 in d9f535f. D1370 sacrifice unless it escaped (ESCAPED marker): effects, automation, scripts.ts.
 - D1370 pushed in 7b38cda. D1371 Kroxa (discardOrLose): scripts.ts only.
 - D1371 pushed in f331b42. D1372 mill-pick or else (millPickOrElse): scripts.ts only.
+- D1372 pushed in f30c9ff. D1373 stacked negations in the look-at-top reveal (handCardTypeTest): scripts.ts, compile.test.ts pin.

@@ -33944,7 +33944,11 @@ function digGroup(
     which words are card types, so a list with a subtype in it ("an Aura, creature, or
     planeswalker card") is still refused there.
   */
-  const test = graveyardTypeTest(printed.replace(/,\s*(?:or\s+)?/g, ' or '));
+  /*
+    And stacked negations (D1373): "a noncreature, nonland card from among them" (Spock, Thundertrap
+    Trainer), which `handCardTypeTest` reads for the hand questions (D970) along with the comma list.
+  */
+  const test = handCardTypeTest(printed);
   const restGoTo = digRest(puts[1]!);
   if (test === null || restGoTo === null) return null;
   const measured = reveals[2] === undefined ? null : cardMeasureTest(reveals[2], Number(reveals[3]), reveals[4]!.toLowerCase() === 'less');
