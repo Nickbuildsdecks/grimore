@@ -49361,3 +49361,43 @@ Faults injected by hand: 2.
 - The auto-payer skip removed: caught.
 
 Coverage: 17,512 of 31,900 cards (+3 over D1330's 17,509), 40,336 of 59,888 lines (+5).
+
+## D1332 — "Sacrifice any number of …, then … that many"
+
+19 legal lines say "sacrifice any number of" something and then do a thing "that many" or "that
+much" times. None of them read, because "that many" pointed back at a count no reader kept. Four
+read now: Last-Ditch Effort, Landslide, Malevolent Witchkite, and God-Eternal Bontu's enter
+trigger. Bontu's other line, going third from the top of the library, is a separate gap.
+
+**The group.** `sacrificeAnyThenThatMany` runs among the group readers in `composeEffects`.
+- **What may be sacrificed** is read by `pluralPermanentKinds`: lands, creatures, artifacts,
+  enchantments, planeswalkers, permanents, nonland permanents, tokens and the basic land types, in
+  any list. "Other" leaves out the source.
+- **What follows** is read with its "that many" marked, as D903 marks it after a damage trigger. It
+  runs with the number sacrificed as the event amount, so every "that many" reader already written
+  applies: draw, damage, life, tokens, counters.
+- **The question** is the controller's, as it resolves, from their own battlefield, nought to all.
+- **Refused** when what follows asks a question of its own, because that question would be sized
+  before anything was sacrificed. Examples are "discard that many cards" and Scapeshift's "search
+  for up to that many". Also refused: an X of its own, or no "that many" at all.
+
+**The bot** sacrifices nothing. What a permanent is worth against a card or a point of damage is
+not something it can weigh yet.
+
+**Tests.** 5 engine tests:
+- The three fixtures read whole, and three near shapes are refused.
+- Lands only are offered; two are sacrificed and two cards drawn.
+- None chosen: nothing changes.
+- Two creatures sacrificed: two damage to the target player.
+- "Other permanents": the creature that entered is not offered.
+
+Faults injected by hand: 5, all caught.
+- The count fixed at one.
+- Nothing sacrificed.
+- "Other" ignored.
+- Any kind word accepted.
+- The question guard removed: caught by the "discard that many" refusal.
+
+The scripts tests, compile tests and pins: 6475 of 6475 pass.
+
+Coverage: 17,514 of 31,900 cards (+2 over D1331's 17,512), 40,339 of 59,888 lines (+3).
