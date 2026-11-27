@@ -66904,3 +66904,51 @@ Faults injected by hand: 4, all caught.
 - The rest of the effect given the sacrifice's answer.
 
 Coverage: 17,515 of 31,900 cards (+1 over D1332's 17,514), 40,340 of 59,888 lines (+1).
+
+## D1334 — a permission to cast from the graveyard is not a land drop
+
+Sweep 96001, built at D1326, finished 99 of 100 games. Seed 96041 threw "that card is not in your
+hand". A worktree at D1326 replayed it. On turn 53 the bot played a Mountain from its graveyard,
+and `playLand`, with no permission to play lands from there, refused.
+
+The offer came from D1287's graveyard casting. A Lurrus-like "cast one permanent spell with mana
+value 2 or less from your graveyard" fits a Mountain: a permanent card, mana value 0. The land
+branch of `legalActions` then offered the card as a land drop. A land is never cast (CR 305.9).
+
+**The fix.** The land branch skips a card offered only to be cast from the graveyard: flashback,
+escape, retrace, aftermath and the permission casts. The land drops out of a graveyard come through
+their own entry (`landOnly`): Crucible of Worlds, and Muldrotha's land.
+
+With the fix, the same seed on the D1326 build no longer throws. It runs on to turn 62, and there
+D1335's loop stops it.
+
+**Tests.** 1 engine test, on a Lurrus-like fixture with a Mountain and a Raging Goblin in the
+graveyard:
+- the Goblin is offered as a cast from there;
+- the Mountain is not offered;
+- the bot's move is not that land drop, and it applies without a throw.
+
+Faults injected by hand: 1, the skip removed. Caught.
+
+## D1335 — the en-Kor and the Circles are shields to the bot
+
+Seed 96041 under D1334's fix, still on the D1326 build, looped on turn 62. The bot activated Nomads
+en-Kor's "{0}: The next 1 damage that would be dealt to ~ this turn is dealt to target creature you
+control instead" a thousand times without progress. D1325's reading of the en-Kor carried no bot
+hint, and neither did D1326's "a source of your choice" shields (the Circles of Protection).
+
+**The fix.** Both readings carry `PREVENTS`, the `preventsDamage` hint on the ability and the
+spell, as every other prevention reading does. The bot spends such a shield only while damage is
+coming at it (`preventionCanMatter`), so a free one is never pressed at an empty board.
+
+**Tests.** 2 engine tests, on a fixture en-Kor and Circle:
+- both read as shields, `preventsDamage` on the ability;
+- with nothing coming, the en-Kor is offered and the bot activates neither.
+
+Faults injected by hand: 2, each flag removed. Both caught.
+
+With both fixes on the D1326 build, seed 96041 finishes, on turn 64 after 808 moves.
+
+The scripts tests, compile tests and pins: 6481 of 6481 pass.
+
+Coverage: 17,515 of 31,900 cards (+0 over D1333's 17,515), 40,340 of 59,888 lines (+0).
