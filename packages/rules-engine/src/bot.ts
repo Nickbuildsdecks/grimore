@@ -437,6 +437,18 @@ function chooseTargets(
         ? bestFirst.filter((candidate) => !blinkDestroysMine(state, candidate, foes))
         : bestFirst;
       const pick = allowed[0];
+      /*
+        "Any number of" (D1356): after the first, only while still on the first pick's side. And
+        only one when that side is its own permanents on a spec not marked friendly: a Scapegoat
+        returning one creature to save it, not the whole board. Cards in its own graveyard are not
+        that case, which is what March from the Tomb and Bone Harvest are for.
+      */
+      if (pick !== undefined && spec.botWhileSameSide === true && taken > 0) {
+        const first = chosen[firstHere]!;
+        const ownPermanent = spec.friendly !== true && score(first) < 0
+          && first.kind === 'card' && state.instances[first.id]?.zone === 'battlefield';
+        if (ownPermanent || Math.sign(score(pick)) !== Math.sign(score(first))) break;
+      }
       if (pick === undefined) {
         // "One or two" (D1024) is optional only down to its minimum (D1115, sweep 61301).
         if (spec.optional && taken >= (spec.min ?? 0)) break;

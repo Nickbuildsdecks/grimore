@@ -271,3 +271,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1352 pushed in 0718746. D1353 untargeted graveyard returns of several cards / to the battlefield, with a total: scripts.ts only.
 - D1353 pushed in 9aa962c. D1354 TargetSpec.totalManaValueAtMost (checkTargets, both bot target paths, readEffect wrapper): scriptTypes, targeting, bot, scripts.ts.
 - D1354 pushed in c5ad18e. D1355 "put a counter on each of them" (composeEffects loop): scripts.ts only.
+- D1355 pushed in 7c79c55. D1356 "any number of target" (TARGET_QUANTIFIERS, TargetSpec.botWhileSameSide): scriptTypes, bot, scripts.ts.

@@ -25947,6 +25947,8 @@ function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> |
       ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
       ...(quantifier.optional === true ? { optional: true } : {}),
       ...(quantifier.min === undefined ? {} : { min: quantifier.min }),
+
+      ...(quantifier.botWhileSameSide === true ? { botWhileSameSide: true as const } : {}),
     };
   }
   return {
@@ -25962,6 +25964,7 @@ function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> |
     ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
     ...(quantifier.optional === true ? { optional: true } : {}),
     ...(quantifier.min === undefined ? {} : { min: quantifier.min }),
+    ...(quantifier.botWhileSameSide === true ? { botWhileSameSide: true as const } : {}),
   };
 }
 
@@ -26607,8 +26610,15 @@ const TARGET_QUANTIFIERS: Readonly<Record<string, {
   readonly optional?: true;
   readonly another?: true;
   readonly min?: number;
+  readonly botWhileSameSide?: true;
 }>> = {
   '': {},
+  /*
+    "Any number of target creatures" (D1356): a ceiling the engine needs a number for, the same one
+    Fireball's "any number of targets" uses, and none of them required. The bot reads
+    `botWhileSameSide` rather than filling it to the ceiling.
+  */
+  'any number of': { optional: true, count: ANY_NUMBER_OF_TARGETS, botWhileSameSide: true },
   // "One or two target creatures" (D1024): up to two, and at least one. See `TargetSpec.min`.
   'one or two': { optional: true, count: 2, min: 1 },
   'one or two other': { optional: true, count: 2, min: 1, another: true },
@@ -26739,7 +26749,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     capital is a subtype (CR 205.3) and lower case is a card type off an allow-list.
   */
   const whole = printed.trim();
-  const opened = /^(one, two, or three|one or two other|one or two|another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|each of two|each of three|two|three)?\s*target\s+(.+)$/i
+  const opened = /^(any number of|one, two, or three|one or two other|one or two|another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|each of two|each of three|two|three)?\s*target\s+(.+)$/i
     .exec(whole);
   if (opened === null) return null;
   const quantifier = TARGET_QUANTIFIERS[(opened[1] ?? '').trim().toLowerCase()];
@@ -26748,6 +26758,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
     ...(quantifier.optional === true ? { optional: true } : {}),
     ...(quantifier.min === undefined ? {} : { min: quantifier.min }),
+    ...(quantifier.botWhileSameSide === true ? { botWhileSameSide: true as const } : {}),
   };
   let body = opened[2]!.trim();
 

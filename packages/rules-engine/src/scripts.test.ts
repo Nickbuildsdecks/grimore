@@ -50309,6 +50309,66 @@ describe('"Put a counter on each of them" after a sentence that aimed at several
   });
 });
 
+describe('"Any number of target …" (D1356)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text });
+  const MARCH = card('Test March', 'Return any number of target creature cards with total mana value 5 or less from your graveyard to the battlefield.');
+  const DESCENT = card('Test Descent', 'Destroy any number of target creatures.');
+  const GOAT = card('Test Goat', "Return any number of target creatures you control to their owner's hand.");
+  const ONE = { name: 'Test One', type_line: 'Creature — Human', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [MARCH, DESCENT, GOAT, ONE];
+  const deck = customDeck({ id: 'd1356', name: 'Any', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const table = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1356', 1: 'd1356' }, deckSpecs: { d1356: deck.deck },
+    hands: { 0: [hand] }, graveyard: { 0: ['Grizzly Bears', 'Grizzly Bears', 'Test One', 'Test One'] },
+    battlefield: { 0: ['Grizzly Bears', 'Grizzly Bears'], 1: ['Grizzly Bears', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const botCast = (s: GameState): { type: string; targets?: { kind: string; id: string }[] } => {
+    let act = botAction(s, 0) as { type: string; targets?: { kind: string; id: string }[] } | null;
+    for (let i = 0; i < 4 && act !== null && act.type !== 'auto:cast'; i++) {
+      s = apply(s, act as Action);
+      act = botAction(s, 0) as { type: string; targets?: { kind: string; id: string }[] } | null;
+    }
+    expect(act?.type).toBe('auto:cast');
+    return act!;
+  };
+
+  it('reads whole: a ceiling of 99, none required, with the bot advice', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [MARCH, DESCENT, GOAT]) {
+      const read = compileCard(r as never);
+      expect(read).toMatchObject({ ok: true, unread: [] });
+      expect(read.ok && read.script?.targets?.[0]).toMatchObject({ count: 99, optional: true, botWhileSameSide: true });
+    }
+  });
+
+  it('three cards back within the total of 5; all four (6) refused', () => {
+    let s = table('Test March');
+    const yard = ids(s, 0, 'graveyard');
+    const march = find(s, 0, 'hand', 'Test March');
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: march, targets: yard.map((id) => ({ kind: 'card', id })) } as Action)).toThrow(/total mana value 5/);
+    const three = [yard.find((id) => nameOf(s, id) === 'Grizzly Bears')!, ...yard.filter((id) => nameOf(s, id) === 'Test One')];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: march, targets: three.map((id) => ({ kind: 'card', id })) } as Action)), 20);
+    expect(three.every((id) => s.instances[id]!.zone === 'battlefield')).toBe(true);
+  });
+
+  it('the bot destroys every creature of its opponent and none of its own', () => {
+    const s = table('Test Descent');
+    const act = botCast(s);
+    const theirs = new Set(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears'));
+    expect((act.targets ?? []).map((t) => t.id).sort()).toEqual([...theirs].sort());
+  });
+
+  it('the bot returns one of its own creatures, not the whole board; and fills March within the total', () => {
+    const goat = botCast(table('Test Goat'));
+    expect(goat.targets).toHaveLength(1);
+    const s = table('Test March');
+    const march = botCast(s);
+    const total = (march.targets ?? []).reduce((sum, t) => sum + (s.cardDefs[s.instances[t.id]!.defKey]?.cmc ?? 0), 0);
+    expect((march.targets ?? []).length).toBeGreaterThan(1);
+    expect(total).toBeLessThanOrEqual(5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

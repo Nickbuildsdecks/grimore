@@ -76,6 +76,16 @@ export interface TargetSpec {
    */
   readonly botTakes?: number;
   /**
+   * Advice to the bot for a spec whose count is only a ceiling (D1356): "any number of target
+   * creatures". It takes the best candidate, then goes on taking only while the next one is on the
+   * same side of its ranking as the first. Descent of the Dragons takes the opponents' creatures
+   * and stops before its own; March from the Tomb, whose candidates are all in its own graveyard,
+   * takes as many as the total allows. When the first is one of its own permanents and the spec is
+   * not `friendly`, it takes that one only (Scapegoat). Not a restriction: a person may take as
+   * many as the spec allows.
+   */
+  readonly botWhileSameSide?: true;
+  /**
    * Extra restriction beyond the kind, e.g. only creatures you control.
    *
    * `source` is the card the targeting belongs to, when there is one — the permanent whose
