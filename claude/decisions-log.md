@@ -67017,3 +67017,34 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6488 of 6488 pass.
 
 Coverage: 17,522 of 31,900 cards (+5 over D1336's 17,517), 40,350 of 59,888 lines (+7).
+
+## D1338 — "choose up to one —" on a trigger: Hullbreaker Horror
+
+Hullbreaker Horror is on the second staples list, and its trigger did not read: "Whenever you cast
+a spell, choose up to one — • Return target spell you don't control to its owner's hand. • Return
+target nonland permanent to its owner's hand." D757's modal triggers took "choose one" only. 8
+legal cards print "choose up to one" on a trigger.
+
+**The reading.** `modalTriggerFor` takes "choose up to one". No mode at all is a legal answer, and
+it is offered as one more mode, "Choose no mode", which does nothing and comes last. The game it
+leaves is the one choosing no mode leaves. Where it would have been the one mode left, it is still
+offered as a choice, which is right: the player may decline.
+
+The engine's mode choice counts at least one mode, and the stack reads an empty mode list as one
+not yet chosen. So a do-nothing mode was the smaller change, against a third meaning for an empty
+list.
+
+Hullbreaker Horror and Dreamshackle Geist read whole now. The other six wait on a bullet of their
+own: a fight, a perpetual exchange, a Saga, "becomes prepared".
+
+**Tests.** 4 engine tests, on a fixture Horror whose modes are a bounce and a draw:
+- It reads whole, with "Choose no mode" last.
+- No mode chosen: nothing is returned and nothing drawn.
+- The bot answers it: the bounce, aimed at the opponent's Bears and never at its own permanents.
+- The draw mode draws.
+
+Faults injected by hand: 1, the no-mode answer removed. Caught by two tests.
+
+The scripts tests, compile tests and pins: 6491 of 6491 pass, before the bot test was added.
+
+Coverage: 17,524 of 31,900 cards (+2 over D1337's 17,522), 40,356 of 59,888 lines (+6).
