@@ -305,3 +305,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1386 pushed in 5b67b8b. D1387 where X is that creature's power on an event: scripts.ts (eventRelativeEffect).
 - D1387 pushed in 92d6625. D1388 that much damage to the hit player's side, combat damage can't be prevented (Questing Beast): scriptTypes, effects (preventionSwitchedOff), scripts.ts.
 - D1388 pushed in 10c00a7. D1389 self pronouns on any line: scripts.ts (lineScriptFor).
+- D1389 pushed in 7266953, checkpoint b4a34d1. D1390 Gideon's animation and self prevention: scripts.ts.

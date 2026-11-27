@@ -14780,6 +14780,13 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       'creatures your opponents control': { kind: 'opponent-creatures' },
     };
     const flags = { spellFlags: { preventsDamage: true as const } };
+    // The card itself (D1390): Gideon's "Prevent all damage that would be dealt to him this turn".
+    if (direction === 'to' && new RegExp(`^(?:${selfRef(name)})$`, 'i').test(prevented[3]!.trim())) {
+      return {
+        effect: (c) => preventDamageThisTurn(c.state, c.source, c.controller, { direction, combatOnly, scope: { kind: 'cards', ids: [c.source] } }),
+        ...flags,
+      };
+    }
     if (/^target /.test(subject)) {
       const spec = targetSpecFrom(prevented[3]!.trim(), direction === 'to');
       if (spec !== null && spec.kind === 'creature') {
@@ -31535,7 +31542,7 @@ function readEffect(
   }
   // A land animated by a spell or a trigger (D1048), held as one clause by `clausesOf`.
   if (clause.includes('\u0010')) return animateSelf(clause.replace('\u0010', ". It's still a land"), name);
-  if (/\bcreature that['’]s still a land\.?$/i.test(clause.trim())) return animateSelf(clause, name);
+  if (/\bcreature (?:with [^."]+ )?that['’]s still a (?:land|planeswalker)\.?$/i.test(clause.trim())) return animateSelf(clause, name);
   // And an artifact's own (D1068): the Keyrunes' abilities, Eye of Malcator's trigger.
   const artifact = animateArtifactSelf(clause, name);
   if (artifact !== null) return artifact;
@@ -37050,7 +37057,8 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
     `^(until end of turn, )?(?:${self}|it|((?:up to one )?target [^,.]*?land(?: you control)?)) becomes an? (\\d+)/(\\d+) `
     + '((?:(?:white|blue|black|red|green)(?:,? and |, | ))*)'
     + "((?:(?!artifact )[A-Z][A-Za-z'-]* )*)(artifact )?creature(?: with ([^\"]+?))?(?:,? (?:with|and) \"([^\"]+)\")?( until end of turn)?"
-    + "(?:\\.?\\s*it['’]s still a land| that['’]s still a land)$",
+    // And a planeswalker's (D1390): "… becomes a 6/6 Human Soldier creature that's still a planeswalker".
+    + "(?:\\.?\\s*it['’]s still a land| that['’]s still a (?:land|planeswalker))$",
     'i',
   ).exec(plain(clause).trim().replace(/\.\s*$/, ''));
   if (becomes === null) return null;
@@ -37546,7 +37554,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       `?? optionalEffect(…)` on a path that already composes clauses, not a new shape. See
       `modalScriptFor` for the one place this was measured and left out.
     */
-    const read = loyaltyReader(clause) ?? optionalEffect(clause, loyaltyReader);
+    /*
+      Gideon's (D1390): "Until end of turn, ~ becomes a 6/6 … creature that's still a planeswalker.
+      Prevent all damage that would be dealt to him this turn." The pronoun is the planeswalker that
+      has just become a creature, so it is read as the card's name.
+    */
+    const gideon = clause.replace(/(that['’]s still a planeswalker\.\s*Prevent all damage that would be dealt to )(?:him|her|it)( this turn)$/i, `$1${name}$2`);
+    const read = loyaltyReader(gideon) ?? optionalEffect(gideon, loyaltyReader);
     if (read === null) return null;
     // Ral, Caller of Storms and Samut, the Tested divide damage on a -2, read since D1378.
     const amount = loyalty[1] === '+' || loyalty[1] === '' ? Number(loyalty[2]) : -Number(loyalty[2]);

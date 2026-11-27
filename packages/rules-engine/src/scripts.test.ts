@@ -51867,6 +51867,52 @@ describe('A card that calls itself he or she on any line (D1389)', () => {
   });
 });
 
+describe("Gideon: a creature that's still a planeswalker, and damage to him prevented (D1390)", () => {
+  const GIDEON = { name: 'Test Gideon', type_line: 'Legendary Planeswalker — Gideon', mana_cost: '{2}{W}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: null, toughness: null, loyalty: '4',
+    oracle_text: "+1: Until end of turn, Test Gideon becomes a 5/5 Human Soldier Ally creature with indestructible that's still a planeswalker. Prevent all damage that would be dealt to him this turn." };
+  const deck = customDeck({ id: 'd1390', name: 'Gideon', entries: [{ name: 'Test Gideon', count: 2 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Plains', count: 52 }], data: [GIDEON] as never[] });
+  const animated = (theirs: readonly string[] = []): GameState => {
+    const s = advanceTo(arena({ decks: { 0: 'd1390', 1: 'd1390' }, deckSpecs: { d1390: deck.deck }, battlefield: { 0: ['Test Gideon'], 1: [...theirs] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    return drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Gideon'), abilityIndex: 0 } as Action)), 20);
+  };
+  const attack = (s: GameState, blocks: (gideon: string) => readonly { blocker: string; attacker: string }[] = () => []): GameState => {
+    const gideon = find(s, 0, 'battlefield', 'Test Gideon');
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker: gideon, defender: 1 }] } as Action);
+    for (let i = 0; i < 6 && s.step !== 'declare-blockers'; i++) s = passBoth(s);
+    const declared = blocks(gideon);
+    if (declared.length > 0) s = apply(s, { type: 'auto:block', by: 1, blocks: [...declared] } as Action);
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(GIDEON as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the +1 makes him a 5/5 indestructible creature that is still a planeswalker, and he hits for 5', () => {
+    const s = animated();
+    const gideon = find(s, 0, 'battlefield', 'Test Gideon');
+    const ch = characteristicsOf(s, s.instances[gideon]!);
+    expect(ch.isCreature).toBe(true);
+    expect(hasType(ch.typeLine, 'planeswalker')).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([5, 5]);
+    expect(ch.keywords.has('indestructible')).toBe(true);
+    expect(s.instances[gideon]!.counters.loyalty).toBe(5);
+    expect(life(attack(s), 1)).toBe(15);
+  });
+
+  it('blocked by a Bear, the damage to him is prevented: no loyalty is lost', () => {
+    const s0 = animated(['Grizzly Bears']);
+    const bear = find(s0, 1, 'battlefield', 'Grizzly Bears');
+    const s = attack(s0, (gideon) => [{ blocker: bear, attacker: gideon }]);
+    const gideon = find(s, 0, 'battlefield', 'Test Gideon');
+    expect(s.instances[gideon]!.counters.loyalty).toBe(5);
+    expect(s.instances[gideon]!.damage).toBe(0);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
