@@ -50075,6 +50075,53 @@ describe('Scroll Rack: cards from hand traded for the top of the library (D1350)
   });
 });
 
+describe('Flash: a creature put in, kept for its cost less {2} or sacrificed (D1351)', () => {
+  const FLASH = { name: 'Test Flash', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: 'You may put a creature card from your hand onto the battlefield. If you do, sacrifice it unless you pay its mana cost reduced by up to {2}.' };
+  const deck = customDeck({ id: 'd1351', name: 'Flash', entries: [{ name: 'Test Flash', count: 2 }, { name: 'Hill Giant', count: 8 }, { name: 'Mountain', count: 50 }], data: [FLASH] as never[] });
+  const cast = (): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1351', 1: 'd1351' }, deckSpecs: { d1351: deck.deck },
+      battlefield: { 0: ['Mountain', 'Mountain'] }, hands: { 0: ['Test Flash', 'Hill Giant', 'Hill Giant'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Flash') } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+  const answer = (s: GameState, option: string): GameState => drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(FLASH as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Hill Giant put in, then its {3}{R} less {2} paid: it stays', () => {
+    let s = cast();
+    const giant = s.pendingDecision!.candidates[0]!;
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [giant] } as Action);
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {1}{R}']);
+    s = answer(s, 'Pay {1}{R}');
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Mountain').every((id) => s.instances[id]!.tapped)).toBe(true);
+  });
+
+  it('not paid: it is sacrificed', () => {
+    let s = cast();
+    const giant = s.pendingDecision!.candidates[0]!;
+    s = answer(apply(s, { type: 'auto:decide', by: 0, cards: [giant] } as Action), 'Sacrifice it');
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+  });
+
+  it('nothing put in: nothing asked, nothing moves', () => {
+    let s = cast();
+    const before = ids(s, 0, 'battlefield').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 0, 'battlefield').length).toBe(before);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

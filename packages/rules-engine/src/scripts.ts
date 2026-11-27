@@ -71,7 +71,7 @@ import type { EffectFn, TokenCopyProfile } from './effects.js';
   types, and none of them is this file.
 */
 import { isManaAbilityLine, keywordWithCost, tapOthersCost } from './fromCardData.js';
-import { costValue, parseManaCost, timesCost } from './mana.js';
+import { costValue, parseManaCost, reducedCostText, timesCost } from './mana.js';
 import type { Color, ManaPool, ManaType } from './mana.js';
 import type { CreatureKindWord, Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -34289,6 +34289,60 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * Flash (D1351): "You may put a creature card from your hand onto the battlefield. If you do,
+ * sacrifice it unless you pay its mana cost reduced by up to {2}."
+ *
+ * Two questions. The first is the creature card, or none. As the second is reached, the creature is
+ * put onto the battlefield (`onReach`), so its "enters" happens before the price is asked. The second
+ * is then worked out from the first answer (D1333): pay the creature's mana cost with up to {2} of
+ * its generic taken off, or sacrifice it. A cost the engine cannot pay (an X) offers only the
+ * sacrifice. Nothing chosen, nothing is asked. The bot puts nothing in: when the free creature is
+ * worth its price is not a judgement it makes.
+ */
+function flashIn(clauses: readonly string[]): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const m = /^you may put a creature card from your hand onto the battlefield\. if you do, sacrifice it unless you pay its mana cost reduced by (?:up to )?\{(\d+)\}\.?$/i.exec(text);
+  if (m === null) return null;
+  const by = Number(m[1]);
+  const SACRIFICE = 'Sacrifice it';
+  const priceOf = (state: GameState, id: string | undefined): string | null => {
+    const def = id === undefined ? undefined : state.cardDefs[state.instances[id]?.defKey ?? ''];
+    return def === undefined ? null : reducedCostText(def.manaCost ?? '', by);
+  };
+  return {
+    decisions: [
+      {
+        who: 'controller', from: 'hand', min: 0, max: 1,
+        prompt: 'You may put a creature card from your hand onto the battlefield',
+        filter: (state, id) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'creature'),
+        pick: () => [],
+      },
+      (state: GameState, _source: string, at?: EffectContext): DecisionSpec => {
+        const put = at?.decisions[0]?.ids[0];
+        const price = priceOf(state, put);
+        const pay = price === null ? null : `Pay ${price}`;
+        return {
+          who: 'controller', prompt: 'Pay its mana cost reduced by up to {2}, or sacrifice it?',
+          options: put === undefined ? ['Nothing put onto the battlefield'] : pay === null ? [SACRIFICE] : [SACRIFICE, pay],
+          ...(pay === null ? {} : { payIfChosen: { option: pay, cost: price! } }),
+          onReach: (s, controller, _src, answers) => {
+            const id = answers[0]?.ids[0];
+            const inst = id === undefined ? undefined : s.instances[id];
+            return inst === undefined || inst.zone !== 'hand' || inst.zoneSeat !== controller ? s : putOntoBattlefield(s, id!, controller);
+          },
+          best: () => pay ?? SACRIFICE,
+        } as ChoiceDecisionSpec;
+      },
+    ],
+    effect: (c) => {
+      const id = c.decisions[0]?.ids[0];
+      if (id === undefined || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+      return c.decisions[1]?.option?.startsWith('Pay ') === true ? c.state : sacrifice(c.state, [id]);
+    },
+  };
+}
+
+/**
  * Scroll Rack (D1350): "Exile any number of cards from your hand face down. Put that many cards from
  * the top of your library into your hand. Then look at the exiled cards and put them on top of your
  * library in any order."
@@ -35126,6 +35180,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // Flash (D1351): see `flashIn`.
+  const flashed = flashIn(clauses);
+  if (flashed !== null) return flashed;
   // Scroll Rack (D1350): see `scrollRack`.
   const racked = scrollRack(clauses);
   if (racked !== null) return racked;

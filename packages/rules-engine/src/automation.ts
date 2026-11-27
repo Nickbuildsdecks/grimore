@@ -6536,7 +6536,7 @@ export function answerDecision(
     const picked = chosen.filter((id) => pending.candidates.includes(id));
     const asked = object === undefined
       ? undefined
-      : decisionSpecsFor(next, object)[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
+      : decisionSpecsFor(next, object, pending.resume.answers)[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
     next = applyLibraryTop(
       next, asked !== undefined && !isCountersDecision(asked) && asked.from === 'library-top' ? asked : undefined,
       pending.seat, picked,
@@ -6569,7 +6569,8 @@ export function preferredOption(state: GameState): string | undefined {
   if (pending === null || pending.options === undefined) return undefined;
   const object = state.stackObjects[pending.stackId];
   if (object === undefined) return pending.options[0];
-  const specs = decisionSpecsFor(state, object);
+  // With the answers so far (D1351), as the question was worked out when it was asked.
+  const specs = decisionSpecsFor(state, object, pending.resume.answers);
   const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
   const picked = spec !== undefined && isChoiceDecision(spec)
     ? spec.best?.(state, pending.seat)
@@ -6594,7 +6595,8 @@ export function preferredCards(state: GameState): readonly string[] | undefined 
   if (pending === null || pending.from === undefined) return undefined;
   const object = state.stackObjects[pending.stackId];
   if (object === undefined) return undefined;
-  const specs = decisionSpecsFor(state, object);
+  // With the answers so far (D1351), as the question was worked out when it was asked.
+  const specs = decisionSpecsFor(state, object, pending.resume.answers);
   const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
   if (spec === undefined || !isCardsDecision(spec)) return undefined;
   const picked = spec.pick?.(state, pending.seat, pending.candidates);
@@ -6617,7 +6619,8 @@ export function preferredAmount(state: GameState): number | undefined {
   const { min, max } = pending.numbers;
   const object = state.stackObjects[pending.stackId];
   if (object === undefined) return min;
-  const specs = decisionSpecsFor(state, object);
+  // With the answers so far (D1351), as the question was worked out when it was asked.
+  const specs = decisionSpecsFor(state, object, pending.resume.answers);
   const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
   const picked = spec !== undefined && isNumberDecision(spec)
     ? spec.best?.(state, pending.seat)
@@ -6650,7 +6653,8 @@ export function pendingRetarget(state: GameState): {
   if (pending === null || pending.targetChoices === undefined) return undefined;
   const object = state.stackObjects[pending.stackId];
   if (object === undefined) return undefined;
-  const specs = decisionSpecsFor(state, object);
+  // With the answers so far (D1351), as the question was worked out when it was asked.
+  const specs = decisionSpecsFor(state, object, pending.resume.answers);
   const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
   if (spec === undefined || !isTargetDecision(spec)) return undefined;
   const aimedId = spec.retargets(state, object);
@@ -6825,7 +6829,8 @@ function resolveObject(
     but a client is free to send an `auto:decide` naming a word that was never offered, and an
     unpaid extort that drained an opponent anyway would be the engine lying about a cost.
   */
-  const priced = decisionSpecsFor(next, object)
+  // Worked out with the answers given (D1351): Flash's price is the creature it put in.
+  const priced = decisionSpecsFor(next, object, answers)
     .flatMap((spec) => (isChoiceDecision(spec) && spec.payIfChosen !== undefined
       ? [spec.payIfChosen]
       : []));
@@ -6837,7 +6842,7 @@ function resolveObject(
     if (!canPayForAnswer(next, seat, price)) {
       // Not payable after all, so the answer was never available: it reads as the first option,
       // which is the word the card puts first for exactly this reason.
-      const fallback = decisionSpecsFor(next, object)
+      const fallback = decisionSpecsFor(next, object, answers)
         .flatMap((spec) => (isChoiceDecision(spec) ? [spec.options[0]] : []))[0];
       paidAnswers = paidAnswers.map((answer, i) => (i === chosen
         ? { ...answer, ...(fallback === undefined ? {} : { option: fallback }) }
