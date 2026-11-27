@@ -49890,6 +49890,58 @@ describe('Yuriko: commander ninjutsu, and a revealed card that costs the opponen
   });
 });
 
+describe('Ad Nauseam: a process repeated as many times as the player says (D1347)', () => {
+  const NAUSEAM = { name: 'Test Nauseam', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    oracle_text: 'Reveal the top card of your library and put that card into your hand. You lose life equal to its mana value. You may repeat this process any number of times.' };
+  const deck = customDeck({ id: 'd1347', name: 'Nauseam', entries: [{ name: 'Test Nauseam', count: 2 }, { name: 'Hill Giant', count: 28 }, { name: 'Forest', count: 30 }], data: [NAUSEAM] as never[] });
+  /** Cast with the library's top cards set to Hill Giant, Forest, Hill Giant, … */
+  const answer = (s: GameState, option: string): GameState => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+  const cast = (): { s: GameState; order: string[] } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1347', 1: 'd1347' }, deckSpecs: { d1347: deck.deck }, hands: { 0: ['Test Nauseam'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const giants = library.filter((id) => nameOf(s, id) === 'Hill Giant');
+    const forests = library.filter((id) => nameOf(s, id) === 'Forest');
+    const order = [giants[0]!, forests[0]!, giants[1]!, ...library.filter((id) => ![giants[0], forests[0], giants[1]].includes(id))];
+    s = { ...s, zones: { ...s.zones, '0:library': order } };
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Nauseam') } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return { s, order };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(NAUSEAM as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each card is revealed as it is asked for, its mana value lost, until the player stops', () => {
+    let { s, order } = cast();
+    // The first card came before the first question.
+    expect(s.instances[order[0]!]!.zone).toBe('hand');
+    expect(s.seats[0]!.life).toBe(16);
+    expect(s.pendingDecision?.options).toEqual(['Reveal another', 'Stop']);
+    s = answer(s, 'Reveal another');
+    expect(s.instances[order[1]!]!.zone).toBe('hand');
+    expect(s.seats[0]!.life).toBe(16);
+    s = answer(s, 'Reveal another');
+    expect(s.instances[order[2]!]!.zone).toBe('hand');
+    expect(s.seats[0]!.life).toBe(12);
+    s = drain(answer(s, 'Stop'), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.stackOrder).toEqual([]);
+    expect(s.instances[order[3]!]!.zone).toBe('library');
+  });
+
+  it('the bot goes on while it has more than 10 life', () => {
+    let { s } = cast();
+    for (let i = 0; i < 40 && s.pendingDecision !== null; i++) s = apply(s, botAction(s, 0)!);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.seats[0]!.life).toBeLessThanOrEqual(10);
+    expect(s.seats[0]!.life).toBeGreaterThan(5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

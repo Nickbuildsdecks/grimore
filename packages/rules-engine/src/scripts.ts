@@ -34253,6 +34253,46 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
   };
 }
 
+/** The most times Ad Nauseam's process is offered again (D1347): a ceiling no real game reaches. */
+const AD_NAUSEAM_ROUNDS = 60;
+
+/**
+ * Ad Nauseam (D1347): "Reveal the top card of your library and put that card into your hand. You
+ * lose life equal to its mana value. You may repeat this process any number of times."
+ *
+ * A fixed list of questions, as D730's punisher rounds are. Each one does the reveal as it is
+ * reached (`onReach`) and then asks whether to go again. Each after the first is asked only if the
+ * answer before it was to go again (`askOnlyIfChosen`), so a "Stop" ends the chain, and with an
+ * empty library nothing more is asked. The last round's "again" is the effect's own reveal. The life
+ * is lost as each card comes, and a player at 0 loses only once the spell has resolved (CR 704.3).
+ * The bot goes again while it has more than 10 life.
+ */
+function revealRepeatedly(clauses: readonly string[]): ReadEffect | null {
+  if (clauses.length !== 2) return null;
+  const first = /^reveal the top card of your library and put it into your hand and lose life equal to its mana value\.?$/i.test(clauses[0]!.trim());
+  const again = /^you may repeat this process any number of times\.?$/i.test(clauses[1]!.trim());
+  if (!first || !again) return null;
+  const AGAIN = 'Reveal another';
+  const STOP = 'Stop';
+  const reveal = (state: GameState, seat: SeatIndex): GameState => {
+    const top = listAt(state, zoneKey(seat, 'library'))[0];
+    if (top === undefined) return state;
+    const cost = state.cardDefs[state.instances[top]!.defKey]?.cmc ?? 0;
+    const next = moveToHand(state, [top]);
+    return cost === 0 ? next : loseLife(next, seat, cost);
+  };
+  const hasLibrary = (state: GameState, controller: SeatIndex): boolean => listAt(state, zoneKey(controller, 'library')).length > 0;
+  return {
+    decisions: Array.from({ length: AD_NAUSEAM_ROUNDS }, (_, i): ChoiceDecisionSpec => ({
+      who: 'controller', prompt: 'Reveal the top card of your library again?', options: [AGAIN, STOP],
+      ...(i === 0 ? {} : { askOnlyIfChosen: AGAIN, askOnlyIf: hasLibrary }),
+      onReach: (state, controller) => reveal(state, controller),
+      best: (state, chooser) => ((state.seats[chooser]?.life ?? 0) > 10 && hasLibrary(state, chooser) ? AGAIN : STOP),
+    })),
+    effect: (c) => (c.decisions[AD_NAUSEAM_ROUNDS - 1]?.option === AGAIN ? reveal(c.state, c.controller) : c.state),
+  };
+}
+
 /**
  * "You may copy the exiled card. If you do, you may cast the copy without paying its mana cost."
  * (D1341): Isochron Scepter's ability, Spellbinder's trigger. The exiled card is the one this
@@ -34983,6 +35023,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // Ad Nauseam (D1347): see `revealRepeatedly`.
+  const repeated = revealRepeatedly(clauses);
+  if (repeated !== null) return repeated;
   // Isochron Scepter and Spellbinder (D1341): see `castImprintedCopy`.
   const imprinted = castImprintedCopy(clauses, name);
   if (imprinted !== null) return imprinted;
