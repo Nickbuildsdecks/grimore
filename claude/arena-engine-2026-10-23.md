@@ -50152,3 +50152,41 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6546 of 6546 pass.
 
 Coverage: 17,565 of 31,900 cards (+6 over D1352's 17,559), 40,410 of 59,888 lines (+10).
+
+## D1354 — targets bounded by their total mana value: Patch Up
+
+D1352 bounded a question by total mana value. The targeted spelling did not read: Patch Up's "Return
+up to three target creature cards with total mana value 3 or less from your graveyard to the
+battlefield", March from the Tomb, Kairi's mode.
+
+**The bound on a target spec.** `TargetSpec.totalManaValueAtMost` is checked in `checkTargets`
+across the targets the spec takes, beside D1216's `sameOwner`: a cast or a trigger aimed past it is
+refused. The bot stays inside it on both of its target paths, taking each target while the total
+still allows it:
+- a spell's or an ability's targets (`chooseTargets`);
+- a trigger's, put on the stack (`auto:choose`).
+
+**The reading.** The graveyard return readers want the phrase to end in "cards" before "from your
+graveyard", so a bound in the middle stopped the line before it reached `targetSpecFrom`. So
+`readEffect` reads the clause without the bound first, and puts the bound on the one target spec
+that takes more than one. Any other shape falls through to the readers below, D1353's untargeted
+return among them, which reads the bound itself.
+
+Patch Up reads whole now. Scout for Survivors waits on "Put a +1/+1 counter on each of them", and
+March from the Tomb on its Ally type.
+
+**Tests.** 4 engine tests, with two Grizzly Bears and a 1-drop in the graveyard:
+- A fixture reads whole, the bound on its target spec of three.
+- Two Bears (4) are refused as targets. A Bears and the 1-drop (3) return, and the other Bears
+  stays.
+- A fixture enters trigger's targets, chosen by the bot, total 3 or less.
+- The bot's cast is aimed within the total, and the engine accepts it.
+
+Faults injected by hand: 3, all caught.
+- The check off.
+- The cast path's bot ignoring the total.
+- The trigger path's bot ignoring the total.
+
+The scripts tests, compile tests and pins: 6549 of 6549 pass, before the trigger test was added.
+
+Coverage: 17,566 of 31,900 cards (+1 over D1353's 17,565), 40,411 of 59,888 lines (+1).
