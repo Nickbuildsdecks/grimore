@@ -67549,3 +67549,38 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6539 of 6539 pass.
 
 Coverage: 17,558 of 31,900 cards (+1 over D1350's 17,557), 40,399 of 59,888 lines (+1).
+
+## D1352 — Protean Hulk: a search bounded by total mana value
+
+Protean Hulk is on the second staples list: "When Protean Hulk dies, search your library for any
+number of creature cards with total mana value 6 or less, put them onto the battlefield, then
+shuffle." 22 legal lines print "with total mana value N or less", and none read.
+
+**The bound.** A question may now say its answer's cards must total at most some mana value
+(`CardsDecisionSpec.totalManaValueAtMost`). It is carried on the pending question and checked in
+`decide`, beside D1340's different names, because no one card is wrong on its own. The candidates
+are still every creature card in the library.
+
+**The search.** The library search reader takes "<cards> with total mana value N or less" as the
+plain count and kind, with the bound on the question.
+
+**The bot** answers within the bound: the costliest cards first, each taken while the total still
+allows it. Its default would have been refused.
+
+Still unread: the targeted spellings ("any number of target … with total mana value"), returns
+from a graveyard, and an X total.
+
+**Tests.** 3 engine tests, a fixture search with Hill Giants (4) and Grizzly Bears (2) in the
+library:
+- The Hulk and the search read whole.
+- A Giant and two Bears (8) are refused. A Giant and a Bears (6) are put onto the battlefield.
+- The bot's answer totals exactly 6.
+
+Faults injected by hand: 3, all caught.
+- The check off.
+- The bound not carried onto the question.
+- The bot ignoring the total.
+
+The scripts tests, compile tests and pins: 6542 of 6542 pass.
+
+Coverage: 17,559 of 31,900 cards (+1 over D1351's 17,558), 40,400 of 59,888 lines (+1).
