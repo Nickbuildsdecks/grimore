@@ -50762,3 +50762,32 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6598 of 6598 pass.
 
 Coverage: 17,629 of 31,900 cards (+10 over D1368's 17,619), 40,512 of 59,888 lines (+10).
+
+## D1370 — "Sacrifice it unless it escaped"
+
+Uro, Titan of Nature's Wrath; Kroxa, Titan of Death's Hunger; Phlage, Titan of Fire's Fury: "When ~
+enters, sacrifice it unless it escaped." Three heavily played cards, and for Uro and Phlage the
+only unread line.
+
+**The rule.** The stack object has known since D577 that a spell was cast with escape
+(`StackObject.escaped`). The permanent did not, and by the time the enter trigger resolves the
+stack object is gone. A new marker, `ESCAPED`, is put on the permanent as it arrives, the same way
+surge, kicker and squad are remembered. "Sacrifice it unless it escaped" sacrifices the permanent
+unless the marker is there. If it has already left the battlefield, nothing happens. A titan cast
+from hand, or put onto the battlefield any other way, is sacrificed.
+
+Read whole now: Uro, Phlage. Kroxa's other trigger ("each opponent discards a card, then each
+opponent who didn't discard a nonland card this way loses 3 life") is still unread.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- Cast from hand, it is sacrificed as it enters.
+- Cast with escape from the graveyard, it stays.
+
+Faults injected by hand: 2, both caught.
+- The escape not remembered.
+- Never sacrificed.
+
+The scripts tests, compile tests and pins: 6601 of 6601 pass.
+
+Coverage: 17,631 of 31,900 cards (+2 over D1369's 17,629), 40,515 of 59,888 lines (+3).
