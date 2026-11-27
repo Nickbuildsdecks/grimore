@@ -67769,3 +67769,51 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6561 of 6561 pass.
 
 Coverage: 17,592 of 31,900 cards (+10 over D1356's 17,582), 40,467 of 59,888 lines (+32).
+
+## D1358 — X damage divided as you choose
+
+"~ deals X damage divided as you choose among any number of targets" is printed on 21 legal cards
+(Rolling Thunder, Hail of Arrows, Rock Slide, Conflagrate, Fire Covenant and others). D749 read the
+fixed amounts, and `TargetSpec.divided` was a number fixed when the card was read, so the X shape
+had nowhere to go. D1055 pinned it as refused for that reason.
+
+**The rule.** A new `TargetSpec.dividedX`: the spec still carries `divided` (as 0), so everything that
+asks "does this divide" still sees it, and the amount is the X announced. `dividedAmountOf(spec, x)`
+gives it, and `checkDivision` takes the X from the cast. An X of nought divides nothing, so the spell
+may be cast with no targets and no division. The reader takes the X only where something pays one
+(`xPayable`, D1055), and only among "any number of": Fire Covenant's X is life paid, not mana, so it
+stays unread.
+
+**The bot** divides the X it casts with (`xDefault`, else `xMax`), using the same three ways of dividing as for a fixed amount.
+
+**The web table** asks for X first, as it does for every X spell, then spends one point per tap up
+to that X. `dividedAmount(play, x)` takes the X; the target prompt, the tap reducer and Cast read it.
+
+Read whole now: Rolling Thunder, Hail of Arrows, Rock Slide. The rest have another line unread:
+an additional cost (Infernal Harvest, Nahiri's Sacrifice), flashback paid in cards (Conflagrate), a
+second sentence about the damage dealt (Aurelia's Fury, Ghired's Belligerence), or an X defined by
+the board (Volcanic Wind, Jaws of Stone).
+
+**Tests.** 4 engine tests and 1 web test:
+- The fixture reads whole, with `divided: 0, dividedX: true`. The same text on a card with no {X}
+  is refused.
+- X=3 divided two and one: one Grizzly Bears dies and the other has 1 damage. A division of four
+  is refused.
+- X=0 is cast with no targets.
+- The bot casts it for X=3 off four Mountains, with a division that adds up to 3, and the engine
+  accepts the cast.
+- Web: X set to 3, then three taps send the cast with `x: 3` and `division: [2, 1]`, and Cast pressed
+  at two of three sends nothing.
+
+The D1055 pin that refused this shape now uses a listed count ("one, two, or three target creatures") with X, which is still refused.
+
+Faults injected by hand: 5, all caught.
+- The division check ignoring X.
+- No rule for X=0.
+- The bot ignoring X.
+- The `xPayable` guard removed.
+- The web tap reducer ignoring X.
+
+The scripts tests, compile tests and pins: 6565 of 6565 pass. Web: 281 of 281.
+
+Coverage: 17,595 of 31,900 cards (+3 over D1357's 17,592), 40,470 of 59,888 lines (+3).
