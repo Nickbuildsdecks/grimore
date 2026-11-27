@@ -51195,6 +51195,59 @@ describe('"For each opponent, … up to one target … that player controls" (D1
   });
 });
 
+describe('"Create a … token, then attach ~ to it" (D1376)', () => {
+  const BLADE = { name: 'Test Blade', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'When Test Blade enters, create a 1/1 white Soldier creature token, then attach Test Blade to it.\nEquipped creature gets +1/+1.\nEquip {1}' };
+  const BOW = { name: 'Test Bow', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'When Test Bow enters, you may pay {2}. If you do, create a 1/1 green Elf Warrior creature token, then attach Test Bow to it.\nEquipped creature gets +1/+2.\nEquip {3}' };
+  const ROWS = [BLADE, BOW];
+  const deck = customDeck({ id: 'd1376', name: 'Blade', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 12 }, { name: 'Forest', count: 44 }], data: ROWS as never[] });
+  const table = (hand: string, lands: number): GameState => advanceTo(arena({
+    decks: { 0: 'd1376', 1: 'd1376' }, deckSpecs: { d1376: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: Array.from({ length: lands }, () => 'Forest') }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const enter = (s: GameState, name: string): GameState => {
+    let t = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+    for (let i = 0; i < 4 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+  const tokenWith = (s: GameState, equipment: string) => {
+    const eq = find(s, 0, 'battlefield', equipment);
+    const host = s.instances[eq]!.attachedTo;
+    return host === undefined ? null : host;
+  };
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Blade makes a Soldier and is attached to it: a 2/2', () => {
+    const s = drain(enter(table('Test Blade', 0), 'Test Blade'), 20);
+    const host = tokenWith(s, 'Test Blade');
+    expect(host).not.toBeNull();
+    expect(nameOf(s, host!)).toContain('Soldier');
+    expect([power(s, host!), toughness(s, host!)]).toEqual([2, 2]);
+  });
+
+  it('the Bow: paid, an Elf with the Bow; declined, nothing; with no mana, not offered', () => {
+    let s = enter(table('Test Bow', 2), 'Test Bow');
+    expect(s.pendingDecision?.options).toEqual(['Pay {2}', 'No']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {2}' } as Action), 20);
+    expect(tokenWith(s, 'Test Bow')).not.toBeNull();
+    // Paid for: both Forests tapped.
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest').every((id) => s.instances[id]!.tapped)).toBe(true);
+    let t = enter(table('Test Bow', 2), 'Test Bow');
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [], option: 'No' } as Action), 20);
+    expect(tokenWith(t, 'Test Bow')).toBeNull();
+    // With no mana the price is not offered, so there is nothing to ask.
+    const u0 = enter(table('Test Bow', 0), 'Test Bow');
+    expect(u0.pendingDecision).toBeNull();
+    const u = drain(u0, 20);
+    expect(tokenWith(u, 'Test Bow')).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

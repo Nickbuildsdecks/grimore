@@ -18971,6 +18971,40 @@ export function attachmentScriptFor(
           },
         };
       }
+      /*
+        "When ~ enters, create a 1/1 white Soldier creature token, then attach ~ to it" (D1376):
+        Ancestral Blade, Wolfrider's Saddle, Mask of Immolation; and the priced form, "you may pay
+        {2}. If you do, create …" (Elven Bow, Dwarven Hammer). Living weapon's arrival above, with the
+        token printed on the card, and a yes-or-no with the price on it when there is one.
+      */
+      const madeAttached = new RegExp(
+        `^When (?:${selfName}|this Equipment) ${ENTERS}, (?:you may pay ((?:\\{[^}]+\\})+)\\. If you do, )?`
+        + `(create .+? token), then attach (?:it|this Equipment|${selfName}) to it$`,
+        'i',
+      ).exec(flat);
+      const printedToken = madeAttached === null ? null : tokenFrom(madeAttached[2]!);
+      const price = madeAttached?.[1];
+      const priceOk = price === undefined || (parseManaCost(price).unsupported === undefined && !parseManaCost(price).x);
+      if (madeAttached !== null && printedToken !== null && priceOk && WORD_NUMBERS[printedToken.printed.toLowerCase()] === 1) {
+        const pay = price === undefined ? undefined : `Pay ${price}`;
+        const make = (c: EffectContext): GameState => {
+          if (pay !== undefined && chosenOption(c) !== pay) return c.state;
+          const { state, created } = addTokens(c.state, c.controller, printedToken.token, 1);
+          const body = created[0];
+          return body === undefined ? state : equipTo(state, c.source, body, c.controller, equipBonus);
+        };
+        return {
+          line,
+          trigger: {
+            on: { kind: 'etb' as const },
+            description: flat,
+            ...(pay === undefined ? {} : {
+              decisions: [{ who: 'controller' as const, prompt: `Pay ${price} to create the token and attach this to it?`, options: [pay, 'No'], payIfChosen: { option: pay, cost: price! }, best: () => pay }],
+            }),
+            effect: make,
+          },
+        };
+      }
       const attached = attachTarget.exec(flat);
       const after = attached === null ? null : followUp(attached[2]);
       /*
