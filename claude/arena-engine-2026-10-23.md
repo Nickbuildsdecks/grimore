@@ -49515,3 +49515,39 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6484 of 6484 pass.
 
 Coverage: 17,517 of 31,900 cards (+2 over D1335's 17,515), 40,343 of 59,888 lines (+3).
+
+## D1337 — Remand, Memory Lapse, and a spell returned to its owner's hand
+
+Remand and Memory Lapse are staples, and neither read. The counter read, but its rider sends the
+countered card somewhere other than the graveyard, and only D545's exile rider existed.
+
+**The rider.** `counterExileRider` now also takes "If that spell is countered this way, put it into
+its owner's hand / on top of its owner's library instead of into that player's graveyard". This
+covers Remand, Memory Lapse and Lapse of Certainty. The destination travels on the effect context
+as `counteredTo`, as D545's `exileWhenCountered` does. `counterSpell` puts the card there, unless
+flashback or a graveyard permission exiles it (CR 702.34a).
+
+**Returned, not countered.** `returnSpellToHand` takes a spell off the stack to its owner's hand. It
+is not a counter, so "can't be countered" does not stop it and nothing that watches for a counter
+sees one. Flashback still exiles it, and a copy simply ceases to exist. Read for "Return target
+spell [you don't control / an opponent controls] to its owner's hand".
+
+"Target spell or creature" and "target spell or permanent" stay unread: Unsubstantiate, Venser,
+Brutal Expulsion, Jeskai Revelation. A target that is either a spell or a permanent is a target
+kind the engine does not have. Hullbreaker Horror's modes read; its "choose up to one" on a trigger
+does not.
+
+**Tests.** 4 engine tests: seat 0 casts Grizzly Bears, and seat 1 answers.
+- All three fixtures read whole.
+- Remand: the Bears go to seat 0's hand, the stack empties, and Remand draws a card.
+- Memory Lapse: the Bears go on top of seat 0's library.
+- Returned: the Bears go back to seat 0's hand.
+
+Faults injected by hand: 3, all caught.
+- The library sent to the hand.
+- The rider ignored.
+- The returned spell sent to the graveyard.
+
+The scripts tests, compile tests and pins: 6488 of 6488 pass.
+
+Coverage: 17,522 of 31,900 cards (+5 over D1336's 17,517), 40,350 of 59,888 lines (+7).
