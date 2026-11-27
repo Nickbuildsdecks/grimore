@@ -50261,3 +50261,45 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6557 of 6557 pass.
 
 Coverage: 17,582 of 31,900 cards (+9 over D1355's 17,573), 40,435 of 59,888 lines (+15).
+
+## D1357 — Strive
+
+"Strive — This spell costs {2}{U} more to cast for each target beyond the first" is printed on 20
+legal cards, beside an "any number of target …" sentence that D1356 made readable. Fireball's
+`extraTargetCost` (D579) already charged generic mana per extra target, but only for the
+hand-written card, and only generic.
+
+**The rule.** The line is read into `extraTargetCost` (the generic part) and the new
+`CardScript.extraTargetColoured` (one entry per coloured symbol). Where the spell is cast, the
+symbols are added once for each target after the first, to the coloured mana the board adds (the
+Leeches, D1313), so they go through the same `withCostChange`. The same sentence without the
+ability word reads too, which is Fireball's own cost line. Hybrid, Phyrexian and X symbols are not
+read, and a line with one still refuses the card.
+
+**The bot.** The offer is priced at one target, so the bot takes one for a spell that charges per
+extra target, rather than as many as D1356 would let it take and then a cast it cannot pay for.
+
+Read whole now: Aerial Formation, Ajani's Presence, Blinding Flare, Colossal Heroics, Consign to
+Dust, Cruel Feeding, Desperate Stand, Kiora's Dismissal, Phalanx Formation, Rouse the Mob. The
+other ten strive cards have another line still unread.
+
+**Tests.** 4 engine tests:
+- The fixture reads whole, with `extraTargetCost: 1` and `extraTargetColoured: ['U']`.
+- Two targets cost {1}{U}{U}: refused off two Islands, cast off three, and both creatures pumped.
+- One target costs only the printed {U}: one Island tapped of three.
+- The bot casts a strive bounce off one Island at one target, and the cast goes through.
+
+Three pins changed:
+- Fireball's compiled reading now reads its cost line; only the division is unread.
+- The D487 row that refused "costs {1} more … beyond the first" now uses a hybrid symbol, which is
+  still refused.
+- `extraTargetColoured` joins the mechanic-coverage exemptions, naming its runtime test.
+
+Faults injected by hand: 3, all caught.
+- The bot's one-target rule removed.
+- The coloured charge left off the payment.
+- The reader turned off.
+
+The scripts tests, compile tests and pins: 6561 of 6561 pass.
+
+Coverage: 17,592 of 31,900 cards (+10 over D1356's 17,582), 40,467 of 59,888 lines (+32).
