@@ -68379,3 +68379,47 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6610 of 6610 pass. Web typecheck clean.
 
 Coverage: 17,652 of 31,900 cards (+10 over D1373's 17,642), 40,548 of 59,888 lines (+21).
+
+## D1375 — "For each opponent, … up to one target … that player controls"
+
+"When Grasp of Fate enters, for each opponent, exile up to one target nonland permanent that player
+controls until Grasp of Fate leaves the battlefield." Grasp of Fate is a Commander staple, and the
+same shape is on Enigma Thief ("… return up to one target nonland permanent that player controls to
+its owner's hand") and others. One target for each opponent, chosen as the trigger goes on the
+stack.
+
+**The rule.**
+- `TargetSpec.differentControllers` is new: no two of the spec's targets may share a controller.
+  It is checked across the chosen targets in `checkTargets`, as D1216's `sameOwner` is.
+- The sentence reads as "any number of target <kind>s an opponent controls" (D1356) with that
+  flag on, so each opponent loses at most one.
+- D575's exile-until-it-leaves shape takes the per-opponent form, and its exile now holds every
+  card target. The return already brought back everything the source exiled.
+- A clause wrapper does the same for return, tap, untap, destroy and exile without the "until".
+
+**The bot**, in both of its target paths, skips a candidate whose controller it has already taken.
+Building the test found that the trigger path (`auto:choose`) did not follow D1356's same-side
+advice: a trigger's "destroy any number of target creatures" took every creature, its own included.
+That path now stops as `chooseTargets` does.
+
+Read whole now: Grasp of Fate, Enigma Thief, and others the measure counts. Hapatra's next sentence
+("Put a stun counter on each of those creatures") is still unread.
+
+**Tests.** 4 engine tests, in a three-player pod:
+- Both fixtures read whole.
+- Grasp of Fate: two Grizzly Bears of one opponent are refused. One from each opponent is exiled,
+  and both come back when the Grasp leaves the battlefield.
+- A trigger's "destroy any number of target creatures": the bot takes only its opponents'
+  creatures.
+- Enigma Thief: the bot takes one from each opponent.
+
+Faults injected by hand: 5, all caught.
+- No controller check.
+- The trigger path taking two of one controller.
+- The trigger path ignoring the side.
+- Only the first target exiled.
+- The wrapper's spec left unmarked.
+
+The scripts tests, compile tests and pins: 6614 of 6614 pass.
+
+Coverage: 17,658 of 31,900 cards (+6 over D1374's 17,652), 40,559 of 59,888 lines (+11).
