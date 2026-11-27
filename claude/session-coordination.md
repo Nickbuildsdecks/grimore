@@ -253,3 +253,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1333 pushed in 16268be. D1334 no land drop from a graveyard cast permission (legalActions land branch); D1335 PREVENTS on the en-Kor and Circle shield readers (scripts.ts). From sweep 96001 seed 96041.
 - D1334/D1335 pushed in 3647333, checkpoint at D1335 in bf2d718. D1336 a hand question beside a second target (composeEffects multi-target rule): scripts.ts only.
 - D1336 pushed in f5080eb. D1337 Remand/Memory Lapse rider (counteredTo) and returnSpellToHand: effects.ts counterSpell, scripts.ts counterExileRider and the counter reader.
+- D1337 pushed in a0f841d. D1338 "choose up to one" on a trigger (modalTriggerFor, a no-mode answer): scripts.ts only.

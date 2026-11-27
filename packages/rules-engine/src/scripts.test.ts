@@ -49422,6 +49422,58 @@ describe('Remand, Memory Lapse and a spell returned to hand (D1337)', () => {
   });
 });
 
+describe('"choose up to one —" on a trigger: Hullbreaker Horror (D1338)', () => {
+  const HORROR = { name: 'Test Horror', type_line: 'Creature — Kraken Horror', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '7', toughness: '8',
+    oracle_text: "Whenever you cast a spell, choose up to one —\n• Return target nonland permanent to its owner's hand.\n• Draw a card." };
+  const deck = customDeck({ id: 'd1338', name: 'Horror', entries: [{ name: 'Test Horror', count: 2 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Forest', count: 50 }], data: [HORROR] as never[] });
+  const cast = (): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1338', 1: 'd1338' }, deckSpecs: { d1338: deck.deck },
+      battlefield: { 0: ['Test Horror', 'Forest', 'Forest'], 1: ['Grizzly Bears'] }, hands: { 0: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole, with no mode as the last answer', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(HORROR as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.triggers?.[0]?.modal?.modes.map((m) => m.description)).toEqual([
+      "Return target nonland permanent to its owner's hand", 'Draw a card', 'Choose no mode',
+    ]);
+  });
+
+  it('no mode chosen: nothing is returned and nothing drawn', () => {
+    let s = cast();
+    expect(s.pendingDecision?.options).toContain('Choose no mode');
+    const hand = ids(s, 0, 'hand').length;
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Choose no mode' } as Action)), 40);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+    expect(s.instances[theirs]!.zone).toBe('battlefield');
+  });
+
+  it('the bot answers it, and never returns its own permanent', () => {
+    let s = cast();
+    const mine = ids(s, 0, 'battlefield');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, botAction(s, 0)!)), 40);
+    for (let i = 0; i < 6 && s.pendingChoice !== null; i++) s = drain(passBoth(apply(s, botAction(s, 0)!)), 40);
+    // It returned the opponent's Bears, the one nonland permanent not its own.
+    expect(s.instances[theirs]!.zone).toBe('hand');
+    expect(mine.every((id) => s.instances[id]!.zone === 'battlefield')).toBe(true);
+  });
+
+  it('a mode chosen still does what it says', () => {
+    let s = cast();
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Draw a card' } as Action)), 40);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

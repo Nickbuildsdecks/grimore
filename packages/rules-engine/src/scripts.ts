@@ -41166,9 +41166,11 @@ export function dieTableFor(
 export function modalTriggerFor(
   lines: readonly string[], name: string,
 ): { readonly fragment: Partial<CardScript>; readonly claimed: readonly string[] } | null {
-  const at = lines.findIndex((line) => /^.+, choose one\s*[—-]$/i.test(plain(line).trim()));
+  const at = lines.findIndex((line) => /^.+, choose (?:up to )?one\s*[—-]$/i.test(plain(line).trim()));
   if (at < 0) return null;
-  const prologue = /^(.+), choose one\s*[—-]$/i.exec(plain(lines[at]!).trim())![1]!;
+  const headed = /^(.+), choose (up to )?one\s*[—-]$/i.exec(plain(lines[at]!).trim())!;
+  const prologue = headed[1]!;
+  const upTo = headed[2] !== undefined;
   const bullets: string[] = [];
   for (let i = at + 1; i < lines.length && /^[•\u2022]/.test(plain(lines[i]!).trim()); i++) bullets.push(lines[i]!);
   if (bullets.length < 2) return null;
@@ -41193,9 +41195,15 @@ export function modalTriggerFor(
       effect: read.effect,
     });
   }
+  /*
+    "Choose up to one —" (D1338): Hullbreaker Horror, Ravager Wurm, Ertai Resurrected. No mode at
+    all is an answer, offered as one more mode that does nothing, last, so it is what is left when no
+    other mode can be chosen. The game it leaves is the one choosing no mode leaves.
+  */
+  if (upTo) modes.push({ description: 'Choose no mode', effect: (c) => c.state });
   return {
     fragment: {
-      triggers: [{ ...trigger, description: 'choose one', modal: { modes }, effect: (c) => c.state }],
+      triggers: [{ ...trigger, description: upTo ? 'choose up to one' : 'choose one', modal: { modes }, effect: (c) => c.state }],
     },
     claimed: [lines[at]!, ...bullets],
   };
