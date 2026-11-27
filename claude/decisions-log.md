@@ -67085,3 +67085,56 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6496 of 6496 pass. Web: typecheck clean, 280 of 280.
 
 Coverage: 17,529 of 31,900 cards (+5 over D1338's 17,524), 40,363 of 59,888 lines (+7).
+
+## D1340 — Intuition and Gifts Ungiven: a search the opponent splits
+
+Intuition and Gifts Ungiven are on the second staples list, and neither read. Each searches, reveals
+what it found, and has an opponent choose where those cards go. Realms Uncharted and Elemental
+Teachings print the same shape.
+
+**The reading.** `searchOpponentSplits` reads the whole group, as Fact or Fiction's reader does
+(D728):
+- The caster searches the library. "Three cards" is exactly three: the search names no quality, so
+  it cannot fail to find (CR 701.19b). "Up to four … cards with different names" is nought to
+  four, of a card type where one is printed.
+- As the opponent's question is reached, the cards found are revealed to the table, and the
+  opponent chooses one or two of them (`DecisionZone` `revealed`): the target opponent, or "an
+  opponent".
+- The chosen cards and the rest go where the card says: hand, graveyard, or onto the battlefield
+  tapped. Then the library is shuffled and the reveal ends.
+
+**Different names.** A question may now say its answer's cards must have different names
+(`CardsDecisionSpec.distinctNames`). It is carried on the pending question and checked in
+`decide`, since no one card is wrong on its own. The candidates are still the whole library.
+
+**The bot.** Searching, it takes its most valuable cards, one of each name. As the opponent, it
+hands the caster the least valuable card where the chosen go to hand. Where the chosen go to the
+graveyard, it takes the most valuable.
+
+Still unread: Ecological Appreciation (library and graveyard, "mana value X or less") and Threats
+Undetected (different powers).
+
+**Tests.** 4 engine tests:
+- Both fixtures read whole.
+- Intuition:
+  - exactly three are asked for;
+  - the opponent chooses from those three;
+  - the Forest chosen goes to hand, and the other two to the graveyard.
+- Gifts Ungiven:
+  - up to four;
+  - two Forests are refused, "different names";
+  - four different are taken;
+  - the two the opponent chose go to the graveyard and the other two to hand.
+- The bot as the opponent gives Intuition's caster the Grizzly Bears, the least valuable of the
+  three.
+
+Faults injected by hand: 5, all caught.
+- The names check off.
+- The flag not carried onto the question.
+- The bot's pick reversed.
+- The two destinations swapped.
+- Nothing revealed.
+
+The scripts tests, compile tests and pins: 6500 of 6500 pass. Web: typecheck clean.
+
+Coverage: 17,533 of 31,900 cards (+4 over D1339's 17,529), 40,367 of 59,888 lines (+4).
