@@ -50041,3 +50041,45 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6535 of 6535 pass.
 
 Coverage: 17,557 of 31,900 cards (+1 over D1349's 17,556), 40,398 of 59,888 lines (+1).
+
+## D1351 — Flash: a creature put in, kept for its cost less {2} or sacrificed
+
+Flash is on the second staples list: "You may put a creature card from your hand onto the
+battlefield. If you do, sacrifice it unless you pay its mana cost reduced by up to {2}."
+
+**The reading.** `flashIn` asks two questions:
+- **The creature card**, or none.
+- **The price.** As this question is reached the creature is put onto the battlefield (`onReach`),
+  so it enters before anything is asked. The question is then worked out from the first answer
+  (D1333): pay the creature's mana cost with up to {2} of its generic taken off (`reducedCostText`),
+  or sacrifice it. A cost the engine cannot pay, an X, offers only the sacrifice. With nothing put
+  in, nothing is asked.
+
+The reader takes "reduced by {2}" as well as "reduced by up to {2}", since the clause splitter
+drops the words "up to".
+
+**A price worked out from an earlier answer.** D1333 gave a question the answers so far, but only
+where it is asked (`askOrFinish`). The payment of a priced answer, its fallback, and the bot's
+preferred answer each worked the question out again without them, so Flash's price paid nothing.
+All of them now pass the answers given.
+
+**The bot** puts nothing in. When the free creature is worth its price is not a judgement it
+makes.
+
+**Tests.** 4 engine tests, Flash with two Hill Giants in hand and two Mountains:
+- It reads whole.
+- A Giant put in:
+  - it is on the battlefield before the price is asked;
+  - the price is "Pay {1}{R}";
+  - paid, it stays, and both Mountains are tapped.
+- Not paid: it is sacrificed.
+- Nothing put in: nothing is asked and nothing moves.
+
+Faults injected by hand: 3, all caught.
+- The payment working the price out without the answers.
+- No sacrifice.
+- No {2} off.
+
+The scripts tests, compile tests and pins: 6539 of 6539 pass.
+
+Coverage: 17,558 of 31,900 cards (+1 over D1350's 17,557), 40,399 of 59,888 lines (+1).
