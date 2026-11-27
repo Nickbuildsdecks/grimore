@@ -51462,3 +51462,44 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6656 of 6656 pass. Test typecheck clean.
 
 Coverage: 17,758 of 31,900 cards (+4 over D1386's 17,754), 40,710 of 59,888 lines (+4).
+
+## D1388 — "That much damage" to the hit player's side, and Questing Beast
+
+Questing Beast, a staple in every format it's legal in, now reads whole. Three pieces:
+
+**"To an opponent"**. "Whenever Questing Beast deals combat damage to an opponent, it deals that
+much damage to target planeswalker that player controls." The rewrite of "target … that player
+controls" to "defending player controls" only took "to a player". It now
+takes "to an opponent" too, and only where the sentence has a target: Rampaging Raptor's line has
+more after it and stays unread.
+
+**The hit player's side** (the "that much" readers, D903):
+- "It deals that much damage to each creature that player controls" (Balefire Dragon).
+- "… to each other opponent" (Gargantos, Kediss).
+
+The player is the one the combat damage hit, from `c.attacked`.
+
+**"Combat damage that would be dealt by creatures you control can't be prevented."**
+`CardScript.damageUnpreventable` (D3012, Leyline of Punishment) takes a second value,
+`'combat-by-your-creatures'`. `dealDamage` asks it about the damage's source when that damage is
+combat damage (`combatFrom` or `combat`): a creature controlled by the permanent's controller.
+Every prevention is skipped for that damage, protection included (CR 702.16e), as D1212 skips them
+for Skullcrack.
+
+Read whole now: Questing Beast, Balefire Dragon.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole.
+- Balefire's hit deals 3 to each of the opponent's two Bears.
+- The Beast's combat damage gets through a blocker's protection from green, and the blocker dies.
+- Without the Beast, the same protection still prevents a green creature's damage.
+
+Faults injected by hand: 3, all caught.
+- The combat-only kind ignored.
+- The controller's creatures hit instead.
+- "To an opponent" not rewritten.
+
+The scripts tests, compile tests and pins: 6660 of 6660 pass. Test typecheck and web typecheck
+clean.
+
+Coverage: 17,760 of 31,900 cards (+2 over D1387's 17,758), 40,713 of 59,888 lines (+3).
