@@ -67048,3 +67048,40 @@ Faults injected by hand: 1, the no-mode answer removed. Caught by two tests.
 The scripts tests, compile tests and pins: 6491 of 6491 pass, before the bot test was added.
 
 Coverage: 17,524 of 31,900 cards (+2 over D1337's 17,522), 40,356 of 59,888 lines (+6).
+
+## D1339 — a target that is a spell or a permanent: Venser and Unsubstantiate
+
+Venser, Shaper Savant, Unsubstantiate, Brutal Expulsion and Jeskai Revelation each point one
+target at "target spell or creature" or "target spell or permanent". The engine had no target that
+could be either: a spell on the stack and a permanent on the battlefield were different kinds.
+
+**The kind.** `TargetSpec.kind` gains `spell-or-permanent`. In `targeting.ts` the candidate is:
+- a spell if it is on the stack, by the spell checks, copies of spells included;
+- otherwise a permanent, by every battlefield check: hexproof, shroud, protection.
+
+`legalTargets` lists the stack's spells and then the battlefield. The reader's `filter` narrows the
+permanent half to creatures or nonland permanents, and "an opponent controls" narrows both halves.
+
+**The effect.** A spell goes back by D1337's `returnSpellToHand`, and a permanent by the ordinary
+bounce. The bot needed nothing new: it already ranks a target by whose it is, for a card on the
+stack as for one on the battlefield. The web table offers whatever candidates the engine lists, so
+it needed nothing either.
+
+Still unread on their other lines: Fatehold Charm (Empower), Press the Enemy (its free cast), Divide
+by Zero ("with mana value 1 or greater", and Learn).
+
+**Tests.** 4 engine tests, on a fixture Unsubstantiate:
+- It reads whole, its one target of the new kind.
+- With Grizzly Bears on the stack and another on the battlefield, both are offered, and no land is.
+- The Bears on the stack go back to their owner's hand, and the stack empties.
+- The Bears on the battlefield go back to their owner's hand.
+
+Faults injected by hand: 4, all caught.
+- The stack left out of the candidate list.
+- A spell refused as a target.
+- "Or creature" not checked.
+- The spell left on the stack.
+
+The scripts tests, compile tests and pins: 6496 of 6496 pass. Web: typecheck clean, 280 of 280.
+
+Coverage: 17,529 of 31,900 cards (+5 over D1338's 17,524), 40,363 of 59,888 lines (+7).
