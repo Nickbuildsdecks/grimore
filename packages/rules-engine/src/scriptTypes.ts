@@ -104,6 +104,13 @@ export interface TargetSpec {
    */
   readonly sameOwner?: true;
   /**
+   * "For each opponent, … up to one target creature **that player controls**" (D1375): no two of
+   * this spec's targets share a controller, so each opponent loses at most one. Checked across the
+   * chosen targets in `checkTargets`, as `sameOwner` is; the bot skips a candidate whose controller
+   * it has already taken.
+   */
+  readonly differentControllers?: true;
+  /**
    * "Up to three target creature cards **with total mana value 3 or less**" (D1354): the targets this
    * spec takes total at most this mana value. Checked across them in `checkTargets`, as `sameOwner`
    * is; the bot takes each while the total still allows it.

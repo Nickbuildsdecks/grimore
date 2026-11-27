@@ -51132,6 +51132,69 @@ describe('Tribute (D1374, CR 702.104a)', () => {
   });
 });
 
+describe('"For each opponent, … up to one target … that player controls" (D1375)', () => {
+  const GRASP = { name: 'Test Grasp', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'When Test Grasp enters, for each opponent, exile up to one target nonland permanent that player controls until Test Grasp leaves the battlefield.' };
+  const THIEF = { name: 'Test Thief', type_line: 'Creature — Human Rogue', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: "When Test Thief enters, for each opponent, return up to one target nonland permanent that player controls to its owner's hand." };
+  const QUAKE = { name: 'Test Quake', type_line: 'Creature \u2014 Elemental', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'When Test Quake enters, destroy any number of target creatures.' };
+  const ROWS = [GRASP, THIEF, QUAKE];
+  const deck = customDeck({ id: 'd1375', name: 'Grasp', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 12 }, { name: 'Plains', count: 44 }], data: ROWS as never[] });
+  const pod = (hand: string): GameState => advanceTo(arena({
+    format: 'pod', seats: 3, decks: { 0: 'd1375', 1: 'd1375', 2: 'd1375' }, deckSpecs: { d1375: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 1: ['Grizzly Bears', 'Grizzly Bears'], 2: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+  const bearsOf = (s: GameState, seat: SeatIndex) => ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+
+  it('both read whole, one target spec with no two of a controller', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read, r.name).toMatchObject({ ok: true, unread: [] });
+    }
+  });
+
+  it("one from each opponent is exiled until the Grasp leaves; two of one opponent's are refused", () => {
+    let s = cast(pod('Test Grasp'), 'Test Grasp');
+    const ones = bearsOf(s, 1);
+    const two = bearsOf(s, 2)[0]!;
+    // The enter trigger is waiting for its targets.
+    const choose = (targets: readonly string[]) => apply(s, { type: 'auto:choose', by: 0, targets: targets.map((id) => ({ kind: 'card', id })) } as Action);
+    expect(() => choose([ones[0]!, ones[1]!])).toThrow(/different player/);
+    s = choose([ones[0]!, two]);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect([s.instances[ones[0]!]!.zone, s.instances[two]!.zone, s.instances[ones[1]!]!.zone]).toEqual(['exile', 'exile', 'battlefield']);
+    s = drain(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Test Grasp'), toZone: 'graveyard' } as Action), 20);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect([s.instances[ones[0]!]!.zone, s.instances[two]!.zone]).toEqual(['battlefield', 'battlefield']);
+  });
+
+  it("a trigger's \"any number of\": the bot takes the opponents' creatures and none of its own (D1356 on this path)", () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd1375', 1: 'd1375', 2: 'd1375' }, deckSpecs: { d1375: deck.deck },
+      hands: { 0: ['Test Quake'] }, battlefield: { 0: ['Grizzly Bears'], 1: ['Grizzly Bears', 'Grizzly Bears'], 2: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = cast(s, 'Test Quake');
+    for (let i = 0; i < 4 && s.pendingChoice === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    const act = botAction(s, 0) as { type: string; targets?: { id: string }[] } | null;
+    expect(act?.type).toBe('auto:choose');
+    const seats = (act!.targets ?? []).map((t) => s.instances[t.id]!.zoneSeat);
+    expect(seats.length).toBeGreaterThan(0);
+    expect(seats.every((seat) => seat !== 0)).toBe(true);
+  });
+
+  it('the bot takes one from each opponent', () => {
+    let s = cast(pod('Test Thief'), 'Test Thief');
+    for (let i = 0; i < 4 && s.pendingChoice === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    const act = botAction(s, 0) as { type: string; targets?: { id: string }[] } | null;
+    expect(act?.type).toBe('auto:choose');
+    const controllers = (act!.targets ?? []).map((t) => s.instances[t.id]!.zoneSeat).sort();
+    expect(controllers).toEqual([1, 2]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

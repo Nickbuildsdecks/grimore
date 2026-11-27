@@ -407,10 +407,15 @@ function chooseTargets(
       const cmcOf = (t: Target): number => (t.kind === 'card' ? state.cardDefs[state.instances[t.id]?.defKey ?? '']?.cmc ?? 0 : 0);
       const room = spec.totalManaValueAtMost === undefined ? Infinity
         : spec.totalManaValueAtMost - chosen.slice(firstHere).reduce((sum, t) => sum + cmcOf(t), 0);
+      // And one for each controller (D1375): not a controller already taken for this spec.
+      const takenControllers = spec.differentControllers === true
+        ? new Set(chosen.slice(firstHere).map((t) => (t.kind === 'card' ? state.instances[t.id]?.zoneSeat : undefined)))
+        : null;
       const candidates = (play.candidates[i] ?? []).filter(
         (t) => !used.has(targetKey(t))
           && (anchorOwner === undefined || (t.kind === 'card' && state.instances[t.id]?.owner === anchorOwner))
-          && cmcOf(t) <= room,
+          && cmcOf(t) <= room
+          && (takenControllers === null || (t.kind === 'card' && !takenControllers.has(state.instances[t.id]?.zoneSeat))),
       );
       const base = spec.friendly === true
         ? (t: Target): number => friendlyRank(state, t, foes)
@@ -3145,10 +3150,27 @@ function aimPending(
     // Within a total mana value (D1354), each taken while it still fits.
     let room = spec.totalManaValueAtMost ?? Infinity;
     let took = 0;
+    const firstHere = chosen.length;
+    // One for each controller (D1375), as `chooseTargets` keeps it.
+    const takenControllers = new Set<SeatIndex | undefined>();
     for (const pick of pool) {
       if (took >= want) break;
+      const controller = pick.kind === 'card' ? state.instances[pick.id]?.zoneSeat : undefined;
+      if (spec.differentControllers === true && takenControllers.has(controller)) continue;
+      /*
+        "Any number of" (D1356) on a trigger: after the first, only while on the first pick's side,
+        and only one when that is its own permanent. The rule `chooseTargets` keeps for a play; this
+        path took the whole ceiling until D1375 found it.
+      */
+      if (spec.botWhileSameSide === true && took > 0) {
+        const first = chosen[firstHere]!;
+        const ownPermanent = spec.friendly !== true && score(first) < 0
+          && first.kind === 'card' && state.instances[first.id]?.zone === 'battlefield';
+        if (ownPermanent || Math.sign(score(pick)) !== Math.sign(score(first))) break;
+      }
       const cmc = pick.kind === 'card' ? state.cardDefs[state.instances[pick.id]?.defKey ?? '']?.cmc ?? 0 : 0;
       if (cmc > room) continue;
+      takenControllers.add(controller);
       room -= cmc;
       took += 1;
       used.add(targetKey(pick));

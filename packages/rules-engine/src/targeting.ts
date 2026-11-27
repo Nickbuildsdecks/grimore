@@ -307,6 +307,11 @@ export function checkTargets(
       const total = taken.reduce((sum, t) => sum + (t.kind === 'card' ? state.cardDefs[state.instances[t.id]?.defKey ?? '']?.cmc ?? 0 : 0), 0);
       if (total > spec.totalManaValueAtMost) return { ok: false, reason: `${spec.description} must total mana value ${spec.totalManaValueAtMost} or less` };
     }
+    // "That player controls", once for each opponent (D1375): a controller at most once.
+    if (spec.differentControllers === true) {
+      const controllers = taken.map((t) => (t.kind === 'card' ? state.instances[t.id]?.zoneSeat : undefined));
+      if (new Set(controllers).size < controllers.length) return { ok: false, reason: `${spec.description} must each be controlled by a different player` };
+    }
     // "From a single graveyard" (D1216): one owner for all of them.
     if (spec.sameOwner === true) {
       const owners = new Set(taken.map((t) => (t.kind === 'card' ? state.instances[t.id]?.owner : undefined)));

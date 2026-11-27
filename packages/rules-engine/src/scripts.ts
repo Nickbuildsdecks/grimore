@@ -5126,10 +5126,8 @@ const exileUntilItLeaves = (
   name: string, target: TargetSpec, optional = false,
 ): Pick<CardScript, 'name' | 'triggers'> => {
   const clause = `exile ${target.description} until ${name} leaves the battlefield`;
-  const exile = (c: EffectContext): GameState => {
-    const id = firstCardTarget(c);
-    return id === null ? c.state : exileUntilLeaves(c.state, id, c.source);
-  };
+  // Every card target (D1375): one for most cards, one for each opponent for Grasp of Fate.
+  const exile = (c: EffectContext): GameState => foldCardTargets(c, (state, id) => exileUntilLeaves(state, id, c.source));
   return {
   name,
   triggers: [
@@ -19210,7 +19208,7 @@ function exileUntilLeavesShapeFor(
   // "You may exile" (D575) is the same pair with a question in front of the first half: Angel of
   // Sanctions and Suspension Field print it. Group 1 is the "may", 2 the target, 3 the duration.
   const exiling = new RegExp(
-    `^When ${self} ${ENTERS}, (you may )?exile (target .+?|another target .+?)`
+    `^When ${self} ${ENTERS}, (you may )?(?:for each opponent, exile up to one (target .+?) that player controls|exile (target .+?|another target .+?))`
     + `(\\s+until ${self} leaves the battlefield)?\\.?$`,
     'i',
   );
@@ -19222,8 +19220,18 @@ function exileUntilLeavesShapeFor(
   }
   if (line === undefined || matched === null) return null;
 
-  const spec = targetSpecFrom(matched[2]!, false);
-  if (spec === null || !pointsAtAPermanent(spec)) return null;
+  /*
+    "For each opponent, exile up to one target nonland permanent that player controls until ~
+    leaves the battlefield" (D1375, Grasp of Fate, Bronzebeak Foragers): the target an opponent
+    controls, any number of them, no two with one controller.
+  */
+  const perOpponent = matched[2] !== undefined;
+  const single = targetSpecFrom(perOpponent ? `${matched[2]!} an opponent controls` : matched[3]!, false);
+  if (single === null || !pointsAtAPermanent(single)) return null;
+  const spec: TargetSpec = perOpponent
+    ? { ...single, count: ANY_NUMBER_OF_TARGETS, optional: true, differentControllers: true, botWhileSameSide: true,
+      description: `up to one ${matched[2]!} each opponent controls` }
+    : single;
 
   // The return, either inside the `until` clause or as its own printed line.
   const returning = lines.find((other) => new RegExp(
@@ -19231,7 +19239,7 @@ function exileUntilLeavesShapeFor(
     + ` under its owner's control\\.?$`,
     'i',
   ).test(plain(other).trim()));
-  if (matched[3] === undefined && returning === undefined) return null;
+  if (matched[4] === undefined && returning === undefined) return null;
 
   const { name: _ignored, ...pair } = exileUntilItLeaves(def.name, spec, matched[1] !== undefined);
   // See the docblock: a creature exiled by a card with no body of its own. Both tests matter —
@@ -30504,6 +30512,23 @@ function abilityCopyEffect(clause: string): ReadEffect | null {
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  /*
+    "For each opponent, return up to one target nonland permanent that player controls to its
+    owner's hand" (D1375, Enigma Thief), "… tap up to one target creature that player controls"
+    (Hapatra). The clause read as "any number of target <kind>s an opponent controls", and its one
+    spec told that no two of its targets may share a controller (`differentControllers`).
+  */
+  const perOpponent = /^for each opponent, (return|tap|untap|destroy|exile) up to one target (.+?) that player controls( to its owner's hand)?$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (perOpponent !== null) {
+    const plural = perOpponent[2]!.replace(/\b(permanent|creature|artifact|enchantment|planeswalker|land)\b/gi, '$1s');
+    const rest = perOpponent[3] === undefined ? '' : " to their owners' hands";
+    const inner = readEffect(`${perOpponent[1]!} any number of target ${plural} an opponent controls${rest}`, name, where);
+    const only = inner?.targets?.length === 1 ? inner.targets[0]! : undefined;
+    if (inner !== null && only !== undefined && (only.count ?? 1) === ANY_NUMBER_OF_TARGETS && (inner.decisions ?? []).length === 0) {
+      return { ...inner, targets: [{ ...only, differentControllers: true, description: `up to one target ${perOpponent[2]!} each opponent controls` }] };
+    }
+    return null;
+  }
   /*
     "Return up to three target creature cards with total mana value 3 or less from your graveyard to
     the battlefield" (D1354): the clause read without the total, and the total put on its one target

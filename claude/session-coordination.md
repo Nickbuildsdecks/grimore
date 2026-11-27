@@ -290,3 +290,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1371 pushed in f331b42. D1372 mill-pick or else (millPickOrElse): scripts.ts only.
 - D1372 pushed in f30c9ff. D1373 stacked negations in the look-at-top reveal (handCardTypeTest): scripts.ts, compile.test.ts pin.
 - D1373 pushed in 6fc1a86. D1374 tribute (entersChoice 'tribute', TRIBUTED marker, condition): scriptTypes, effects, automation, scripts.ts.
+- D1374 pushed in e94ff1c. D1375 per-opponent targets (TargetSpec.differentControllers, both bot target paths, D1356 side rule on the trigger path): scriptTypes, targeting, bot, scripts.ts. Sweep 103001 running on e94ff1c.
