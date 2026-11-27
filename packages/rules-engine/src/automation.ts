@@ -359,6 +359,10 @@ export function sacrificeOptions(
               : kind === 'permanent' ? true
                 : kind === 'nontoken-permanent' ? !inst.isToken
                   : kind === 'nonland-permanent' ? !land
+                  // D1343's three.
+                  : kind === 'nontoken-creature' ? ch.isCreature && !inst.isToken
+                  : kind === 'nontoken-artifact' ? artifact && !inst.isToken
+                  : kind === 'noncreature-artifact' ? artifact && !ch.isCreature
                   : kind === 'enchantment' ? hasType(ch.typeLine, 'enchantment')
                     : ch.isCreature;
     if (!rightKind) return false;
@@ -398,6 +402,9 @@ export function sacrificeWords(
     case 'permanent': return 'permanent';
     case 'nontoken-permanent': return 'nontoken permanent';
     case 'nonland-permanent': return 'nonland permanent';
+    case 'nontoken-creature': return 'nontoken creature';
+    case 'nontoken-artifact': return 'nontoken artifact';
+    case 'noncreature-artifact': return 'noncreature artifact';
     case 'enchantment': return 'enchantment';
     default: return 'creature';
   }

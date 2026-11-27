@@ -36447,6 +36447,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let returnsSelf = false;
   let returnsOthers: NonNullable<AbilityCost['returnToHand']> | null = null;
   let sacrificedSubtype: string | null = null;
+  let sacrificedColours: readonly Color[] | null = null;
   let sacrificeCount = 1;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -36670,6 +36671,24 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       if (counted.subtype !== undefined) sacrificedSubtype = counted.subtype;
       continue;
     }
+    /*
+      A colour, or two (D1343): "Sacrifice a white creature", "… a red or white creature" (D686's
+      \`sacrificeColours\`, Natural Order's, on an ability's cost). And three narrower kinds: a
+      nontoken creature, a nontoken artifact, a noncreature artifact.
+    */
+    const coloured = /^Sacrifice (an?|another) (white|blue|black|red|green)(?: or (white|blue|black|red|green))? creature$/i.exec(component);
+    if (coloured !== null) {
+      if (sacrifices !== null) return null;
+      sacrifices = coloured[1]!.toLowerCase() === 'another' ? 'another-creature' : 'creature';
+      sacrificedColours = [coloured[2]!, ...(coloured[3] === undefined ? [] : [coloured[3]])].map((word) => COLOUR_WORDS[word.toLowerCase()]!);
+      continue;
+    }
+    const narrower = /^Sacrifice an? (nontoken creature|nontoken artifact|noncreature artifact)$/i.exec(component);
+    if (narrower !== null) {
+      if (sacrifices !== null) return null;
+      sacrifices = narrower[1]!.toLowerCase().replace(' ', '-') as 'nontoken-creature' | 'nontoken-artifact' | 'noncreature-artifact';
+      continue;
+    }
     const typed = /^Sacrifice (an?|another) ([A-Z][a-z]+)( creature)?$/.exec(component);
     if (typed !== null) {
       if (sacrifices !== null) return null;
@@ -36694,7 +36713,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       permanent, an enchantment, another artifact, another creature or artifact — and a basic land
       type or Desert/Gate as a land narrowed by its subtype ("Sacrifice a Forest").
     */
-    const wider = /^Sacrifice (an?|another) (land|artifact or land|token|permanent|nontoken permanent|enchantment|artifact|creature or artifact|artifact or creature|Plains|Island|Swamp|Mountain|Forest|Desert|Gate)$/.exec(component);
+    const wider = /^Sacrifice (an?|another) (land|artifact or land|token|permanent|nontoken permanent|nonland permanent|enchantment|artifact|creature or artifact|artifact or creature|Plains|Island|Swamp|Mountain|Forest|Desert|Gate)$/.exec(component);
     // "An artifact" alone is the older row below and keeps its reading.
     if (wider !== null && !(wider[1] !== 'another' && wider[2] === 'artifact')) {
       if (sacrifices !== null) return null;
@@ -36706,6 +36725,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
         token: ['token', null],
         permanent: ['permanent', null],
         'nontoken permanent': ['nontoken-permanent', null],
+        // Magmaw (D1343): the counted kind of D732, one at a time.
+        'nonland permanent': ['nonland-permanent', null],
         enchantment: ['enchantment', null],
         artifact: ['artifact', 'another-artifact'],
         'creature or artifact': ['artifact-or-creature', 'another-creature-or-artifact'],
@@ -36814,6 +36835,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(discardsHand ? { discardHand: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
+    ...(sacrificedColours === null ? {} : { sacrificeColours: sacrificedColours }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
     ...(removes === null ? {} : { removeCounter: removes }),
     ...(removesX === null ? {} : { removeXCounters: removesX }),

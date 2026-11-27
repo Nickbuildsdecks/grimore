@@ -49692,6 +49692,55 @@ describe('mana as much as what was sacrificed: Priest of Yawgmoth and Sacrifice 
   });
 });
 
+describe('sacrifice costs by colour and the narrower kinds (D1343)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra });
+  const COLOURED = card('Test Supplicant', 'Creature — Human', '{1}, Sacrifice a red or white creature: Draw a card.', { power: '1', toughness: '1', colors: ['G'] });
+  const ARTIFACT = card('Test Smelter', 'Artifact', '{1}, Sacrifice a noncreature artifact: Draw a card.');
+  const ROCK = card('Test Rock', 'Artifact', '');
+  const THOPTER = card('Test Thopter', 'Artifact Creature — Thopter', 'Flying', { power: '0', toughness: '2' });
+  const PAWN = card('Test Pawn', 'Creature — Human', '', { power: '1', toughness: '1', colors: ['W'] });
+  const ROWS = [COLOURED, ARTIFACT, ROCK, THOPTER, PAWN];
+  const deck = customDeck({ id: 'd1343', name: 'Sac', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Raging Goblin', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 42 }], data: ROWS as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1343', 1: 'd1343' }, deckSpecs: { d1343: deck.deck },
+    battlefield: { 0: ['Test Supplicant', 'Test Smelter', 'Test Rock', 'Test Thopter', 'Test Pawn', 'Raging Goblin', 'Grizzly Bears', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, name: string): string[] => {
+    const id = find(s, 0, 'battlefield', name);
+    return [...(legalActions(s, 0).plays.find((p) => p.card === id && p.kind === 'activate')?.sacrificeOptions ?? [])].map((x) => nameOf(s, x)).sort();
+  };
+
+  it('reads the colours and the kinds', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(COLOURED as never);
+    expect(read.ok && read.script?.abilities?.[0]?.cost).toMatchObject({ sacrifice: 'creature', sacrificeColours: ['R', 'W'] });
+    const other = compileCard(ARTIFACT as never);
+    expect(other.ok && other.script?.abilities?.[0]?.cost.sacrifice).toBe('noncreature-artifact');
+    for (const text of ['{1}, Sacrifice a nontoken creature: Draw a card.', '{1}, Sacrifice a nonland permanent: Draw a card.']) {
+      expect(compileCard(card('Test Read', 'Artifact', text) as never)).toMatchObject({ ok: true, unread: [] });
+    }
+  });
+
+  it('a red or white creature: the Goblin and the Pawn, not the Bears', () => {
+    expect(offered(table(), 'Test Supplicant')).toEqual(['Raging Goblin', 'Test Pawn']);
+  });
+
+  it('a noncreature artifact: the Rock and the Smelter itself, not the Thopter', () => {
+    expect(offered(table(), 'Test Smelter')).toEqual(['Test Rock', 'Test Smelter']);
+  });
+
+  it('an off-colour sacrifice is refused, an on-colour one paid', () => {
+    const s = table();
+    const supplicant = find(s, 0, 'battlefield', 'Test Supplicant');
+    const play = legalActions(s, 0).plays.find((p) => p.card === supplicant && p.kind === 'activate')!;
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: supplicant, abilityIndex: play.abilityIndex!, sacrifice: bears } as Action)).toThrow();
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    const t = apply(s, { type: 'auto:activate', by: 0, card: supplicant, abilityIndex: play.abilityIndex!, sacrifice: goblin } as Action);
+    expect(t.instances[goblin]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
