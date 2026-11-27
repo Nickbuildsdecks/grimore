@@ -15413,6 +15413,24 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     const costText = unless[1]!.trim();
     const SACRIFICE = 'Sacrifice it';
     const sacrificeSelf = (c: EffectContext) => (c.state.instances[c.source]?.zone === 'battlefield' ? sacrifice(c.state, [c.source]) : c.state);
+    /*
+      "Unless you mill two cards" (D1384, Deep Spawn): a cost with no question, offered only while
+      the library holds that many, since a cost can't be paid in part (CR 118.3).
+    */
+    const milled = /^mill (a card|one card|two cards|three cards|four cards)$/i.exec(costText);
+    if (milled !== null) {
+      const n = countFrom(milled[1]!.split(' ')[0]!.replace(/^a$/i, 'one'))!;
+      const label = costText.charAt(0).toUpperCase() + costText.slice(1);
+      return {
+        decisions: [{
+          who: 'controller', prompt: `${label}, or sacrifice it?`, options: [label, SACRIFICE],
+          optionsFor: (state, chooser) => (listAt(state, zoneKey(chooser, 'library')).length >= n ? [label, SACRIFICE] : [SACRIFICE]),
+          best: () => label,
+        }],
+        effect: (c) => (chosenOption(c) === label && listAt(c.state, zoneKey(c.controller, 'library')).length >= n
+          ? mill(c.state, c.controller, n) : sacrificeSelf(c)),
+      };
+    }
     const random = /^discard (a|an|one|two|three) cards? at random$/i.exec(costText);
     const cost = readEffect(costText, name, null);
     const label = costText.charAt(0).toUpperCase() + costText.slice(1);
@@ -16697,6 +16715,38 @@ function selfEffect(
         }],
         effect: (c) => (chosenOption(c) === pay || c.state.instances[c.source]?.zone !== 'battlefield' ? c.state
           : tapped ? tap(c.state, c.source) : moveToGraveyard(c.state, [c.source])),
+      };
+    }
+  }
+  /*
+    And two more forfeits for the same price (D1384): "~ deals 8 damage to you unless you pay
+    {G}{G}{G}{G}" (Force of Nature, Minion of Tevesh Szat), and "~ phases out unless you pay {U}{U}"
+    (Vaporous Djinn, Warping Wurm). Declined, the damage is dealt by the permanent, or it phases
+    out; either way it stays.
+  */
+  const forfeited = new RegExp(
+    `^(?:${self}|it) (?:deals (\\d+) damage to you|(phases out)) unless you pay ((?:\\{[^}]+\\})+)$`, 'i',
+  ).exec(text);
+  if (forfeited !== null) {
+    const printed = forfeited[3]!;
+    const parsed = parseManaCost(printed);
+    if (parsed.unsupported === undefined && !parsed.x) {
+      const pay = `Pay ${printed}`;
+      const damage = forfeited[1] === undefined ? null : Number(forfeited[1]);
+      const forfeit = damage === null ? 'It phases out' : `Take ${damage} damage`;
+      return {
+        decisions: [{
+          who: 'controller',
+          prompt: `${pay}, or ${damage === null ? 'this permanent phases out' : `it deals ${damage} damage to you`}?`,
+          options: [forfeit, pay],
+          payIfChosen: { option: pay, cost: printed },
+          best: () => pay,
+        }],
+        effect: (c) => {
+          if (chosenOption(c) === pay) return c.state;
+          if (damage === null) return c.state.instances[c.source]?.zone === 'battlefield' ? phaseOut(c.state, [c.source]) : c.state;
+          return dealDamage(c.state, { kind: 'player', seat: c.controller }, damage, { controller: c.controller, source: c.source });
+        },
       };
     }
   }

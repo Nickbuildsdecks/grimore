@@ -51616,6 +51616,53 @@ describe('Cost reductions on an attack, a hand, a board and a graveyard (D1383)'
   });
 });
 
+describe('Upkeep prices against damage, phasing and a mill (D1384)', () => {
+  const FORCE = { name: 'Test Force', type_line: 'Creature — Elemental', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '8', toughness: '8',
+    oracle_text: 'At the beginning of your upkeep, Test Force deals 8 damage to you unless you pay {G}{G}.' };
+  const DJINN = { name: 'Test Djinn', type_line: 'Creature — Djinn', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '3', toughness: '4',
+    oracle_text: 'At the beginning of your upkeep, Test Djinn phases out unless you pay {U}.' };
+  const SPAWN = { name: 'Test Spawn', type_line: 'Creature — Homarid', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '6', toughness: '6',
+    oracle_text: 'At the beginning of your upkeep, sacrifice Test Spawn unless you mill two cards.' };
+  const ROWS = [FORCE, DJINN, SPAWN];
+  const deck = customDeck({ id: 'd1384', name: 'Upkeep', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 27 }, { name: 'Island', count: 27 }], data: ROWS as never[] });
+  const upkeep = (mine: readonly string[]): GameState => drain(advanceTo(arena({
+    decks: { 0: 'd1384', 1: 'd1384' }, deckSpecs: { d1384: deck.deck }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'upkeep'), 40);
+  const answer = (s: GameState, option: string): GameState => drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action), 40);
+
+  it('all three read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Force: paid, no damage; with no mana there is no question and the 8 is dealt', () => {
+    let s = upkeep(['Test Force', 'Forest', 'Forest']);
+    expect(s.pendingDecision?.options).toEqual(['Take 8 damage', 'Pay {G}{G}']);
+    s = answer(s, 'Pay {G}{G}');
+    expect(life(s, 0)).toBe(20);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest' && s.instances[id]!.tapped).length).toBe(2);
+    expect(life(upkeep(['Test Force']), 0)).toBe(12);
+  });
+
+  it('Djinn: declined, it phases out and stays', () => {
+    let s = upkeep(['Test Djinn', 'Island']);
+    const djinn = find(s, 0, 'battlefield', 'Test Djinn');
+    s = answer(s, 'It phases out');
+    expect(s.instances[djinn]!.zone).toBe('phased');
+  });
+
+  it('Spawn: milling two keeps it, declining sacrifices it', () => {
+    let s = upkeep(['Test Spawn']);
+    const spawn = find(s, 0, 'battlefield', 'Test Spawn');
+    const yard = ids(s, 0, 'graveyard').length;
+    const kept = answer(s, 'Mill two cards');
+    expect(kept.instances[spawn]!.zone).toBe('battlefield');
+    expect(ids(kept, 0, 'graveyard').length).toBe(yard + 2);
+    s = answer(s, 'Sacrifice it');
+    expect(s.instances[spawn]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
