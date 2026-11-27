@@ -50772,6 +50772,31 @@ describe('"As long as enchanted permanent is a creature, it gets …" (D1365)', 
   });
 });
 
+describe('"As long as you control a Jace planeswalker" (D1366)', () => {
+  const SENTINEL = { name: 'Test Sentinel', type_line: 'Artifact Creature — Soldier', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: "As long as you control a Jace planeswalker, Test Sentinel gets +1/+0 and can't be blocked." };
+  const JACE = { name: 'Test Jace', type_line: 'Legendary Planeswalker — Jace', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', loyalty: '3', oracle_text: '+1: Draw a card.' };
+  const CHANDRA = { name: 'Test Chandra', type_line: 'Legendary Planeswalker — Chandra', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', loyalty: '3', oracle_text: '+1: Draw a card.' };
+  const ROWS = [SENTINEL, JACE, CHANDRA];
+  const deck = customDeck({ id: 'd1366', name: 'Sentinel', entries: [...ROWS.map((r) => ({ name: r.name, count: 1 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Island', count: 49 }], data: ROWS as never[] });
+  const table = (others: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1366', 1: 'd1366' }, deckSpecs: { d1366: deck.deck },
+    battlefield: { 0: ['Test Sentinel', ...others] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SENTINEL as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with a Jace: 2/3; with no planeswalker or only a Chandra: 1/3', () => {
+    for (const [others, size] of [[['Test Jace'], 2], [[], 1], [['Test Chandra'], 1]] as const) {
+      const s = table(others);
+      expect(power(s, find(s, 0, 'battlefield', 'Test Sentinel')), others.join() || 'none').toBe(size);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -38768,11 +38768,18 @@ function boardCondition(text: string): NonNullable<PumpOptions['while']> | null 
   } else if (/^permanents?$/i.test(what)) {
     types = [];
   } else {
-    const sub = /^([A-Z][A-Za-z'-]*?)(?: (creature|permanent)s?)?$/.exec(what);
+    const sub = /^([A-Z][A-Za-z'-]*?)(?: (creature|permanent|planeswalker)s?)?$/.exec(what);
     if (sub === null) return null;
-    const single = isCreatureType(sub[1]!) ? sub[1]! : singularCreatureType(sub[1]!)
+    /*
+      "A Jace planeswalker" (D1366): Jace's Sentinel, Dovin's Automaton, the planeswalker decks'
+      creatures. The capitalised word before "planeswalker" is a planeswalker type (CR 205.3j),
+      asked of a planeswalker's type line.
+    */
+    const walker = sub[2]?.toLowerCase() === 'planeswalker';
+    const single = walker ? sub[1]! : isCreatureType(sub[1]!) ? sub[1]! : singularCreatureType(sub[1]!)
       ?? (['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Equipment', 'Aura', 'Vehicle', 'Gate', 'Desert'].includes(sub[1]!) ? sub[1]! : null);
     if (single === null) return null;
+    if (walker) types = ['planeswalker'];
     // "You control a Plains" with nothing else is the older row's.
     if (!other && whose === 'you' && atLeast === 1 && colour === undefined && !nontoken && sub[2] === undefined) return null;
     subtype = single;

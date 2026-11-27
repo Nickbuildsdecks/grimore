@@ -281,3 +281,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1362 pushed in d5fa705. D1363 Expropriate (voteGroup money questions as DecisionSpecOf): scripts.ts only.
 - D1363 pushed in e5f8763. D1364 total mana value of a group (totalAmong): scripts.ts only.
 - D1364 pushed in 14c7d1a. D1365 enchanted permanent is a creature (onlyKind 'creature', hostConditionalParts): characteristics, scripts.ts.
+- D1365 pushed in ec2c10c. D1366 a <type> planeswalker condition (boardCondition): scripts.ts only.
