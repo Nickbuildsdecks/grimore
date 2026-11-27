@@ -51290,3 +51290,46 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6639 of 6639 pass. Test typecheck clean.
 
 Coverage: 17,713 of 31,900 cards (+4 over D1381's 17,709), 40,655 of 59,888 lines (+13).
+
+## D1383 — Cost reductions on an attack, a hand, a board and a graveyard
+
+"This spell costs {2} less to cast if a creature is attacking you" (Red Alert!, Heroic Return, Swat
+Away). D601 and D611 read cost reductions with "if", "for each" and "where X is", the condition
+asked through `interveningConditionFor`. These conditions were missing.
+
+**Conditions**, read anywhere an "if" is (cost reductions and intervening ifs alike):
+- "A creature is attacking you". An attack on your planeswalker isn't an attack on you
+  (CR 506.3).
+- "There are no land cards in your hand" (Forceful Cultivator), and "… no instant or sorcery cards
+  …" (Saiba Syphoner).
+- "Your opponents control N or more creatures", counted across all opponents (Lashwhip Predator).
+- "You have N or more cards in your graveyard" (Capricious Hellraiser).
+
+**Counts**, for "for each":
+- "Creature attacking you" (Sentry Bot).
+- "Noncreature, nonland card in your graveyard" (Ravenous Cosmozoan, Serpent of the Pass).
+
+**"During"**: "costs {1} less to cast during your turn" (Mental Modulation) and "… during your end
+step" (Closing Statement).
+
+12 of the cost lines read. Read whole now: Red Alert!, Forceful Cultivator, Lashwhip Predator,
+Mental Modulation, Closing Statement, Ravenous Cosmozoan.
+
+**Tests.** 4 engine tests on six fixtures:
+- The fixtures read whole.
+- An attack on you counts; one on your planeswalker doesn't.
+- No land in hand; three or more opposing creatures and not two.
+- During your turn and not an opponent's; two cards in the graveyard; two instants counted where
+  a creature and a land are not.
+
+Faults injected by hand: 6, all caught.
+- The planeswalker attack counted.
+- The hand test inverted.
+- The threshold off by one.
+- "Your turn" not checked.
+- Creatures counted.
+- The graveyard threshold wrong.
+
+The scripts tests, compile tests and pins: 6643 of 6643 pass. Test typecheck clean.
+
+Coverage: 17,719 of 31,900 cards (+6 over D1382's 17,713), 40,666 of 59,888 lines (+11).
