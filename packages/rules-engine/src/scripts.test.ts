@@ -51835,6 +51835,38 @@ describe('"That much damage" to the hit player\'s side, and Questing Beast (D138
   });
 });
 
+describe('A card that calls itself he or she on any line (D1389)', () => {
+  const GARGANT = { name: 'Test Gargant', type_line: 'Legendary Creature — Giant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '0',
+    oracle_text: 'Test Gargant enters with three +1/+1 counters on him.' };
+  const BRUIN = { name: 'Test Bruin', type_line: 'Legendary Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: '{1}: Put a +1/+1 counter on Test Bruin. She gains trample until end of turn.' };
+  const ROWS = [GARGANT, BRUIN];
+  const deck = customDeck({ id: 'd1389', name: 'Gargant', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 56 }], data: ROWS as never[] });
+  const table = (over: { hand?: readonly string[]; mine?: readonly string[] }): GameState => advanceTo(arena({
+    decks: { 0: 'd1389', 1: 'd1389' }, deckSpecs: { d1389: deck.deck }, hands: { 0: [...(over.hand ?? [])] }, battlefield: { 0: [...(over.mine ?? [])] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Gargant enters with three counters on "him", so it is a 3/3', () => {
+    let s = table({ hand: ['Test Gargant'] });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gargant') } as Action)), 20);
+    const gargant = find(s, 0, 'battlefield', 'Test Gargant');
+    expect(s.instances[gargant]!.counters['+1/+1']).toBe(3);
+  });
+
+  it('"She gains trample" is the Bruin itself', () => {
+    let s = table({ mine: ['Test Bruin', 'Forest'] });
+    const bruin = find(s, 0, 'battlefield', 'Test Bruin');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: bruin, abilityIndex: 0 } as Action)), 20);
+    expect(s.instances[bruin]!.counters['+1/+1']).toBe(1);
+    expect(characteristicsOf(s, s.instances[bruin]!).keywords.has('trample')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -41901,6 +41901,20 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
  * the dash is the whole ability; some readers strip the label themselves, and this covers the rest.
  */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  const printed = lineScriptForPrinted(line, name);
+  if (printed !== null) return printed;
+  /*
+    A character card's pronouns for itself on any line (D1389), as D1380 reads them on a trigger:
+    "Gargantos enters with three +1/+1 counters on him", Gideon's "Prevent all damage that would be
+    dealt to him this turn", "He gains menace until end of turn". Asked only when the printed line
+    did not read, so no line that reads today changes.
+  */
+  const plainLine = plain(line);
+  const asIt = selfPronouns(plainLine);
+  return asIt === plainLine ? null : lineScriptForPrinted(asIt, name);
+}
+
+function lineScriptForPrinted(line: string, name: string): Partial<CardScript> | null {
   /*
     "When ~ dies, if it was a creature, …" (D837, the Enduring cycle): the death of the card as a
     creature, read as the same line without the condition and with the death trigger narrowed to a
