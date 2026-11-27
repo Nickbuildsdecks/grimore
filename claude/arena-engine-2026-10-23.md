@@ -50008,3 +50008,36 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6531 of 6531 pass, before the exile test was added.
 
 Coverage: 17,556 of 31,900 cards (+1 over D1348's 17,555), 40,397 of 59,888 lines (+1).
+
+## D1350 — Scroll Rack: cards from hand traded for the top of the library
+
+Scroll Rack is on the second staples list: "{1}, {T}: Exile any number of cards from your hand face
+down. Put that many cards from the top of your library into your hand. Then look at the exiled
+cards and put them on top of your library in any order."
+
+**The reading.** `scrollRack` reads the three sentences as one effect:
+- **One question.** The cards from hand, nought to all of them, in the order they go back, the first
+  chosen on top. The prompt says so, and the answer's order is kept.
+- **The cards that were on top** go to hand. They are put there, not drawn, so nothing that counts
+  draws sees them.
+- **The chosen cards** go on top in that order.
+- **The face-down exile between the steps** is not modelled. Nothing can happen between them, so it
+  has no game in it.
+
+**The bot** chooses nothing: what to put back is a plan it cannot make. Activated by it, the Rack
+costs {1} and changes nothing.
+
+**Tests.** 3 engine tests:
+- A fixture reads whole.
+- With Hill Giant and Grizzly Bears in hand, both chosen, Bears first:
+  - the library's top two are the Bears and then the Giant;
+  - the two cards that were there are in hand.
+- None chosen: the hand is unchanged.
+
+Faults injected by hand: 2, both caught.
+- The order reversed.
+- The chosen cards put on top before the top cards were taken, which hands them straight back.
+
+The scripts tests, compile tests and pins: 6535 of 6535 pass.
+
+Coverage: 17,557 of 31,900 cards (+1 over D1349's 17,556), 40,398 of 59,888 lines (+1).
