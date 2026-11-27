@@ -24334,6 +24334,37 @@ function eventRelativeEffect(
       const read = tokenEffect(`create X ${measuredTokens[1]!}`, name, undefined, undefined, measure);
       if (read !== null) return read;
     }
+    /*
+      And any other sentence sized "where X is its power" or "… that creature's power" (D1387):
+      Hamletback Goliath's "you may put X +1/+1 counters on ~, where X is that creature's power",
+      Kresh the Bloodbraided's, Arni's "~ gets +X/+0 until end of turn". X is marked as "that many"
+      is (D903) and the effect handed the event creature's size as that amount; a pump of the card
+      itself is read here, since a pump's X is not a count the marker readers take.
+    */
+    const whereSized = /^(.+), where X is (?:its|that creature's) (power|toughness)$/i.exec(text);
+    if (whereSized !== null && /\bX\b/.test(whereSized[1]!) && !/\bthat (?:many|much)\b|\u000e/i.test(whereSized[1]!)) {
+      const which = whereSized[2]!.toLowerCase() as 'power' | 'toughness';
+      const measure = (c: EffectContext): number => {
+        const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+        return Math.max(0, inst !== undefined && inst.zone === 'battlefield'
+          ? characteristicsOf(c.state, inst)[which]
+          : c.subjectStats?.[which] ?? 0);
+      };
+      const selfPump = new RegExp(`^(?:${selfRef(name)}) gets \\+X/\\+(X|0) until end of turn$`, 'i').exec(whereSized[1]!);
+      if (selfPump !== null) {
+        const both = selfPump[1] === 'X';
+        return { effect: (c) => {
+          const n = measure(c);
+          return n <= 0 ? c.state : pump(c.state, [c.source], c.source, c.controller, { power: n, toughness: both ? n : 0 });
+        } };
+      }
+      const body = markPaidX(whereSized[1]!);
+      const read = readEffect(body, name, null) ?? optionalEffect(body, (t) => readEffect(t, name, null));
+      if (read !== null && read.beforeDecisions === undefined && read.targets === undefined) {
+        const sized = (fn: EffectFn): EffectFn => (c) => fn({ ...c, eventAmount: measure(c) });
+        return { ...read, effect: sized(read.effect), ...(read.immediate === undefined ? {} : { immediate: sized(read.immediate) }) };
+      }
+    }
   }
 
   // Kambal: "that player loses 2 life and you gain 2 life".

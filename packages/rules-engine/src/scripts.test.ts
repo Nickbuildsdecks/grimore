@@ -51746,6 +51746,44 @@ describe('"Where X is ~\'s power" on a pump, and the grant printed first (D1386)
   });
 });
 
+describe('"Where X is that creature\'s power" on an event (D1387)', () => {
+  const GOLIATH = { name: 'Test Goliath', type_line: 'Creature — Giant', mana_cost: '{6}{R}', cmc: 7, colors: ['R'], layout: 'normal', power: '6', toughness: '6',
+    oracle_text: "Whenever another creature enters, you may put X +1/+1 counters on Test Goliath, where X is that creature's power." };
+  const ARNI = { name: 'Test Arni', type_line: 'Creature — Human', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: "Whenever another creature you control enters, Test Arni gets +X/+0 until end of turn, where X is that creature's power." };
+  const BRUTE = { name: 'Test Brute', type_line: 'Creature — Ogre', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' };
+  const ROWS = [GOLIATH, ARNI, BRUTE];
+  const deck = customDeck({ id: 'd1387', name: 'Goliath', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 54 }], data: ROWS as never[] });
+  const castBrute = (mine: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1387', 1: 'd1387' }, deckSpecs: { d1387: deck.deck }, battlefield: { 0: [mine] }, hands: { 0: ['Test Brute'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Brute') } as Action));
+    for (let i = 0; i < 4 && s.stackOrder.length > 0 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [GOLIATH, ARNI]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Goliath takes three counters for a 3/3 that enters', () => {
+    let s = castBrute('Test Goliath');
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action);
+    s = drain(s, 20);
+    const goliath = find(s, 0, 'battlefield', 'Test Goliath');
+    expect(s.instances[goliath]!.counters['+1/+1']).toBe(3);
+  });
+
+  it('Arni gets +3/+0 for it', () => {
+    const s = drain(castBrute('Test Arni'), 20);
+    const arni = find(s, 0, 'battlefield', 'Test Arni');
+    expect(characteristicsOf(s, s.instances[arni]!).power).toBe(4);
+    expect(characteristicsOf(s, s.instances[arni]!).toughness).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
