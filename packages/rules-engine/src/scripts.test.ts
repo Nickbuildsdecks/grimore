@@ -50509,6 +50509,58 @@ describe('"For each creature destroyed or exiled this way, its controller create
   });
 });
 
+describe('Several chosen targets, and persist or undying handed out (D1360)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text });
+  const PANOPLY = card('Test Panoply', 'Choose any number of target creatures. Put a +1/+1 counter on each of them.');
+  const UNDYING = card('Test Undying', 'Target creature gains undying until end of turn.');
+  const PERSIST = card('Test Persist', 'Target creature gains persist until end of turn.');
+  const ROWS = [PANOPLY, UNDYING, PERSIST];
+  const deck = customDeck({ id: 'd1360', name: 'Panoply', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const table = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1360', 1: 'd1360' }, deckSpecs: { d1360: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: ['Grizzly Bears', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bears = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+  const kill = (s: GameState, id: string): GameState => drain(passBoth(destroy(s, id, { regenerates: false })), 20);
+
+  it('reads all three whole; refuses a plural choice it cannot say, and a grant with no duration', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    for (const text of ['Choose two target creatures controlled by the same player. Untap them.', 'Target creature gains persist.']) {
+      const read = compileCard(card('Test Refused', text) as never);
+      expect(read.ok && read.unread.length, text).toBeGreaterThan(0);
+    }
+  });
+
+  it('Choose any number of target creatures: each one chosen gets the counter', () => {
+    let s = table('Test Panoply');
+    const both = bears(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Panoply'), targets: both.map((id) => ({ kind: 'card', id })) } as Action)), 20);
+    expect(both.every((id) => s.instances[id]!.counters['+1/+1'] === 1)).toBe(true);
+  });
+
+  it('undying: the creature comes back with a +1/+1 counter, and not a second time', () => {
+    let s = table('Test Undying');
+    const [bear] = bears(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Undying'), targets: [{ kind: 'card', id: bear! }] } as Action)), 20);
+    s = kill(s, bear!);
+    const back = bears(s).find((id) => s.instances[id]!.counters['+1/+1'] === 1);
+    expect(back).toBeDefined();
+    s = kill(s, back!);
+    expect(bears(s)).toHaveLength(1);
+  });
+
+  it('persist: back with a -1/-1 counter; the other Bears, not granted it, stays dead', () => {
+    let s = table('Test Persist');
+    const [bear, other] = bears(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Persist'), targets: [{ kind: 'card', id: bear! }] } as Action)), 20);
+    s = kill(s, bear!);
+    expect(bears(s).filter((id) => s.instances[id]!.counters['-1/-1'] === 1)).toHaveLength(1);
+    s = kill(s, other!);
+    expect(bears(s)).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

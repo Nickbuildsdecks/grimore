@@ -17349,6 +17349,18 @@ function selfEffect(
     const spec = targetSpecFrom(chosenTarget[1]!, /you control$/i.test(chosenTarget[1]!));
     if (spec !== null) return { targets: [spec], effect: (c) => c.state };
   }
+  /*
+    And several (D1360): "Choose any number of target creatures.", "Choose up to two target
+    creatures you control." The sentences after it say what happens to "those creatures" or "each
+    of them", and borrow these targets as they borrow any earlier clause's. Creatures only, as the
+    one above, and the phrase must read whole: "controlled by the same player" or "with equal
+    toughness" is a condition on the set the target reader cannot say, and refuses.
+  */
+  const chosenTargets = /^choose ((?:any number of|up to (?:two|three)|two|three) target creatures(?: you control)?)$/i.exec(text);
+  if (chosenTargets !== null) {
+    const spec = targetSpecFrom(chosenTargets[1]!, /you control$/i.test(chosenTargets[1]!));
+    if (spec !== null && (spec.count ?? 1) > 1) return { targets: [spec], effect: (c) => c.state };
+  }
 
   /*
     "Venture into Undercity" and "you take the initiative" (D1160, CR 701.49, 722.2): see
@@ -36237,6 +36249,25 @@ function quotedGrantUntilEndOfTurn(clause: string, name: string): ReadEffect | n
         ...(triggers === null ? {} : { grants: triggers.map((_t, i) => i) }),
         ...(abilities === null ? {} : { grantsAbilities: abilities.map((_a, i) => i) }),
       }),
+    };
+  }
+  /*
+    Persist and undying handed out (D1360): "Target creature gains undying until end of turn" (Undying
+    Evil), "Target white creature gains persist until end of turn" (Antler Skulkin). Each keyword is
+    a dies trigger, so it is granted the way a quoted one is, the same trigger a printed persist has.
+  */
+  const returning = /^(until end of turn, )?((?:another |up to one )?target creature[^"]*?|target [a-z]+ creature[^"]*?) gains (persist|undying)( until end of turn)?$/i.exec(text);
+  if (returning !== null && (returning[1] === undefined) !== (returning[4] === undefined)) {
+    const spec = targetSpecFrom(returning[2]!, false);
+    if (spec === null || !pointsAtAPermanent(spec)) return null;
+    const triggers = comesBackWithACounter(returning[3]!.toLowerCase() as 'persist' | 'undying');
+    return {
+      targets: [{ ...spec, friendly: true }],
+      cardFields: { grantedTriggers: triggers },
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { grants: [0] });
+      },
     };
   }
   const read = /^(until end of turn, )?((?:another |up to one )?target creature[^"]*?) (?:gets ([+-]\d+)\/([+-]\d+),? and )?gains (?:([a-z][a-z, ]*?),? and )?"([^"]+)"( until end of turn)?$/i.exec(text);
