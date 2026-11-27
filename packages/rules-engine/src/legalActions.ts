@@ -2114,6 +2114,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       // A land commander would be *played*, not cast, and nothing in the pool is one; refusing to
       // offer it is better than offering a land drop out of the command zone.
       if (fromCommand) continue;
+      /*
+        Nor out of the graveyard by a permission to **cast** (D1334): a land is never cast (CR 305.9).
+        Lurrus's "cast one permanent spell with mana value 2 or less" fits a Mountain, mana value 0,
+        and the land drop it was offered as was refused by \`playLand\`, which threw a sweep's game
+        (seed 96041). A graveyard land drop comes through its own entry, \`landOnly\` (Crucible of
+        Worlds, Muldrotha's land).
+      */
+      if (flashback || escape || retrace || aftermath) continue;
       // "You may cast that card" (D1236) is never a land drop.
       if (impulse && inst.playFromExile?.castOnly === true) continue;
       if (sorcerySpeed && landsPlayed < landsAllowed) {

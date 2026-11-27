@@ -49283,6 +49283,60 @@ describe('Scapeshift: a search sized by the sacrifice before it (D1333)', () => 
   });
 });
 
+describe('a permission to cast from the graveyard is not a land drop (D1334)', () => {
+  const DEN = { name: 'Test Den', type_line: 'Legendary Creature — Cat Nightmare', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '2',
+    oracle_text: 'During each of your turns, you may cast one permanent spell with mana value 2 or less from your graveyard.' };
+  const deck = customDeck({ id: 'd1334', name: 'Den', entries: [{ name: 'Test Den', count: 2 }, { name: 'Raging Goblin', count: 8 }, { name: 'Mountain', count: 50 }], data: [DEN] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1334', 1: 'd1334' }, deckSpecs: { d1334: deck.deck },
+    battlefield: { 0: ['Test Den', 'Mountain'] }, hands: { 0: [] }, graveyard: { 0: ['Mountain', 'Raging Goblin'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('the Mountain in the graveyard is not offered; the Goblin is cast from there', () => {
+    expect(deck.unknown).toEqual([]);
+    const s = table();
+    const yard = ids(s, 0, 'graveyard');
+    const mountain = yard.find((id) => nameOf(s, id) === 'Mountain')!;
+    const goblin = yard.find((id) => nameOf(s, id) === 'Raging Goblin')!;
+    const plays = legalActions(s, 0).plays;
+    expect(plays.some((p) => p.card === mountain)).toBe(false);
+    expect(plays.some((p) => p.card === goblin && p.kind === 'cast')).toBe(true);
+    // And the bot, offered nothing it cannot do, never throws on its turn.
+    const act = botAction(s, 0)!;
+    expect(act).not.toMatchObject({ type: 'auto:playLand', card: mountain });
+    expect(() => apply(s, act)).not.toThrow();
+  });
+});
+
+describe('a shield the bot keeps for damage that is coming: the en-Kor and the Circles (D1335)', () => {
+  const KOR = { name: 'Test Kor', type_line: 'Creature — Kor Nomad Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: '{0}: The next 1 damage that would be dealt to Test Kor this turn is dealt to target creature you control instead.' };
+  const CIRCLE = { name: 'Test Circle', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: '{1}: The next time a red source of your choice would deal damage to you this turn, prevent that damage.' };
+  const deck = customDeck({ id: 'd1335', name: 'Kor', entries: [{ name: 'Test Kor', count: 2 }, { name: 'Test Circle', count: 2 }, { name: 'Raging Goblin', count: 6 }, { name: 'Plains', count: 50 }], data: [KOR, CIRCLE] as never[] });
+
+  it('both read as shields', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [KOR, CIRCLE]) {
+      const read = compileCard(row as never);
+      expect(read).toMatchObject({ ok: true, unread: [] });
+      expect(read.ok && read.script?.abilities?.[0]?.preventsDamage).toBe(true);
+    }
+  });
+
+  it('with no damage coming, the bot activates neither', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1335', 1: 'd1335' }, deckSpecs: { d1335: deck.deck },
+      battlefield: { 0: ['Test Kor', 'Test Circle', 'Raging Goblin', 'Plains', 'Plains'], 1: ['Raging Goblin'] }, hands: { 0: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const kor = find(s, 0, 'battlefield', 'Test Kor');
+    const circle = find(s, 0, 'battlefield', 'Test Circle');
+    expect(legalActions(s, 0).plays.some((p) => p.card === kor && p.kind === 'activate')).toBe(true);
+    const act = botAction(s, 0) as { type: string; card?: string } | null;
+    expect(act?.type === 'auto:activate' && (act.card === kor || act.card === circle)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

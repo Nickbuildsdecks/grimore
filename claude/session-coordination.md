@@ -250,3 +250,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1330 pushed in 89118e3. D1331 "Discard your hand" cost, Lion's Eye Diamond (AbilityCost.discardHand): scriptTypes, scripts.ts cost reader, autoActions activate, legalActions manaSources.
 - D1331 pushed in 9792612. D1332 "Sacrifice any number of …, then … that many" (sacrificeAnyThenThatMany, pluralPermanentKinds): scripts.ts group reader only.
 - D1332 pushed in 3d11857. D1333 Scapeshift (askingContext carries answers so far; askOrFinish works each question out as reached): automation.ts, scripts.ts sacrificeAnyThenThatMany.
+- D1333 pushed in 16268be. D1334 no land drop from a graveyard cast permission (legalActions land branch); D1335 PREVENTS on the en-Kor and Circle shield readers (scripts.ts). From sweep 96001 seed 96041.

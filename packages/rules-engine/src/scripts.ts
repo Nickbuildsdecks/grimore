@@ -17071,6 +17071,8 @@ function selfEffect(
     if (to === 'you' || spec !== null) {
       const sendOn = chosenSource[3] === undefined;
       return {
+        // A shield (D1335), as the en-Kor's below: spent by the bot only while damage is coming.
+        ...PREVENTS,
         ...(spec === null ? {} : { targets: [spec] }),
         decisions: [{
           who: 'controller', from: 'source', min: 1, max: 1,
@@ -17107,6 +17109,9 @@ function selfEffect(
     if (n > 0 && aimed !== null && aimed.kind === 'creature') {
       const fromSelf = onward[2] !== undefined;
       return {
+        // A shield (D1335): the bot spends it only while damage is coming, which kept a free one
+        // (Nomads en-Kor's {0}) from being activated a thousand times in a sweep's game.
+        ...PREVENTS,
         targets: [aimed],
         effect: (c) => {
           const other = firstCardTarget(c);
