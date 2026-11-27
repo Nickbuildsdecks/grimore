@@ -2228,6 +2228,11 @@ export interface CardsDecisionSpec {
  */
 export interface ChoiceDecisionSpec {
   /**
+   * Who answers. Besides the shapes every question shares, `each-player-from-you` (D1361) is each
+   * living player in turn order **starting with the controller**, a vote's order (CR 701.38a): the
+   * player who votes later has seen the votes before theirs.
+   */
+  /**
    * Ask this question **only if** an earlier answer in the same resolution was this word (D450).
    *
    * The engine asks a resolution's questions in order and applies the answers at the end. Without
@@ -2248,7 +2253,8 @@ export interface ChoiceDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller' | 'an-opponent';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller' | 'an-opponent'
+  | 'each-player-from-you';
   readonly prompt: string;
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
   readonly options: readonly string[];

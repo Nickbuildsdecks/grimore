@@ -50561,6 +50561,80 @@ describe('Several chosen targets, and persist or undying handed out (D1360)', ()
   });
 });
 
+describe('A vote: starting with you, each player votes (D1361, CR 701.38)', () => {
+  const card = (name: string, type: string, text: string, pt = false) => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...(pt ? { power: '1', toughness: '1' } : {}), oracle_text: text });
+  const PLEA = card('Test Plea', 'Instant', 'Will of the council — Starting with you, each player votes for time or knowledge. If time gets more votes, take an extra turn after this one. If knowledge gets more votes or the vote is tied, draw three cards.');
+  const ORCHARD = card('Test Orchard', 'Creature — Elemental', "Council's dilemma — When Test Orchard enters, starting with you, each player votes for sprout or harvest. Put two +1/+1 counters on Test Orchard for each sprout vote. You gain 3 life for each harvest vote.", true);
+  const TIVIT = card('Test Tivit', 'Sorcery', 'Starting with you, each player votes for evidence or bribery. For each evidence vote, investigate. For each bribery vote, create a Treasure token.');
+  const ROWS = [PLEA, ORCHARD, TIVIT];
+  const deck = customDeck({ id: 'd1361', name: 'Vote', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Plains', count: 44 }], data: ROWS as never[] });
+  // Seat 1 is active, so "starting with you" is not the turn order.
+  const table = (hand: string, active: SeatIndex = 0): GameState => advanceTo(arena({
+    decks: { 0: 'd1361', 1: 'd1361' }, deckSpecs: { d1361: deck.deck },
+    hands: { 0: [hand] }, turn: 3, firstSeat: active,
+  }), 'precombat-main');
+  const vote = (s: GameState, by: SeatIndex, option: string): GameState => {
+    expect(s.pendingDecision?.seat, `${option} by ${by}`).toBe(by);
+    return apply(s, { type: 'auto:decide', by, cards: [], option } as Action);
+  };
+  const castAndVote = (s: GameState, name: string, votes: readonly string[], order: readonly SeatIndex[] = [0, 1]): GameState => {
+    let t = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+    // A creature's enter trigger goes on the stack after the creature resolves.
+    for (let i = 0; i < 3 && t.pendingDecision == null; i++) t = passBoth(t);
+    votes.forEach((option, i) => { t = vote(t, order[i]!, option); });
+    return drain(t, 20);
+  };
+
+  it('reads all three whole: one question, asked of each player from the controller', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(PLEA as never);
+    expect(read.ok && read.script?.decisions).toEqual([expect.objectContaining({ who: 'each-player-from-you', options: ['time', 'knowledge'] })]);
+    // A part with a question of its own, and a count of a word nobody voted on, are refused.
+    for (const text of [
+      'Starting with you, each player votes for death or torture. If death gets more votes, each opponent sacrifices a creature. If torture gets more votes or the vote is tied, each opponent loses 4 life.',
+      'Starting with you, each player votes for wild or free. For each tame vote, draw a card.',
+    ]) {
+      const refused = compileCard(card('Test Refused', 'Sorcery', text) as never);
+      expect(refused.ok && refused.unread.length, text).toBe(1);
+    }
+  });
+
+  it('a tie goes to knowledge: three cards; two votes for time: an extra turn and no cards', () => {
+    let s = table('Test Plea');
+    const hand = ids(s, 0, 'hand').length;
+    s = castAndVote(s, 'Test Plea', ['time', 'knowledge']);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
+    let t = table('Test Plea');
+    t = castAndVote(t, 'Test Plea', ['time', 'time']);
+    expect(ids(t, 0, 'hand').length).toBe(hand - 1);
+    expect(t.extraTurns).toEqual([0]);
+  });
+
+  it('the controller votes first even on another player\'s turn', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1361', 1: 'd1361' }, deckSpecs: { d1361: deck.deck },
+      hands: { 0: ['Test Plea'] }, battlefield: { 0: ['Plains'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    const t = passBoth(apply({ ...s, priority: 0 } as GameState, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Plea') } as Action));
+    expect(t.pendingDecision?.seat).toBe(0);
+  });
+
+  it('for each vote: two +1/+1 counters per sprout and 3 life per harvest; an investigate per evidence', () => {
+    let s = table('Test Orchard');
+    const life = s.seats[0]!.life;
+    s = castAndVote(s, 'Test Orchard', ['sprout', 'harvest']);
+    const orchard = find(s, 0, 'battlefield', 'Test Orchard');
+    expect(s.instances[orchard]!.counters['+1/+1']).toBe(2);
+    expect(s.seats[0]!.life).toBe(life + 3);
+    let t = table('Test Tivit');
+    t = castAndVote(t, 'Test Tivit', ['evidence', 'evidence']);
+    expect(ids(t, 0, 'battlefield').filter((id) => nameOf(t, id) === 'Clue')).toHaveLength(2);
+    expect(ids(t, 0, 'battlefield').filter((id) => nameOf(t, id) === 'Treasure')).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -276,3 +276,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1357 pushed in 9e3d321. D1358 X divided damage (TargetSpec.dividedX, checkDivision x, bot, web dividedAmount): scriptTypes, targeting, autoActions, bot, scripts.ts, web arena.ts, ArenaBar.
 - D1358 pushed in c8fb448. D1359 destroy/exile any number of target, then tokens for each (glue, toExile): scripts.ts, effects.ts.
 - D1359 pushed in 4de176c, checkpoint at D1359 in 2d7a60a. D1360 plural "choose target creatures", granted persist/undying: scripts.ts only.
+- D1360 pushed in db6a76b. D1361 voting (ChoiceDecisionSpec who each-player-from-you, voteGroup, vote counts and majorities): scriptTypes, automation, scripts.ts.

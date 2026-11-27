@@ -22560,6 +22560,16 @@ let earlierChosenPermanent = false;
  */
 let destroyedThisWay = false;
 
+/**
+ * The two words of the vote being read (D1361), while `voteGroup` reads the sentences after it, so
+ * "for each money vote" and "if time gets more votes" are read only where there was a vote.
+ */
+let voteWords: readonly string[] | null = null;
+
+/** How many of a vote's answers were this word (D1361). */
+const votesFor = (c: EffectContext, word: string): number =>
+  c.decisions.filter((answer) => answer.option?.toLowerCase() === word).length;
+
 function withDestroyedThisWay<T>(read: () => T): T {
   const before = destroyedThisWay;
   destroyedThisWay = true;
@@ -22973,6 +22983,13 @@ function countOfThing(
 ): ((c: EffectContext) => number) | null {
   const text = thing.trim();
   const self = selfRef(name);
+
+  // "For each strength vote" (D1361): only while a vote is being read, the word one of its two.
+  const voted = voteWords === null ? null : /^(.+?) votes?$/i.exec(text);
+  if (voted !== null && voteWords!.includes(voted[1]!.toLowerCase())) {
+    const word = voted[1]!.toLowerCase();
+    return (c) => votesFor(c, word);
+  }
 
   /*
     "The number of colors among permanents you control" (D1199), "for each color among …": the
@@ -34438,6 +34455,69 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
  * sacrifice. Nothing chosen, nothing is asked. The bot puts nothing in: when the free creature is
  * worth its price is not a judgement it makes.
  */
+/**
+ * A vote (D1361, CR 701.38): "Starting with you, each player votes for strength or numbers." Will
+ * of the council and Council's dilemma are ability words; the vote is the rule.
+ *
+ * One question, asked of each living player in turn order starting with the controller, each
+ * answer one of the two words. The sentences after it are read one at a time, with `voteWords` set
+ * so that "for each <word> vote" counts the answers ("Put a +1/+1 counter on ~ for each strength
+ * vote"), "For each <word> vote, <effect>" does the effect that many times, and "if <word> gets more
+ * votes [or the vote is tied]" compares the two. Each must read whole, with no target and no
+ * question of its own: the vote is the card's one question.
+ *
+ * The bot votes the first word. Which word is better for whom is the card's business, and none of
+ * these cards says so; a person answers for themselves.
+ */
+function voteGroup(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  if (clauses.length < 2) return null;
+  const vote = /^(?:(?:will of the council|council's dilemma) — )?starting with you, each player votes for ([a-z][a-z' ]*?) or ([a-z][a-z' ]*?)\.?$/i
+    .exec(plain(clauses[0]!).trim());
+  if (vote === null) return null;
+  const words = [vote[1]!.toLowerCase(), vote[2]!.toLowerCase()];
+  if (words[0] === words[1]) return null;
+  const before = voteWords;
+  voteWords = words;
+  try {
+    const parts: EffectFn[] = [];
+    for (const clause of clauses.slice(1)) {
+      const text = plain(clause).trim().replace(/\.$/, '');
+      const each = /^for each (.+?) vote, (.+)$/i.exec(text);
+      if (each !== null && !words.includes(each[1]!.toLowerCase())) return null;
+      // "If grace gets more votes, …" read here rather than by the spell's leading "if", which a
+      // trigger does not have (its "if" is intervening): the vote is counted as the effect resolves.
+      const majority = each === null ? /^if (.+? gets more votes(?: or the vote is tied)?), (.+)$/i.exec(text) : null;
+      const holds = majority === null ? null : interveningConditionFor(majority[1]!, name);
+      if (majority !== null && holds === null) return null;
+      const read = composeEffects([each !== null ? each[2]! : majority !== null ? majority[2]! : text], name, where);
+      if (read === null || (read.targets ?? []).length > 0 || (read.decisions ?? []).length > 0
+        || read.beforeDecisions !== undefined || read.reflexive !== undefined || read.cardFields !== undefined) return null;
+      if (holds !== null) {
+        parts.push((c) => (holds(c) ? read.effect(c) : c.state));
+      } else if (each === null) {
+        parts.push(read.effect);
+      } else {
+        const word = each[1]!.toLowerCase();
+        parts.push((c) => {
+          let state = c.state;
+          for (let n = votesFor(c, word); n > 0; n -= 1) state = read.effect({ ...c, state });
+          return state;
+        });
+      }
+    }
+    return {
+      decisions: [{
+        who: 'each-player-from-you',
+        prompt: `Vote for ${words[0]} or ${words[1]}`,
+        options: [words[0]!, words[1]!],
+      }],
+      effect: (c) => parts.reduce((state, part) => part({ ...c, state }), c.state),
+    };
+  } finally {
+    voteWords = before;
+  }
+}
+
 function flashIn(clauses: readonly string[]): ReadEffect | null {
   const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
   const m = /^you may put a creature card from your hand onto the battlefield\. if you do, sacrifice it unless you pay its mana cost reduced by (?:up to )?\{(\d+)\}\.?$/i.exec(text);
@@ -35319,6 +35399,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // A vote (D1361): see `voteGroup`.
+  const voted = voteGroup(clauses, name, where);
+  if (voted !== null) return voted;
   // Flash (D1351): see `flashIn`.
   const flashed = flashIn(clauses);
   if (flashed !== null) return flashed;
@@ -40410,6 +40493,17 @@ function guardedBy(then: ReadEffect, condition: (c: EffectContext) => boolean): 
 function interveningConditionFor(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
+  /*
+    "If grace gets more votes" and "if knowledge gets more votes or the vote is tied" (D1361), only
+    while a vote is being read: the word against the other word.
+  */
+  const majority = voteWords === null ? null : /^(.+?) gets more votes( or the vote is tied)?$/i.exec(printed.trim());
+  if (majority !== null && voteWords!.includes(majority[1]!.toLowerCase())) {
+    const word = majority[1]!.toLowerCase();
+    const other = voteWords!.find((w) => w !== word)!;
+    const tiedToo = majority[2] !== undefined;
+    return (c) => (tiedToo ? votesFor(c, word) >= votesFor(c, other) : votesFor(c, word) > votesFor(c, other));
+  }
   /*
     "If no mana was spent to cast it" (D893, Vexing Bauble, Boromir): the cast spell's `manaSpent`, as
     D1171's measure reads it. Asked again as the trigger resolves, with the spell it answers in hand.

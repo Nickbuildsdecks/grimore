@@ -5963,6 +5963,13 @@ function decisionPlan(
       if (inst !== undefined) plan.push({ seat: inst.zoneSeat, specIndex: i });
       continue;
     }
+    // A vote (D1361): every living player, starting with the controller (CR 701.38a).
+    if (spec.who === 'each-player-from-you') {
+      const order = turnOrder(state);
+      const at = Math.max(0, order.indexOf(object.controller));
+      for (const seat of [...order.slice(at), ...order.slice(0, at)]) plan.push({ seat, specIndex: i });
+      continue;
+    }
     for (const seat of turnOrder(state)) {
       if (spec.who === 'each-opponent' && seat === object.controller) continue;
       plan.push({ seat, specIndex: i });
