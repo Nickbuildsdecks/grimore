@@ -3853,6 +3853,13 @@ function decide(
     const names = chosen.map((id) => state.cardDefs[requireInstance(state, id).defKey]?.name ?? id);
     if (new Set(names).size !== names.length) throw new EngineError('RULE_NOT_APPLICABLE', 'the cards chosen must have different names');
   }
+  // "With total mana value 6 or less" (D1352): Protean Hulk's search.
+  if (pending.totalManaValueAtMost !== undefined) {
+    const total = chosen.reduce((sum, id) => sum + (state.cardDefs[requireInstance(state, id).defKey]?.cmc ?? 0), 0);
+    if (total > pending.totalManaValueAtMost) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `the cards chosen must have a total mana value of ${pending.totalManaValueAtMost} or less`);
+    }
+  }
   /*
     What the log will say, and the one answer that is not a card: a proliferate may choose a
     **player** (CR 701.27a), which arrives as `seat:N` and has no instance to look a name up on.

@@ -267,3 +267,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1348 pushed in 63f31eb. D1349 Approach of the Second Sun (spellNamesCastThisGame; a resolved spell's exit only from the stack, CR 608.2n): turnTypes, autoActions, automation, scripts.ts.
 - D1349 pushed in 7c7c549. D1350 Scroll Rack (scrollRack group reader): scripts.ts only.
 - D1350 pushed in c50a547. D1351 Flash (flashIn; priced answers, fallback and bot answers worked out with the answers so far): automation.ts, scripts.ts.
+- D1351 pushed in 59d2939, checkpoint at D1351 in 5bef5ee. D1352 Protean Hulk (CardsDecisionSpec.totalManaValueAtMost): scriptTypes, turnTypes, automation, autoActions decide, scripts.ts search reader.

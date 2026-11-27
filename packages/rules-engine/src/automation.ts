@@ -6410,6 +6410,7 @@ function askOrFinish(
         seat: entry.seat, stackId: object.id, prompt: spec.prompt,
         candidates, min, max, from: spec.from,
         ...(!isCountersDecision(spec) && spec.distinctNames === true ? { distinctNames: true as const } : {}),
+        ...(!isCountersDecision(spec) && spec.totalManaValueAtMost !== undefined ? { totalManaValueAtMost: spec.totalManaValueAtMost } : {}),
         ...(looked === undefined ? {} : { looked }),
         ...(!isCountersDecision(spec) && spec.from === 'library-top'
           && (spec.chosenGoTo === 'graveyard' || spec.chosenGoTo === 'hand' || spec.chosenGoTo === 'top')

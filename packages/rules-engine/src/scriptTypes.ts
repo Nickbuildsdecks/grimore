@@ -1968,6 +1968,11 @@ export interface CardsDecisionSpec {
    */
   readonly distinctNames?: true;
   /**
+   * The cards chosen must have a **total mana value** of at most this (D1352): Protean Hulk's "any
+   * number of creature cards with total mana value 6 or less". Checked as the answer is given.
+   */
+  readonly totalManaValueAtMost?: number;
+  /**
    * Ask this question **only if** the board says so, as the question comes up (D590).
    *
    * `askOnlyIfChosen`'s sibling, for a condition that is a fact rather than an earlier answer:

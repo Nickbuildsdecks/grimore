@@ -2355,7 +2355,10 @@ function searchClause(text: string, name: string): ReadEffect | null {
       .exec(text.trim());
   if (parsed === null) return null;
   const printed = parsed[1]!.trim();
-  const quantity = searchQuantity(printed);
+  // "With total mana value 6 or less" (D1352), Protean Hulk: a bound on the answer as a whole.
+  const totalled = /^(.+?) with total mana value (\d+) or less$/i.exec(printed);
+  const total = totalled === null ? null : Number(totalled[2]);
+  const quantity = searchQuantity(totalled === null ? printed : totalled[1]!);
   if (quantity === null) return null;
   /*
     "…with mana value equal to 1 plus the sacrificed creature's mana value" (D1265): Birthing Pod,
@@ -2394,6 +2397,23 @@ function searchClause(text: string, name: string): ReadEffect | null {
       ),
       ...(filter.xBound === true ? { manaValueAtMostX: true as const } : {}),
       ...(climbBy === null ? {} : { manaValueSacrificedPlus: climbBy }),
+      /*
+        The total (D1352), and the bot's answer inside it: the costliest cards first, each taken while
+        the total still allows it. A choice the engine would refuse is never the bot's.
+      */
+      ...(total === null ? {} : {
+        totalManaValueAtMost: total,
+        pick: (state: GameState, _chooser: SeatIndex, candidates: readonly string[]) => {
+          const cmc = (id: string): number => state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0;
+          let left = total;
+          const out: string[] = [];
+          for (const id of [...candidates].sort((a, b) => cmc(b) - cmc(a))) {
+            if (out.length >= quantity.max) break;
+            if (cmc(id) <= left) { out.push(id); left -= cmc(id); }
+          }
+          return out;
+        },
+      }),
     }],
     effect: (c) => {
       const found = chosenCards(c);

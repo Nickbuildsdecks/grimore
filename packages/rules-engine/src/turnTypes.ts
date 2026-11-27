@@ -1745,6 +1745,8 @@ export interface AutomationState {
     readonly max: number;
     /** The cards chosen must have different names (D1340). See `CardsDecisionSpec.distinctNames`. */
     readonly distinctNames?: true;
+    /** The cards chosen must total this mana value or less (D1352). See `CardsDecisionSpec.totalManaValueAtMost`. */
+    readonly totalManaValueAtMost?: number;
     /**
      * Every card the chooser is **looking at**, when that is more than the ones they may pick
      * (D584): "Look at the top five cards of your library. You may reveal a creature card from

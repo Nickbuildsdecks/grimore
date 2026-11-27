@@ -50122,6 +50122,46 @@ describe('Flash: a creature put in, kept for its cost less {2} or sacrificed (D1
   });
 });
 
+describe('Protean Hulk: a search bounded by total mana value (D1352)', () => {
+  const HULK = { name: 'Test Hulk', type_line: 'Creature — Beast', mana_cost: '{5}{G}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '6', toughness: '6',
+    oracle_text: 'When Test Hulk dies, search your library for any number of creature cards with total mana value 6 or less, put them onto the battlefield, then shuffle.' };
+  const SEARCH = { name: 'Test Search', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Search your library for any number of creature cards with total mana value 6 or less, put them onto the battlefield, then shuffle.' };
+  const deck = customDeck({ id: 'd1352', name: 'Hulk', entries: [{ name: 'Test Search', count: 2 }, { name: 'Test Hulk', count: 1 }, { name: 'Hill Giant', count: 6 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 45 }], data: [HULK, SEARCH] as never[] });
+  const cast = (): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1352', 1: 'd1352' }, deckSpecs: { d1352: deck.deck }, hands: { 0: ['Test Search'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Search') } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+  const named = (s: GameState, name: string) => ids(s, 0, 'library').filter((id) => nameOf(s, id) === name);
+
+  it('reads whole, the Hulk and the search', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [HULK, SEARCH]) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Giant and a Bears (4 + 2) are taken; a Giant and two Bears (8) are refused', () => {
+    let s = cast();
+    expect(s.pendingDecision?.totalManaValueAtMost).toBe(6);
+    const [giant] = named(s, 'Hill Giant');
+    const [b1, b2] = named(s, 'Grizzly Bears');
+    expect(() => apply(s, { type: 'auto:decide', by: 0, cards: [giant!, b1!, b2!] } as Action)).toThrow(/total mana value of 6/);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [giant!, b1!] } as Action), 20);
+    expect([giant, b1].every((id) => s.instances[id!]!.zone === 'battlefield')).toBe(true);
+  });
+
+  it('the bot takes the costliest it can within the total', () => {
+    let s = cast();
+    s = drain(apply(s, botAction(s, 0)!), 20);
+    const total = ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.zone === 'battlefield' && !/Forest/.test(nameOf(s, id)))
+      .reduce((sum, id) => sum + (s.cardDefs[s.instances[id]!.defKey]?.cmc ?? 0), 0);
+    expect(total).toBe(6);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
