@@ -50818,3 +50818,34 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6604 of 6604 pass.
 
 Coverage: 17,632 of 31,900 cards (+1 over D1370's 17,631), 40,516 of 59,888 lines (+1).
+
+## D1372 — "Mill three cards. You may put … into your hand. If you don't, …"
+
+"When ~ enters, mill three cards. You may put a land card from among them into your hand. If you
+don't, put a +1/+1 counter on ~." Ainok Wayfarer, Blanchwood Prowler, Ravenous Gigamole, Tomakul
+Scrapsmith, Fallaji Archaeologist, Ostrich-Horse. The first two sentences already read together as
+one question with nothing required. "If you don't" had no reading.
+
+**The rule** (`millPickOrElse`). "If you don't" is that question answered with no card. The pick
+then happens as before (the mill is its `beforeDecisions`, before the question), and the last
+sentence happens only when no card was taken. That includes when the three cards milled held none
+of the kind, so there was nothing to take. The last sentence must read with no target and no
+question of its own.
+
+Read whole now: the six above. Airlift Chaplain's "a Plains card or a creature card with mana value
+3 or less" is a kind the library reader does not say.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- A land taken goes to the hand and no counter is put on. None taken: the counter, and all three
+  Forests in the graveyard.
+- From a library with no land, nothing can be taken, and the counter is put on.
+
+Faults injected by hand: 3, all caught.
+- The counter always.
+- The counter never.
+- The pick dropped.
+
+The scripts tests, compile tests and pins: 6607 of 6607 pass.
+
+Coverage: 17,638 of 31,900 cards (+6 over D1371's 17,632), 40,522 of 59,888 lines (+6).
