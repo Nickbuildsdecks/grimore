@@ -68044,3 +68044,31 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6584 of 6584 pass.
 
 Coverage: 17,608 of 31,900 cards (+3 over D1363's 17,605), 40,484 of 59,888 lines (+3).
+
+## D1365 — "As long as enchanted permanent is a creature, it gets …"
+
+An Aura that enchants any permanent and helps it only while it is a creature: Akki War Paint, Favor
+of Jukai, Gift of Wrath, the Runes, and others, 16 legal lines. D814 read "As long as enchanted
+creature is red, it …" but not the permanent form.
+
+**The rule.** The line is one more host-conditional part of the Aura's bonus (`hostConditionalParts`),
+with a new `onlyKind` word, `creature`. On a creature the bonus applies as usual. On a permanent that
+is not a creature nothing applies. That matters for keywords: indestructible or hexproof on an
+artifact would change the game. The same helpful-only rule as D814 holds, so Clawing Torment's
+"-1/-1 and can't block" and Short Circuit's "loses flying" are not read.
+
+Read whole now: Akki War Paint, Favor of Jukai, Gift of Wrath. The Runes still have their second
+line unread ("As long as enchanted permanent is an Equipment, it has 'Equipped creature has …'").
+
+**Tests.** 2 engine tests:
+- The fixture reads whole.
+- On a Grizzly Bears: 4/4 with menace. On an artifact that is not a creature: no menace.
+
+Faults injected by hand: 3, all caught.
+- No creature filter.
+- Every permanent counted as a creature.
+- The reader removed.
+
+The scripts tests, compile tests and pins: 6586 of 6586 pass.
+
+Coverage: 17,611 of 31,900 cards (+3 over D1364's 17,608), 40,494 of 59,888 lines (+10).
