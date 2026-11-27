@@ -51605,3 +51605,40 @@ The scripts tests, compile tests and pins: 6669 of 6669 pass. Test typecheck and
 clean.
 
 Coverage: 17,771 of 31,900 cards (+3 over D1390's 17,768), 40,736 of 59,888 lines (+6).
+
+## D1392 — A Saga's chapters, compiled
+
+"I — Each opponent sacrifices a creature or planeswalker. II — Each opponent discards a card. III —
+Put target creature or planeswalker card from a graveyard onto the battlefield under your control."
+The engine has run Sagas since the hand-written ones (CR 714):
+- `CardScript.saga`, with a trigger `on: { kind: 'chapter', n }` for each chapter;
+- the lore counter as it enters and in each precombat main phase (`advanceSagas`);
+- the sacrifice once the last chapter has resolved.
+
+The compiler read none of the 220 legal Sagas.
+
+**The reader.** A chapter line, "I — …" or "I, II — …", is read as a triggered ability's text,
+through `triggerFromLine` with an entry prologue. The one trigger it makes is put on the chapter
+numbers instead. So a chapter gets everything a trigger's effect does (targets, questions, "you
+may", reflexive "when you do"), and a reflexive trigger the text queues comes with it. Anything else
+the reading carries refuses the line. The number of chapters is derived from the triggers, as the
+hand-written Sagas have it.
+
+296 of the 575 chapter lines on legal Sagas read, and 28 Sagas read whole: The Eldest Reborn,
+History of Benalia and The Birth of Meletis among them. Still unread are the chapters that are
+another shape: "Exile this Saga, then return it to the battlefield transformed" (Fable of the
+Mirror-Breaker and the Kamigawa Sagas), Urza's Saga's granted abilities, and Read ahead.
+
+**Tests.** 2 engine tests:
+- A fixture Saga reads whole, with `saga` set and chapters 1, 2 and 3.
+- Played out: chapter I as it enters (a Soldier and one lore counter), II on its controller's next
+  turn (a second Soldier), III the turn after (3 life), and then it is sacrificed.
+
+Faults injected by hand: 3, all caught.
+- No chapter reader.
+- `saga` not set.
+- Every chapter numbered I.
+
+The scripts tests, compile tests and pins: 6671 of 6671 pass. Test typecheck clean.
+
+Coverage: 17,799 of 31,900 cards (+28 over D1391's 17,771), 41,034 of 59,888 lines (+298).
