@@ -49132,6 +49132,39 @@ describe('"Discard two cards" as a cost (D1330)', () => {
   });
 });
 
+describe("\"Discard your hand\" as a cost: Lion's Eye Diamond (D1331)", () => {
+  const LED = { name: 'Test Diamond', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: 'Discard your hand, Sacrifice Test Diamond: Add three mana of any one color. Activate only as an instant.' };
+  const deck = customDeck({ id: 'd1331', name: 'Diamond', entries: [{ name: 'Test Diamond', count: 4 }, { name: 'Swamp', count: 56 }], data: [LED] as never[] });
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1331', 1: 'd1331' }, deckSpecs: { d1331: deck.deck },
+    hands: { 0: ['Swamp', 'Swamp'] }, battlefield: { 0: ['Test Diamond'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, five mana abilities of three', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(LED as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.abilities?.map((a) => (a.produces ?? []).join(''))).toEqual(['WWW', 'UUU', 'BBB', 'RRR', 'GGG']);
+    expect(read.ok && read.script?.abilities?.every((a) => a.cost.discardHand === true && a.cost.sacrificeSelf === true)).toBe(true);
+  });
+
+  it('pressed: the hand is discarded, the Diamond sacrificed, and three of one colour made', () => {
+    let s = board();
+    const led = find(s, 0, 'battlefield', 'Test Diamond');
+    const hand = ids(s, 0, 'hand');
+    expect(hand.length).toBeGreaterThan(0);
+    // Never the auto-payer's.
+    expect(manaSources(s, 0 as SeatIndex).some((e) => e.key === led)).toBe(false);
+    const red = legalActions(s, 0).plays.find((p) => p.card === led && /Add \{R\}\{R\}\{R\}/.test(p.description))!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: led, abilityIndex: red.abilityIndex! } as Action);
+    expect(poolOf(s, 0).R).toBe(3);
+    expect(ids(s, 0, 'hand')).toEqual([]);
+    expect(hand.every((id) => s.instances[id]!.zone === 'graveyard')).toBe(true);
+    expect(s.instances[led]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

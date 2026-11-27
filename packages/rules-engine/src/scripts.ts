@@ -36148,6 +36148,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let discardsSelf = false;
   let discardsACard = false;
   let discardCount = 1;
+  let discardsHand = false;
   let exilesSelf = false;
   let exilesFromGraveyard = false;
   let energy = 0;
@@ -36230,6 +36231,12 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     if (/^Discard a card$/i.test(component)) {
       if (discardsACard || discardKind !== null || discardsAtRandom) return null;
       discardsACard = true;
+      continue;
+    }
+    // "Discard your hand" (D1331): see `AbilityCost.discardHand`.
+    if (/^Discard your hand$/i.test(component)) {
+      if (discardsACard || discardKind !== null || discardsAtRandom || discardsHand) return null;
+      discardsHand = true;
       continue;
     }
     // "Discard two cards" (D1330): counted, all chosen. See `AbilityCost.discardCount`.
@@ -36520,6 +36527,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(discardsSelf ? { discardSelf: true as const } : {}),
     ...(discardsACard ? { discardACard: true as const } : {}),
     ...(discardCount > 1 ? { discardCount } : {}),
+    ...(discardsHand ? { discardHand: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),

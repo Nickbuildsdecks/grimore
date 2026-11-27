@@ -247,3 +247,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1327 pushed in df1319e with the D1326 checkpoint. D1328 reveal-a-colour morph (AbilityCost.revealColour): scripts.ts, scriptTypes.ts, autoActions turnUp, legalActions offer.
 - D1328 pushed in 80229a0. D1329 the Borderposts (altCost.lands.basic): scriptTypes, legalActions bouncePlan/landCostPlan, autoActions, scripts.ts altCostFromLine.
 - D1329 pushed in 23374ba. D1330 "Discard two cards" cost (discardCount, ActivateAction.discards): scriptTypes, turnTypes, scripts, autoActions, legalActions, bot; web arena.ts counted discard feed; two compile pins retired.
+- D1330 pushed in 89118e3. D1331 "Discard your hand" cost, Lion's Eye Diamond (AbilityCost.discardHand): scriptTypes, scripts.ts cost reader, autoActions activate, legalActions manaSources.

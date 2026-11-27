@@ -2517,6 +2517,12 @@ function activate(
   if (discarded !== null) {
     next = relocate(next, requireInstance(next, discarded), 'graveyard', requireInstance(next, discarded).owner, 'bottom');
   }
+  // And the whole hand (D1331): Lion's Eye Diamond's cost, every card a discard.
+  if (ability.cost.discardHand === true) {
+    for (const card of listAt(next, zoneKey(action.by, 'hand'))) {
+      next = relocate(next, requireInstance(next, card), 'graveyard', requireInstance(next, card).owner, 'bottom');
+    }
+  }
   // And a counted discard's (D1330), each a discard like the one above.
   for (const card of discardedMany) {
     next = relocate(next, requireInstance(next, card), 'graveyard', requireInstance(next, card).owner, 'bottom');

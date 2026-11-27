@@ -1545,6 +1545,8 @@ export function manaSources(
       if (ability.cost.tapUntapped !== undefined) continue;
       // Nor one whose X of counters is the player's to announce (D1307): a storage land.
       if (ability.cost.removeXCounters !== undefined) continue;
+      // Nor one that discards the hand (D1331): Lion's Eye Diamond is the player's to press.
+      if (ability.cost.discardHand === true) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       // A cost you cannot pay is not a cost you may pay (CR 118.4) — and paying down to nothing
       // is a legal way to lose the game, so the engine stops one short of it.

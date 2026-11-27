@@ -2731,6 +2731,11 @@ export interface AbilityCost {
    */
   readonly discardACard?: true;
   /**
+   * "Discard your hand" as a cost (D1331): Lion's Eye Diamond, Bomat Courier. Every card in hand,
+   * nothing chosen, paid with the rest of the cost; an empty hand pays it. Never the auto-payer's.
+   */
+  readonly discardHand?: true;
+  /**
    * "Discard two cards" (D1330): with `discardACard`, how many, all chosen by the player and sent as
    * `ActivateAction.discards`. Absent is one.
    */
