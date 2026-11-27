@@ -307,3 +307,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1388 pushed in 10c00a7. D1389 self pronouns on any line: scripts.ts (lineScriptFor).
 - D1389 pushed in 7266953, checkpoint b4a34d1. D1390 Gideon's animation and self prevention: scripts.ts.
 - D1390 pushed in 39e437c. D1391 Gideon of the Trials (would-deal prevention, conditional cantLose, emblems asked): scriptTypes, effects, scripts.ts.
+- D1391 pushed in 117cb3c. D1392 Saga chapters compiled: scripts.ts (sagaChapterLine).

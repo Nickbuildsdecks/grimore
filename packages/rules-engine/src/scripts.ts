@@ -41943,6 +41943,36 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
  * less to cast for each …". An ability word has no rules meaning (CR 207.2c), so the sentence after
  * the dash is the whole ability; some readers strip the label themselves, and this covers the rest.
  */
+/**
+ * **A Saga's chapter** (D1392, CR 714): "I — Each opponent sacrifices a creature or planeswalker.",
+ * "I, II — Create a 2/2 white Knight creature token with vigilance." The engine has run Sagas since
+ * the hand-written ones (`CardScript.saga`, a trigger `on: { kind: 'chapter', n }` for each chapter,
+ * the lore counter in the precombat main phase and the sacrifice after the last chapter), and the
+ * compiler read none of the 220 legal ones.
+ *
+ * The chapter's text is read as a triggered ability's, through `triggerFromLine` with an entry
+ * prologue, and the one trigger it makes is put on the chapter numbers instead. A reflexive trigger
+ * the text queues comes with it. Anything else the reading carries refuses the line.
+ */
+const ROMAN_CHAPTERS: Readonly<Record<string, number>> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 };
+function sagaChapterLine(line: string, name: string): Partial<CardScript> | null {
+  const chapter = /^((?:VI|IV|V|I{1,3})(?:,\s*(?:VI|IV|V|I{1,3}))*)\s*—\s*(.+)$/.exec(plain(line).trim());
+  if (chapter === null) return null;
+  const numbers = chapter[1]!.split(/,\s*/).map((roman) => ROMAN_CHAPTERS[roman]);
+  if (numbers.some((n) => n === undefined)) return null;
+  const read = triggerFromLine(`When ${name} enters, ${chapter[2]!}`, name);
+  if (read === null || Object.keys(read).some((key) => key !== 'triggers')) return null;
+  const triggers = read.triggers ?? [];
+  const isEntry = (t: TriggerDef): boolean => !Array.isArray(t.on) && (t.on as { kind: string }).kind === 'etb';
+  const entries = triggers.filter(isEntry);
+  if (entries.length !== 1) return null;
+  const others = triggers.filter((t) => !isEntry(t));
+  return {
+    saga: true,
+    triggers: [...numbers.map((n) => ({ ...entries[0]!, on: { kind: 'chapter' as const, n: n! } }) as TriggerDef), ...others],
+  };
+}
+
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   const printed = lineScriptForPrinted(line, name);
   if (printed !== null) return printed;
@@ -41958,6 +41988,8 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
 }
 
 function lineScriptForPrinted(line: string, name: string): Partial<CardScript> | null {
+  const chapter = sagaChapterLine(line, name);
+  if (chapter !== null) return chapter;
   /*
     "When ~ dies, if it was a creature, …" (D837, the Enduring cycle): the death of the card as a
     creature, read as the same line without the condition and with the death trigger narrowed to a
