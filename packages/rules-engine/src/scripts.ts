@@ -12910,7 +12910,7 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
       },
     };
   }
-  const head = new RegExp(`^(?:This spell|${self}) costs \\{(\\d+|X)\\} less to cast(?:,? (if|for each|where X is) (.+))?$`, 'i')
+  const head = new RegExp(`^(?:This spell|${self}) costs \\{(\\d+|X)\\} less to cast(?:,? (if|for each|where X is|during) (.+))?$`, 'i')
     .exec(text);
   if (head === null || head[2] === undefined) return null;
   const [, amount, how, rest] = head as unknown as [string, string, string, string];
@@ -12935,6 +12935,16 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
   // "It" here is the spell, except in "a creature with a counter on it" (D1077), which is the creature.
   const aboutTheSpell = rest.replace(/\bwith an? (?:\+1\/\+1 )?counter on it\b/gi, '');
   if (/\b(?:it|this spell|this creature)\b/i.test(aboutTheSpell) || new RegExp(`\\b${self}\\b`, 'i').test(rest)) return null;
+  // "During your turn" and "during your end step" (D1383): Mental Modulation, Closing Statement.
+  if (how.toLowerCase() === 'during') {
+    const during = amount === 'X' ? null : /^your (turn|end step)$/i.exec(rest.trim().replace(/\.$/, ''));
+    if (during === null) return null;
+    const endStep = during[1]!.toLowerCase() === 'end step';
+    return { selfCostChange: {
+      generic: -Number(amount), description,
+      when: (state, caster) => state.activeSeat === caster && (!endStep || state.step === 'end'),
+    } };
+  }
   if (how.toLowerCase() === 'if') {
     if (amount === 'X') return null;
     const condition = interveningConditionFor(rest, name);
@@ -22954,6 +22964,21 @@ function forEachCount(phrase: string, name: string): ((c: EffectContext) => numb
   // "For each experience counter you have" (D1263): the player's own counters.
   const own = /^experience counter you have$/i.test(plain(phrase).trim().replace(/\.$/, ''));
   if (own) return (c) => c.state.seats[c.controller]?.counters['experience'] ?? 0;
+  /*
+    "For each creature attacking you" (D1383, Sentry Bot) and "for each noncreature, nonland card in
+    your graveyard" (Ravenous Cosmozoan, Serpent of the Pass).
+  */
+  const each = plain(phrase).trim().replace(/\.$/, '');
+  if (/^creature attacking you$/i.test(each)) {
+    return (c) => c.state.combat.attacks.filter((a) => a.defender === c.controller && a.planeswalker === undefined).length;
+  }
+  if (/^noncreature, nonland card in your graveyard$/i.test(each)) {
+    return (c) => Object.values(c.state.instances).filter((inst) => {
+      if (inst.zone !== 'graveyard' || inst.zoneSeat !== c.controller) return false;
+      const types = parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine);
+      return !hasType(types, 'creature') && !hasType(types, 'land');
+    }).length;
+  }
   return countOfThing(plain(phrase).trim().replace(/\.$/, ''), name, 'singular');
 }
 
@@ -40976,6 +41001,35 @@ function guardedBy(then: ReadEffect, condition: (c: EffectContext) => boolean): 
 function interveningConditionFor(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
+  /*
+    Four facts about the board (D1383), first printed as cost reductions — "This spell costs {2} less
+    to cast if a creature is attacking you" (Heroic Return, Red Alert!, Swat Away), "… if there are no
+    land cards in your hand" (Forceful Cultivator), "… if your opponents control three or more
+    creatures" (Lashwhip Predator), "… if you have nine or more cards in your graveyard" (Capricious
+    Hellraiser). An attack on your planeswalker is not an attack on you (CR 506.3).
+  */
+  const fact = printed.trim().replace(/\.$/, '');
+  if (/^a creature is attacking you$/i.test(fact)) {
+    return (c) => c.state.combat.attacks.some((a) => a.defender === c.controller && a.planeswalker === undefined);
+  }
+  const noneInHand = /^there are no (land|instant or sorcery) cards in your hand$/i.exec(fact);
+  if (noneInHand !== null) {
+    const kinds = noneInHand[1]!.toLowerCase() === 'land' ? ['land'] as const : ['instant', 'sorcery'] as const;
+    return (c) => !Object.values(c.state.instances).some((inst) => inst.zone === 'hand' && inst.zoneSeat === c.controller
+      && kinds.some((kind) => hasType(parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine), kind)));
+  }
+  const theirCreatures = /^your opponents control (\w+) or more creatures$/i.exec(fact);
+  const atLeastTheirs = theirCreatures === null ? null : countFrom(theirCreatures[1]!);
+  if (atLeastTheirs !== null) {
+    return (c) => opponentsOf(c.state, c.controller)
+      .reduce((n, seat) => n + creaturesControlledBy(c.state, seat).length, 0) >= atLeastTheirs;
+  }
+  const yard = /^you have (\w+) or more cards in your graveyard$/i.exec(fact);
+  const atLeastYard = yard === null ? null : countFrom(yard[1]!);
+  if (atLeastYard !== null) {
+    return (c) => Object.values(c.state.instances)
+      .filter((inst) => inst.zone === 'graveyard' && inst.zoneSeat === c.controller).length >= atLeastYard;
+  }
   // "If tribute wasn't paid" (D1374): the marker tribute leaves, read off the permanent.
   if (/^tribute wasn't paid$/i.test(printed.trim())) {
     return (c) => (c.state.instances[c.source]?.counters[TRIBUTED] ?? 0) === 0;

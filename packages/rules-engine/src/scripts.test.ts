@@ -51559,6 +51559,63 @@ describe('"Loses the game", and Phage the Untouchable (D1382)', () => {
   });
 });
 
+describe('Cost reductions on an attack, a hand, a board and a graveyard (D1383)', () => {
+  const spell = (name: string, cost: string): Record<string, unknown> => ({ name, type_line: 'Instant', mana_cost: '{4}{W}', cmc: 5, colors: ['W'], layout: 'normal',
+    oracle_text: `This spell costs ${cost}.\nDraw a card.` });
+  const ATTACKED = spell('Test Alarm', '{2} less to cast if a creature is attacking you');
+  const EMPTY = spell('Test Empty', '{2} less to cast if there are no land cards in your hand');
+  const CROWD = spell('Test Crowd', '{2} less to cast if your opponents control three or more creatures');
+  const YARD = spell('Test Yard', '{3} less to cast if you have two or more cards in your graveyard');
+  const TURN = spell('Test Turn', '{1} less to cast during your turn');
+  const EACH = spell('Test Each', '{1} less to cast for each noncreature, nonland card in your graveyard');
+  const ROWS = [ATTACKED, EMPTY, CROWD, YARD, TURN, EACH];
+  const change = (row: Record<string, unknown>) => {
+    const read = compileCard(row as never);
+    if (!read.ok || read.script?.selfCostChange === undefined) throw new Error(`${String(row.name)} did not read`);
+    return read.script.selfCostChange;
+  };
+  const deck = customDeck({ id: 'd1383', name: 'Costs', entries: [...ROWS.map((r) => ({ name: String(r.name), count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Plains', count: 40 }], data: ROWS as never[] });
+  const table = (over: { hand?: readonly string[]; theirs?: readonly string[] } = {}): GameState => advanceTo(arena({
+    decks: { 0: 'd1383', 1: 'd1383' }, deckSpecs: { d1383: deck.deck }, hands: { 0: [...(over.hand ?? [])] },
+    battlefield: { 1: [...(over.theirs ?? [])] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('all six read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), String(r.name)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature attacking you, and not one attacking your planeswalker', () => {
+    const s = table({ theirs: ['Grizzly Bears'] });
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const when = change(ATTACKED).when;
+    expect(when(s, 0)).toBe(false);
+    expect(when({ ...s, combat: { ...s.combat, attacks: [{ attacker: bear, defender: 0, blockers: [] }] } }, 0)).toBe(true);
+    expect(when({ ...s, combat: { ...s.combat, attacks: [{ attacker: bear, defender: 0, planeswalker: 'pw', blockers: [] }] } }, 0)).toBe(false);
+  });
+
+  it('no land cards in hand; three or more creatures across the opponents', () => {
+    expect(change(EMPTY).when(table({ hand: ['Grizzly Bears'] }), 0)).toBe(true);
+    expect(change(EMPTY).when(table({ hand: ['Grizzly Bears', 'Plains'] }), 0)).toBe(false);
+    expect(change(CROWD).when(table({ theirs: ['Grizzly Bears', 'Grizzly Bears'] }), 0)).toBe(false);
+    expect(change(CROWD).when(table({ theirs: ['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears'] }), 0)).toBe(true);
+  });
+
+  it('during your turn only, and a graveyard counted by size and by kind', () => {
+    let s = table();
+    expect(change(TURN).when(s, 0)).toBe(true);
+    expect(change(TURN).when(s, 1)).toBe(false);
+    expect(change(YARD).when(s, 0)).toBe(false);
+    const bears = ids(s, 0, 'library').filter((id) => nameOf(s, id) === 'Grizzly Bears').slice(0, 1);
+    const plains = ids(s, 0, 'library').filter((id) => nameOf(s, id) === 'Plains').slice(0, 1);
+    const instants = ids(s, 0, 'library').filter((id) => nameOf(s, id) === 'Test Each').slice(0, 2);
+    for (const id of [...bears, ...plains, ...instants]) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' } as Action);
+    expect(change(YARD).when(s, 0)).toBe(true);
+    // Two instants count; the creature and the land do not.
+    expect(change(EACH).per?.(s, 0)).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
