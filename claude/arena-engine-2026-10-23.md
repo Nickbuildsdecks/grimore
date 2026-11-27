@@ -51333,3 +51333,38 @@ Faults injected by hand: 6, all caught.
 The scripts tests, compile tests and pins: 6643 of 6643 pass. Test typecheck clean.
 
 Coverage: 17,719 of 31,900 cards (+6 over D1382's 17,713), 40,666 of 59,888 lines (+11).
+
+## D1384 — Upkeep prices against damage, phasing and a mill
+
+"At the beginning of your upkeep, Force of Nature deals 8 damage to you unless you pay
+{G}{G}{G}{G}." D529 read "sacrifice ~ unless you pay {N}" (and D1105 "tap ~ unless you pay"):
+echo's question with the price on one answer, which the engine pays and doesn't offer when it
+can't be paid. The same price now stands against two more forfeits:
+- "~ deals N damage to you unless you pay …" (Force of Nature, Minion of Tevesh Szat). Declined,
+  the permanent deals the damage.
+- "~ phases out unless you pay …" (Vaporous Djinn, Warping Wurm). Declined, it phases out (D733).
+
+D724's "sacrifice ~ unless you <do something>" now also takes a cost with no question: "unless you
+mill two cards" (Deep Spawn). It is offered only while the library holds that many, because a cost
+can't be paid in part (CR 118.3).
+
+The bot pays, as it does for every upkeep price: declining costs the permanent or the damage.
+
+Read whole now: Force of Nature, Minion of Tevesh Szat, Vaporous Djinn, Warping Wurm.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole.
+- Force paid, with no damage and two Forests tapped. With no mana there is no question, and the 8
+  damage is dealt.
+- Djinn declined: it phases out.
+- Spawn: milling two keeps it, and declining sacrifices it.
+
+Faults injected by hand: 4, all caught.
+- No damage dealt.
+- The price not charged.
+- No phasing.
+- One card milled instead of two.
+
+The scripts tests, compile tests and pins: 6647 of 6647 pass. Test typecheck clean.
+
+Coverage: 17,724 of 31,900 cards (+5 over D1383's 17,719), 40,672 of 59,888 lines (+6).
