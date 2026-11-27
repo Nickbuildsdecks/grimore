@@ -50272,6 +50272,43 @@ describe('targets bounded by their total mana value: Patch Up (D1354)', () => {
   });
 });
 
+describe('"Put a counter on each of them" after a sentence that aimed at several (D1355)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: text });
+  const SCOUT = card('Test Scout', 'Return up to two target creature cards from your graveyard to the battlefield. Put a +1/+1 counter on each of them.');
+  const HOME = card('Test Home', 'Target player draws two cards. Tap up to two target creatures. Put a stun counter on each of them.');
+  const ROWS = [SCOUT, HOME];
+  const deck = customDeck({ id: 'd1355', name: 'Scout', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  const table = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1355', 1: 'd1355' }, deckSpecs: { d1355: deck.deck },
+    hands: { 0: [hand] }, graveyard: { 0: ['Grizzly Bears', 'Grizzly Bears'] }, battlefield: { 1: ['Grizzly Bears', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads both whole, and refuses a lone target or a rules counter', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    for (const text of ['Destroy target creature. Put a +1/+1 counter on each of them.', 'Tap up to two target creatures. Put a loyalty counter on each of them.']) {
+      const read = compileCard(card('Test Refused', text) as never);
+      expect(read.ok && read.unread.length).toBe(1);
+    }
+  });
+
+  it('both returned creatures get a +1/+1 counter', () => {
+    let s = table('Test Scout');
+    const bears = ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Scout'), targets: bears.map((id) => ({ kind: 'card', id })) } as Action)), 20);
+    expect(bears.every((id) => s.instances[id]!.zone === 'battlefield' && s.instances[id]!.counters['+1/+1'] === 1)).toBe(true);
+  });
+
+  it('beside a player target: the two tapped creatures get the stun counters, and the player draws', () => {
+    let s = table('Test Home');
+    const theirs = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    const hand = ids(s, 1, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Home'), targets: [{ kind: 'player', seat: 1 }, ...theirs.map((id) => ({ kind: 'card', id }))] } as Action)), 20);
+    expect(theirs.every((id) => s.instances[id]!.tapped && s.instances[id]!.counters['stun'] === 1)).toBe(true);
+    expect(ids(s, 1, 'hand').length).toBe(hand + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

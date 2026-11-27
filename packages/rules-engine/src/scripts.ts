@@ -35340,6 +35340,26 @@ function composeEffectsAsPrinted(
   for (let at = 0; at < rest.length; at++) {
     const clause = rest[at]!;
     // The edict with a forfeit (D858): see `edictOrDiscard`.
+    /*
+      "Put a +1/+1 counter on each of them" (D1355) after the one sentence that aimed at several:
+      Scout for Survivors, Out Cold's stun counters, Nature's Panoply, Involuntary Cooldown's two.
+      Each card target that sentence took, still on the battlefield, gets the counters. A counter the
+      rules give a meaning of their own (\`RULES_COUNTERS\`) is refused, as everywhere.
+    */
+    const onEach = /^put (a|an|one|two|three) ([a-z+\/\-0-9]+) counters? on each of them\.?$/i.exec(clause.trim());
+    // Other sentences may aim at players (Homesickness's "Target player draws two cards"): a player
+    // takes no counter, so "them" can only mean the one sentence that aimed at several cards.
+    const aimers = parts.filter((part) => part.targets !== undefined && !part.targets.every((spec) => spec.kind === 'player'));
+    if (onEach !== null && aimers.length === 1 && aimers[0]!.targets!.length === 1 && (aimers[0]!.targets![0]!.count ?? 1) > 1
+      && !RULES_COUNTERS.includes(onEach[2]!.toLowerCase())) {
+      const many = /^(a|an|one)$/i.test(onEach[1]!) ? 1 : onEach[1]!.toLowerCase() === 'two' ? 2 : 3;
+      const kind = onEach[2]!.toLowerCase();
+      parts.push({
+        effect: (c) => c.targets.reduce((state, t) => (t.kind === 'card' && state.instances[t.id]?.zone === 'battlefield'
+          ? addCounters(state, t.id, kind, many) : state), c.state),
+      });
+      continue;
+    }
     const forfeit = edictOrDiscard(clause, rest[at + 1]);
     if (forfeit !== null) { parts.push(forfeit); at++; continue; }
     /*

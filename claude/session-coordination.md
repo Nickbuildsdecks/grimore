@@ -270,3 +270,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1351 pushed in 59d2939, checkpoint at D1351 in 5bef5ee. D1352 Protean Hulk (CardsDecisionSpec.totalManaValueAtMost): scriptTypes, turnTypes, automation, autoActions decide, scripts.ts search reader.
 - D1352 pushed in 0718746. D1353 untargeted graveyard returns of several cards / to the battlefield, with a total: scripts.ts only.
 - D1353 pushed in 9aa962c. D1354 TargetSpec.totalManaValueAtMost (checkTargets, both bot target paths, readEffect wrapper): scriptTypes, targeting, bot, scripts.ts.
+- D1354 pushed in c5ad18e. D1355 "put a counter on each of them" (composeEffects loop): scripts.ts only.
