@@ -68895,3 +68895,36 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6653 of 6653 pass. Test typecheck clean.
 
 Coverage: 17,754 of 31,900 cards (+24 over D1385's 17,730), 40,706 of 59,888 lines (+27).
+
+## D1387 — "Where X is that creature's power" on an event
+
+"Whenever another creature enters, you may put X +1/+1 counters on Hamletback Goliath, where X is
+that creature's power." D1020 measured the event's creature for "gain life equal to its power" and
+"draw cards equal to its power", and D823 did the same for tokens. Any other sentence sized "where
+X is its power" or "where X is that creature's power" was unread.
+
+**The rule.** On the same four events (an entry, a death, an attack, a combat hit), the sentence
+before "where X is" is read with X marked as "that many" is (D903). The effect is handed the event
+creature's size as that amount: live while it is on the battlefield, and as it last was once gone
+(CR 608.2h). The amount is never below 0. That reads counters, damage, life and cards through the
+existing "that many" readers.
+
+A pump of the card itself is read on its own ("~ gets +X/+0 until end of turn", Arni, Renowned
+Champion), because a pump's X isn't a count those readers take. A sentence that already says "that
+many" is refused, so the two amounts can't be confused.
+
+Read whole now: Hamletback Goliath, Kresh the Bloodbraided, Arni, Renowned Champion.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole.
+- The Goliath takes three counters when a 3/3 enters.
+- Arni gets +3/+0, and its toughness is unchanged.
+
+Faults injected by hand: 3, all caught.
+- The self pump raising toughness too.
+- The size not handed to the effect.
+- The self pump not read.
+
+The scripts tests, compile tests and pins: 6656 of 6656 pass. Test typecheck clean.
+
+Coverage: 17,758 of 31,900 cards (+4 over D1386's 17,754), 40,710 of 59,888 lines (+4).
