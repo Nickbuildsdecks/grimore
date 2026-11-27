@@ -51976,6 +51976,37 @@ describe("A Saga's chapters, compiled (D1392)", () => {
   });
 });
 
+describe('A Saga that returns transformed (D1393)', () => {
+  const SHRINE = {
+    name: 'Test Shrine // Test Warden', layout: 'transform', type_line: 'Enchantment — Saga // Enchantment Creature — Spirit', mana_cost: '{0}', cmc: 0, colors: ['W'],
+    card_faces: [
+      { name: 'Test Shrine', type_line: 'Enchantment — Saga', mana_cost: '{0}', colors: ['W'],
+        oracle_text: '(As this Saga enters and after your draw step, add a lore counter.)\nI — You gain 1 life.\nII — Exile this Saga, then return it to the battlefield transformed under your control.' },
+      { name: 'Test Warden', type_line: 'Enchantment Creature — Spirit', mana_cost: '', colors: ['W'], power: '3', toughness: '3', oracle_text: 'Vigilance' },
+    ],
+  };
+  const deck = customDeck({ id: 'd1393', name: 'Shrine', entries: [{ name: SHRINE.name, count: 2 }, { name: 'Plains', count: 58 }], data: [SHRINE] as never[] });
+
+  it('the front face reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SHRINE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('chapter II exiles it and it returns as its back face, a 3/3 creature, and is not sacrificed', () => {
+    let s = advanceTo(arena({ decks: { 0: 'd1393', 1: 'd1393' }, deckSpecs: { d1393: deck.deck }, hands: { 0: ['Test Shrine'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Shrine');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card } as Action)), 20);
+    expect(life(s, 0)).toBe(21);
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 20);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect(ch.name).toBe('Test Warden');
+    expect(ch.isCreature).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+    expect(s.instances[card]!.counters['lore'] ?? 0).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

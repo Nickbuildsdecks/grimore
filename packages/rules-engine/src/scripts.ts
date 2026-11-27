@@ -41954,12 +41954,47 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
  * prologue, and the one trigger it makes is put on the chapter numbers instead. A reflexive trigger
  * the text queues comes with it. Anything else the reading carries refuses the line.
  */
+  /*
+    "Exile this Saga, then return it to the battlefield transformed under your control" (D1393): the
+    last chapter of Fable of the Mirror-Breaker and the Kamigawa Sagas. A new object enters showing
+    its back face, which it never transformed into (CR 712.14), as D593's daybound card does. A card
+    with no back face is exiled and stays there (CR 701.28c).
+  */
+function returnedTransformed(clause: string, name: string): ReadEffect | null {
+  const returnTransformed = new RegExp(
+    `^exile (?:this saga|${selfRef(name)}|it), then return it to the battlefield transformed under (your|its owner's) control$`, 'i',
+  ).exec(clause.trim().replace(/\.$/, ''));
+  if (returnTransformed !== null) {
+    const toOwner = returnTransformed[1]!.toLowerCase().startsWith('its');
+    return {
+      effect: (c) => {
+        const inst = c.state.instances[c.source];
+        if (inst === undefined || inst.zone !== 'battlefield') return c.state;
+        const front = c.state.cardDefs[inst.printedDefKey ?? inst.defKey];
+        const exiled = exileCard(c.state, c.source);
+        if (front?.faces?.kind !== 'transform' || exiled.instances[c.source]?.zone !== 'exile') return exiled;
+        const back = putOntoBattlefield(exiled, c.source, toOwner ? inst.owner : c.controller);
+        return transformPermanent(back, c.source, false);
+      },
+    };
+  }
+  return null;
+}
+
 const ROMAN_CHAPTERS: Readonly<Record<string, number>> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 };
 function sagaChapterLine(line: string, name: string): Partial<CardScript> | null {
   const chapter = /^((?:VI|IV|V|I{1,3})(?:,\s*(?:VI|IV|V|I{1,3}))*)\s*—\s*(.+)$/.exec(plain(line).trim());
   if (chapter === null) return null;
   const numbers = chapter[1]!.split(/,\s*/).map((roman) => ROMAN_CHAPTERS[roman]);
   if (numbers.some((n) => n === undefined)) return null;
+  // The Kamigawa Sagas' last chapter (D1393), which the clause splitter would cut at ", then".
+  const transformed = returnedTransformed(chapter[2]!, name);
+  if (transformed !== null) {
+    return {
+      saga: true,
+      triggers: numbers.map((n) => ({ on: { kind: 'chapter' as const, n: n! }, description: chapter[2]!.replace(/\.$/, ''), effect: transformed.effect })),
+    };
+  }
   const read = triggerFromLine(`When ${name} enters, ${chapter[2]!}`, name);
   if (read === null || Object.keys(read).some((key) => key !== 'triggers')) return null;
   const triggers = read.triggers ?? [];
