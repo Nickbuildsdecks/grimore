@@ -50797,6 +50797,60 @@ describe('"As long as you control a Jace planeswalker" (D1366)', () => {
   });
 });
 
+describe('Doomsday: a pile of five from library and graveyard, in order (D1367)', () => {
+  const DOOM = { name: 'Test Doomsday', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    oracle_text: 'Search your library and graveyard for five cards and exile the rest. Put the chosen cards on top of your library in any order. You lose half your life, rounded up.' };
+  const deck = customDeck({ id: 'd1367', name: 'Doom', entries: [{ name: 'Test Doomsday', count: 2 }, { name: 'Grizzly Bears', count: 14 }, { name: 'Swamp', count: 44 }], data: [DOOM] as never[] });
+  const table = (yard: readonly string[], life = 20): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1367', 1: 'd1367' }, deckSpecs: { d1367: deck.deck },
+      hands: { 0: ['Test Doomsday'] }, graveyard: { 0: [...yard] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life } : seat)) };
+  };
+  const cast = (s: GameState): GameState => passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Doomsday') } as Action));
+  const pick = (s: GameState, cards: readonly string[]): GameState => apply(s, { type: 'auto:decide', by: 0, cards: [...cards] } as Action);
+
+  it('reads whole, as three questions', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(DOOM as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.decisions?.length).toBe(3);
+  });
+
+  it('four from the library, one from the graveyard, ordered: the library is exactly that pile, the rest exiled, half the life gone', () => {
+    let s = table(['Grizzly Bears', 'Swamp']);
+    const yard = ids(s, 0, 'graveyard');
+    s = cast(s);
+    // From the library: at least three (the graveyard holds two), at most five.
+    expect(s.pendingDecision).toMatchObject({ seat: 0, from: 'library', min: 3, max: 5 });
+    const four = s.pendingDecision!.candidates.slice(0, 4);
+    s = pick(s, four);
+    expect(s.pendingDecision).toMatchObject({ from: 'graveyard', min: 1, max: 1 });
+    s = pick(s, [yard[0]!]);
+    // Now the library is the pile and nothing else, and the other graveyard card is gone.
+    expect(s.pendingDecision?.from).toBe('library-top');
+    expect([...ids(s, 0, 'library')].sort()).toEqual([...four, yard[0]!].sort());
+    expect(s.instances[yard[1]!]!.zone).toBe('exile');
+    const order = [yard[0]!, ...four];
+    s = drain(pick(s, order), 20);
+    expect(ids(s, 0, 'library')).toEqual(order);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Test Doomsday']);
+    expect(s.seats[0]!.life).toBe(10);
+  });
+
+  it('with an empty graveyard: five from the library, no graveyard question; 7 life loses 4', () => {
+    let s = cast(table([], 7));
+    expect(s.pendingDecision).toMatchObject({ from: 'library', min: 5, max: 5 });
+    const five = s.pendingDecision!.candidates.slice(0, 5);
+    s = pick(s, five);
+    expect(s.pendingDecision?.from).toBe('library-top');
+    s = drain(pick(s, [...five].reverse()), 20);
+    expect(ids(s, 0, 'library')).toEqual([...five].reverse());
+    expect(s.seats[0]!.life).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

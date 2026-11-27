@@ -2120,6 +2120,12 @@ export interface CardsDecisionSpec {
    * `'top'` (D651) is "then put them back in any order": every card looked at is picked, and they go
    * back on top in the order picked — the first one picked is the new top card. Ponder.
    */
+  /**
+   * Offers cards this seat chose earlier in the same resolution (D1367). Every other question takes
+   * them out, so "each player sacrifices" twice cannot name one creature twice. Doomsday's order is
+   * of exactly the cards just chosen, so it has to see them.
+   */
+  readonly again?: true;
   readonly chosenGoTo?: 'bottom' | 'graveyard' | 'hand' | 'top'
     /** Onto the battlefield under the chooser's control (D973), tapped or not. */
     | 'battlefield' | 'battlefield-tapped';

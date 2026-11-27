@@ -34577,6 +34577,71 @@ function voteGroup(clauses: readonly string[], name: string, where: SubjectZone 
   }
 }
 
+/**
+ * Doomsday (D1367): "Search your library and graveyard for five cards and exile the rest. Put the
+ * chosen cards on top of your library in any order. You lose half your life, rounded up."
+ *
+ * Three questions:
+ * - The cards from the library, a search. As few as the graveyard leaves room for and as many as
+ *   five.
+ * - The rest from the graveyard, exactly what makes five, or all of it if it has fewer.
+ * - The order, which is Ponder's (`chosenGoTo: 'top'`, D651): every card picked, the first picked
+ *   the new top card.
+ *
+ * As the third is reached, everything else in the library and graveyard is exiled and the
+ * graveyard's picks go onto the library, so the look is exactly the pile. The exile is done again
+ * as the spell finishes, which does nothing then but covers a pile of no cards, where the order is
+ * never asked.
+ */
+function doomsdayPile(clauses: readonly string[]): ReadEffect | null {
+  const text = clauses.map((clause) => plain(clause).trim().replace(/\.$/, '')).join('. ');
+  if (!/^search your library and graveyard for five cards and exile the rest\. put the chosen cards on top of your library in any order\. you lose half your life, rounded up$/i.test(text)) return null;
+  const PILE = 5;
+  const keep = (answers: readonly DecisionAnswer[]): Set<string> => new Set([...(answers[0]?.ids ?? []), ...(answers[1]?.ids ?? [])]);
+  const exileTheRest = (state: GameState, seat: SeatIndex, kept: Set<string>): GameState =>
+    [...listAt(state, zoneKey(seat, 'library')), ...listAt(state, zoneKey(seat, 'graveyard'))]
+      .filter((id) => !kept.has(id))
+      .reduce((next, id) => exileCard(next, id), state);
+  return {
+    decisions: [
+      (state, source) => {
+        const seat = state.instances[source]?.owner ?? 0;
+        const inYard = listAt(state, zoneKey(seat, 'graveyard')).length;
+        const inLibrary = listAt(state, zoneKey(seat, 'library')).length;
+        return {
+          who: 'controller', from: 'library', prompt: 'Doomsday: choose cards from your library for the pile (the rest are exiled)',
+          min: Math.min(inLibrary, Math.max(0, PILE - inYard)), max: Math.min(PILE, inLibrary),
+        };
+      },
+      (state, source, at) => {
+        const seat = state.instances[source]?.owner ?? 0;
+        const room = PILE - (at?.decisions[0]?.ids.length ?? 0);
+        const n = Math.min(room, listAt(state, zoneKey(seat, 'graveyard')).length);
+        return {
+          who: 'controller', from: 'graveyard', prompt: `Doomsday: choose ${n} card${n === 1 ? '' : 's'} from your graveyard for the pile`,
+          min: n, max: n, askOnlyIf: () => n > 0,
+        };
+      },
+      (_state, _source, at) => {
+        const n = keep(at?.decisions ?? []).size;
+        return {
+          who: 'controller', from: 'library-top', look: n, min: n, max: n, chosenGoTo: 'top', again: true,
+          prompt: 'Doomsday: order the pile (the first card chosen goes on top)',
+          askOnlyIf: () => n > 0,
+          onReach: (state, controller, _src, answers) => (answers[1]?.ids ?? [])
+            .reduce((next, id) => putOnTopOfLibrary(next, id), exileTheRest(state, controller, keep(answers))),
+        };
+      },
+    ],
+    effect: (c) => {
+      const kept = keep(c.decisions);
+      const after = exileTheRest(c.state, c.controller, kept);
+      const life = after.seats[c.controller]?.life ?? 0;
+      return life > 0 ? loseLife(after, c.controller, Math.ceil(life / 2)) : after;
+    },
+  };
+}
+
 function flashIn(clauses: readonly string[]): ReadEffect | null {
   const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
   const m = /^you may put a creature card from your hand onto the battlefield\. if you do, sacrifice it unless you pay its mana cost reduced by (?:up to )?\{(\d+)\}\.?$/i.exec(text);
@@ -35461,6 +35526,9 @@ function composeEffectsAsPrinted(
   // A vote (D1361): see `voteGroup`.
   const voted = voteGroup(clauses, name, where);
   if (voted !== null) return voted;
+  // Doomsday (D1367): see `doomsdayPile`.
+  const pile = doomsdayPile(clauses);
+  if (pile !== null) return pile;
   // Flash (D1351): see `flashIn`.
   const flashed = flashIn(clauses);
   if (flashed !== null) return flashed;

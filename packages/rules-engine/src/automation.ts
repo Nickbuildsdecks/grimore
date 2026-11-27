@@ -6349,7 +6349,7 @@ function askOrFinish(
       : decisionCandidates(
         state, bounded, entry.seat,
         poolSeat !== undefined && poolSeat.kind === 'player' ? poolSeat.seat : undefined,
-      )).filter((id) => !taken.has(id))
+      )).filter((id) => (!isCountersDecision(spec) && spec.again === true) || !taken.has(id))
       .filter((id) => {
         if (searchCap === null) return true;
         if (searchCap.cant) return false;
