@@ -279,3 +279,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1360 pushed in db6a76b. D1361 voting (ChoiceDecisionSpec who each-player-from-you, voteGroup, vote counts and majorities): scriptTypes, automation, scripts.ts.
 - D1361 pushed in 579a189. D1362 bot shield cap (preventionCanMatter counts shields up against attacking power): bot.ts only. Sweep 101001 running on 579a189.
 - D1362 pushed in d5fa705. D1363 Expropriate (voteGroup money questions as DecisionSpecOf): scripts.ts only.
+- D1363 pushed in e5f8763. D1364 total mana value of a group (totalAmong): scripts.ts only.

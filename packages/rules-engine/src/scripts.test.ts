@@ -50712,6 +50712,38 @@ describe("Expropriate: a question for each money vote (D1363)", () => {
   });
 });
 
+describe('"Where X is the total mana value of …" (D1364): Metalwork Colossus', () => {
+  const COLOSSUS = { name: 'Test Colossus', type_line: 'Artifact Creature — Construct', mana_cost: '{11}', cmc: 11, colors: [], layout: 'normal', power: '10', toughness: '10',
+    oracle_text: 'This spell costs {X} less to cast, where X is the total mana value of noncreature artifacts you control.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: '' };
+  const STONE = { name: 'Test Stone', type_line: 'Artifact', mana_cost: '{X}{4}', cmc: 4, colors: [], layout: 'normal', oracle_text: '' };
+  const BOT = { name: 'Test Bot', type_line: 'Artifact Creature — Construct', mana_cost: '{5}', cmc: 5, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [COLOSSUS, ROCK, STONE, BOT];
+  const deck = customDeck({ id: 'd1364', name: 'Colossus', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 52 }], data: ROWS as never[] });
+  const table = (artifacts: readonly string[], lands: number): GameState => advanceTo(arena({
+    decks: { 0: 'd1364', 1: 'd1364' }, deckSpecs: { d1364: deck.deck },
+    hands: { 0: ['Test Colossus'] }, battlefield: { 0: [...artifacts, ...Array.from({ length: lands }, () => 'Plains')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, as a reduction per point of the total', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(COLOSSUS as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('noncreature artifacts of 3 and 4 (an X counted as 0) take 7 off; the artifact creature does not count', () => {
+    const s = table(['Test Rock', 'Test Stone', 'Test Bot'], 0);
+    const def = s.cardDefs[s.instances[find(s, 0, 'hand', 'Test Colossus')]!.defKey];
+    expect(costChangeFor(s, 0, def, find(s, 0, 'hand', 'Test Colossus')).generic).toBe(-7);
+  });
+
+  it('cast off four lands with them out, not off three', () => {
+    const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.name === 'Test Colossus');
+    expect(offered(table(['Test Rock', 'Test Stone'], 4))).toBe(true);
+    expect(offered(table(['Test Rock', 'Test Stone'], 3))).toBe(false);
+    expect(offered(table([], 4))).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

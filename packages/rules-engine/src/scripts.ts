@@ -25,7 +25,7 @@ import {
   type StaticCountable,
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
-import { zoneKey, type CardDef, type CardInstance } from './cards.js';
+import { isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
   BLITZED,
@@ -22702,6 +22702,22 @@ function greatestInScope(phrase: string): ((c: EffectContext) => number) | null 
  * does, and the result is never below 0 (CR 107.1b: this is a count of cards, life or mana).
  */
 function totalAmong(phrase: string): ((c: EffectContext) => number) | null {
+  /*
+    And "the total mana value of noncreature artifacts you control" (D1364): Metalwork Colossus,
+    Nyxborn Behemoth, Earthquake Dragon's "Dragons you control", Excalibur's "historic permanents".
+    Any group `massScope` reads, each permanent's mana value from its printed cost (CR 202.3, X as
+    0), and nothing for a face-down one (CR 708.2).
+  */
+  const valued = /^the total mana value of (.+)$/i.exec(phrase.trim());
+  if (valued !== null) {
+    const scope = massScope(valued[1]!);
+    if (scope === null) return null;
+    return (c) => scope(c).reduce((sum, id) => {
+      const inst = c.state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst)) return sum;
+      return sum + costValue(parseManaCost(c.state.cardDefs[inst.defKey]?.manaCost ?? ''));
+    }, 0);
+  }
   const matched = /^the total (power|toughness) of (other )?(?:([A-Z][A-Za-z'-]*) )?creatures (you control|your opponents control|on the battlefield)(?: with ([a-z]+))?$/.exec(phrase);
   if (matched === null) return null;
   const measure = matched[1]!;
