@@ -249,3 +249,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1329 pushed in 23374ba. D1330 "Discard two cards" cost (discardCount, ActivateAction.discards): scriptTypes, turnTypes, scripts, autoActions, legalActions, bot; web arena.ts counted discard feed; two compile pins retired.
 - D1330 pushed in 89118e3. D1331 "Discard your hand" cost, Lion's Eye Diamond (AbilityCost.discardHand): scriptTypes, scripts.ts cost reader, autoActions activate, legalActions manaSources.
 - D1331 pushed in 9792612. D1332 "Sacrifice any number of …, then … that many" (sacrificeAnyThenThatMany, pluralPermanentKinds): scripts.ts group reader only.
+- D1332 pushed in 3d11857. D1333 Scapeshift (askingContext carries answers so far; askOrFinish works each question out as reached): automation.ts, scripts.ts sacrificeAnyThenThatMany.

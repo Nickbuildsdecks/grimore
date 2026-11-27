@@ -49187,7 +49187,6 @@ describe('"Sacrifice any number of …, then … that many" (D1332)', () => {
     for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
     // Not when what follows asks its own question, nor with an X of its own.
     for (const text of [
-      'Sacrifice any number of lands. Search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle.',
       'Sacrifice any number of creatures. Draw a card.',
       'Sacrifice any number of creatures, then discard that many cards.',
       'Sacrifice any number of wizards, then draw that many cards.',
@@ -49239,6 +49238,48 @@ describe('"Sacrifice any number of …, then … that many" (D1332)', () => {
     s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [giant] } as Action), 20);
     expect(s.instances[giant]!.zone).toBe('graveyard');
     expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
+describe('Scapeshift: a search sized by the sacrifice before it (D1333)', () => {
+  const SHIFT = { name: 'Test Shift', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Sacrifice any number of lands. Search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle.' };
+  const deck = customDeck({ id: 'd1333', name: 'Shift', entries: [{ name: 'Test Shift', count: 4 }, { name: 'Hill Giant', count: 6 }, { name: 'Swamp', count: 6 }, { name: 'Forest', count: 44 }], data: [SHIFT] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1333', 1: 'd1333' }, deckSpecs: { d1333: deck.deck },
+    battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Hill Giant'] }, hands: { 0: ['Test Shift'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState): GameState => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shift') } as Action);
+    for (let i = 0; i < 12 && next.pendingDecision === null; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SHIFT as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two lands sacrificed: up to two land cards found, put onto the battlefield tapped', () => {
+    let s = cast(table());
+    const swamps = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Swamp');
+    s = apply(s, { type: 'auto:decide', by: 0, cards: swamps.slice(0, 2) } as Action);
+    // The search, asked of the library, may take two and no more.
+    expect(s.pendingDecision?.max).toBe(2);
+    const found = s.pendingDecision!.candidates.filter((id) => nameOf(s, id) === 'Forest').slice(0, 3);
+    expect(() => apply(s, { type: 'auto:decide', by: 0, cards: found } as Action)).toThrow();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: found.slice(0, 2) } as Action), 20);
+    expect(swamps.slice(0, 2).every((id) => s.instances[id]!.zone === 'graveyard')).toBe(true);
+    expect(found.slice(0, 2).every((id) => s.instances[id]!.zone === 'battlefield' && s.instances[id]!.tapped)).toBe(true);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest')).toHaveLength(2);
+  });
+
+  it('none sacrificed: nothing is searched for', () => {
+    let s = cast(table());
+    const lands = ids(s, 0, 'battlefield').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 0, 'battlefield').length).toBe(lands);
   });
 });
 

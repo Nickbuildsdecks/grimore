@@ -34201,8 +34201,20 @@ function sacrificeAnyThenThatMany(clauses: readonly string[], name: string, wher
   if (kinds === null) return null;
   const rest = clauses.slice(1);
   if (!rest.some((clause) => /\bthat (?:many|much)\b/i.test(clause)) || rest.some((clause) => /\bX\b/.test(clause))) return null;
-  const then = composeEffects(rest.map((clause) => clause.replace(/\bthat (many|much)\b/gi, '\u000e $1')), name, where);
-  if (then === null || (then.decisions ?? []).length > 0 || then.reflexive !== undefined || then.cardFields !== undefined) return null;
+  /*
+    Scapeshift's "Search your library for up to that many land cards" (D1333): read as "any number
+    of", then sized as it is asked by how many the first answer chose (`askingContext` carries the
+    answers so far). The one question that may follow, because a library is not changed by what is
+    sacrificed.
+  */
+  const searchUpTo = /^search your library for up to that many\b/i.test(rest[0]!.trim());
+  const marked = rest.map((clause, i) => (i === 0 && searchUpTo
+    ? clause.replace(/\bup to that many\b/i, 'any number of')
+    : clause.replace(/\bthat (many|much)\b/gi, '\u000e $1')));
+  const then = composeEffects(marked, name, where);
+  if (then === null || then.reflexive !== undefined || then.cardFields !== undefined) return null;
+  const asks = then.decisions ?? [];
+  if (searchUpTo ? asks.length !== 1 : asks.length > 0) return null;
   const other = first[1] !== undefined;
   const prompt = `Sacrifice any number of ${first[1] ?? ''}${first[2]!}`;
   return {
@@ -34212,10 +34224,15 @@ function sacrificeAnyThenThatMany(clauses: readonly string[], name: string, wher
       who: 'controller', from: 'battlefield', min: 0, max: ANY_NUMBER, prompt,
       filter: (state: GameState, id: string) => (!other || id !== source) && kinds(state, id),
       pick: () => [],
+    }), ...asks.map((ask) => (state: GameState, source: string, at?: EffectContext): DecisionSpec => {
+      const inner = typeof ask === 'function'
+        ? ask(state, source, at === undefined ? undefined : { ...at, decisions: at.decisions.slice(1) }) : ask;
+      const many = at?.decisions[0]?.ids.length ?? 0;
+      return isCardsDecision(inner) ? { ...inner, max: Math.min(inner.max ?? 1, many) } : inner;
     })],
     effect: (c) => {
       const gone = chosenCards(c).filter((id) => c.state.instances[id]?.zone === 'battlefield');
-      return then.effect({ ...c, state: sacrifice(c.state, gone), eventAmount: gone.length });
+      return then.effect({ ...c, state: sacrifice(c.state, gone), eventAmount: gone.length, decisions: c.decisions.slice(1) });
     },
   };
 }

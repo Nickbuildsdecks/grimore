@@ -5808,10 +5808,15 @@ function runModes(
  * answers yet. The same fields the effect will see, from the same stack object, so a count read
  * here and a count read by the effect agree.
  */
-function askingContext(state: GameState, object: StackObject): EffectContext {
+/**
+ * The context a question worked out as it is asked sees (`DecisionSpecOf`). Its `decisions` are the
+ * answers given so far in this resolution (D1333), so a later question can be sized by an earlier
+ * one: Scapeshift searches for as many lands as were chosen to be sacrificed.
+ */
+function askingContext(state: GameState, object: StackObject, answers: readonly DecisionAnswer[] = []): EffectContext {
   return {
     state, source: object.source,
-    controller: object.controller, targets: object.targets, x: object.x ?? triggerX(state, object), decisions: [],
+    controller: object.controller, targets: object.targets, x: object.x ?? triggerX(state, object), decisions: answers,
     kicked: object.kicked === true, attacked: object.attacked,
     ...(object.kind === 'spell' ? { resolving: object } : {}),
     ...aboutNow(state, object),
@@ -5827,9 +5832,11 @@ function askingContext(state: GameState, object: StackObject): EffectContext {
   };
 }
 
-function decisionSpecsFor(state: GameState, object: StackObject): readonly DecisionSpec[] {
+function decisionSpecsFor(
+  state: GameState, object: StackObject, answers: readonly DecisionAnswer[] = [],
+): readonly DecisionSpec[] {
   const asked = (specs: readonly DecisionSpecOf[]): readonly DecisionSpec[] =>
-    specs.map((spec) => (typeof spec === 'function' ? spec(state, object.source, askingContext(state, object)) : spec));
+    specs.map((spec) => (typeof spec === 'function' ? spec(state, object.source, askingContext(state, object, answers)) : spec));
   const script = scriptOnStack(state, object);
   if (object.kind !== 'spell') return asked(abilityOrTrigger(script, object, state.cardDefs)?.decisions ?? []);
   const modes = modesOf(script, object.modes);
@@ -6100,11 +6107,11 @@ function askOrFinish(
   plan: readonly { seat: SeatIndex; specIndex: number }[], from: number,
   soFar: readonly DecisionAnswer[],
 ): { state: GameState; message: string } {
-  const specs = decisionSpecsFor(state, object);
   let answers = soFar;
   for (let i = from; i < plan.length; i++) {
     const entry = plan[i]!;
-    const spec = specs[entry.specIndex];
+    // Worked out with the answers so far (D1333), as each question is reached.
+    const spec = decisionSpecsFor(state, object, answers)[entry.specIndex];
     if (spec === undefined) continue;
     // A seat that has left the game between one question and the next is not asked.
     if (state.seats[entry.seat]?.eliminated !== false) {
