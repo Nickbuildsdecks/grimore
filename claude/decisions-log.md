@@ -67214,3 +67214,40 @@ Faults injected by hand: 4, three caught.
 The scripts tests, compile tests and pins: 6507 of 6507 pass.
 
 Coverage: 17,538 of 31,900 cards (+3 over D1341's 17,535), 40,372 of 59,888 lines (+3).
+
+## D1343 — sacrifice costs by colour, and three narrower kinds
+
+The cost reader read "Sacrifice a creature" and its subtypes, but not "Sacrifice a white creature",
+"… a red or white creature", "… a nontoken creature", "… a noncreature artifact" or "… a nonland
+permanent". 16 legal lines print one of these, and 14 of them did not read.
+
+**Colours.** "Sacrifice a/another COLOUR [or COLOUR] creature" sets `sacrificeColours`. That field
+is D686's, written for Natural Order's spell cost, and `sacrificeOptions` already honoured it for
+any cost, so no engine change was needed.
+
+**Kinds.** `AbilityCost.sacrifice` gains `nontoken-creature`, `nontoken-artifact` and
+`noncreature-artifact`, answered by `sacrificeOptions` off the live characteristics and named in a
+refusal by `sacrificeWords`. "A nonland permanent" one at a time is D732's counted kind, now read
+singly too (Magmaw).
+
+Five lines read now, four of them whole cards. Still unread:
+- the five Heralds' "a green creature, a white creature, and a blue creature", three sacrifices in
+  one cost;
+- Soldevi Adnate's "a black or artifact creature", a colour or a type;
+- three whose other text does not read.
+
+**Tests.** 4 engine tests, on a board of a red Raging Goblin, a white fixture creature, a green
+Grizzly Bears, a fixture artifact and a fixture artifact creature:
+- The colours and kinds are read onto the cost.
+- "A red or white creature" offers the Goblin and the white creature, not the Bears.
+- "A noncreature artifact" offers the artifact and the source itself, not the artifact creature.
+- The Bears are refused as the sacrifice, and the Goblin is paid.
+
+Faults injected by hand: 3, all caught.
+- The colours not written onto the cost.
+- An artifact creature allowed as a noncreature artifact.
+- The second colour dropped.
+
+The scripts tests, compile tests and pins: 6511 of 6511 pass.
+
+Coverage: 17,542 of 31,900 cards (+4 over D1342's 17,538), 40,378 of 59,888 lines (+6).
