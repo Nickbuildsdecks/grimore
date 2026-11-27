@@ -25581,7 +25581,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       })),
     };
   }
-  const hitTarget = new RegExp(`^(Whenever (?:${selfRef(name)}) deals combat damage to a player, )(.*\\bthat player controls\\b.*)$`, 'i')
+  // And "to an opponent" (D1388): Questing Beast's "target planeswalker that player controls".
+  const hitTarget = new RegExp(`^(Whenever (?:${selfRef(name)}) deals combat damage to (?:a player|an opponent), )(.*\\btarget [^,.]*\\bthat player controls\\b.*)$`, 'i')
     .exec(withoutAbilityWord(plain(line).trim()));
   if (hitTarget !== null) {
     return triggerFromLine(`${hitTarget[1]!}${hitTarget[2]!.replace(/\bthat player controls\b/gi, 'defending player controls')}`, name);
@@ -31829,6 +31830,29 @@ function readEffect(
         effect: (c) => {
           const t = c.targets[0];
           return t !== undefined && t.kind === 'player' ? loseLife(c.state, t.seat, n(c)) : c.state;
+        },
+      };
+    }
+    /*
+      "It deals that much damage to each creature that player controls" (D1388, Balefire Dragon) and
+      "… to each other opponent" (Kediss, Gargantos): the player the combat damage hit, from
+      `c.attacked`, and everyone else.
+    */
+    if (new RegExp(`^(?:it|${selfRef(name)}) deals \u000e much damage to each creature that player controls$`, 'i').test(text)) {
+      return {
+        effect: (c) => {
+          const seat = hit(c);
+          return seat === undefined ? c.state : creaturesControlledBy(c.state, seat).reduce(
+            (state, id) => dealDamage(state, { kind: 'card', id }, n(c), { controller: c.controller, source: c.source }), c.state);
+        },
+      };
+    }
+    if (new RegExp(`^(?:it|${selfRef(name)}) deals \u000e much damage to each other opponent$`, 'i').test(text)) {
+      return {
+        effect: (c) => {
+          const seat = hit(c);
+          return opponentsOf(c.state, c.controller).filter((one) => one !== seat).reduce(
+            (state, one) => dealDamage(state, { kind: 'player', seat: one }, n(c), { controller: c.controller, source: c.source }), c.state);
         },
       };
     }
@@ -40127,6 +40151,10 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
   // "Damage can't be prevented." (D3012): see `CardScript.damageUnpreventable`.
   if (/^damage can't be prevented\.?$/i.test(plain(line).trim())) return { damageUnpreventable: true };
+  // And Questing Beast's (D1388): only combat damage dealt by creatures you control.
+  if (/^combat damage that would be dealt by creatures you control can't be prevented\.?$/i.test(plain(line).trim())) {
+    return { damageUnpreventable: 'combat-by-your-creatures' };
+  }
   // "Your life total can't change." (D733): Platinum Emperion.
   if (/^your life total can't change\.?$/i.test(plain(line).trim())) return { lifeTotalCantChange: true };
   // The replacements on gaining life (D1127): see `CardScript.lifeGainReplacement`.

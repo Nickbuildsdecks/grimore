@@ -518,7 +518,7 @@ export function dealDamage(
     is a prevention too (CR 122.1c) — and a redirect still applies, since it is not one.
   */
   const unpreventable = next.damageUnpreventableThisTurn === true || next.damageUnpreventableNow === true
-    || preventionSwitchedOff(next);
+    || preventionSwitchedOff(next, opts.combatFrom !== undefined || opts.combat === true ? opts.source : null);
   // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
   // anything is marked, because prevention is not something that can be undone afterwards.
   if (!unpreventable && target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
@@ -1361,13 +1361,22 @@ export function scriptOfCard(def: CardDef | undefined): CardScript | undefined {
  * "Damage can't be prevented." printed on a permanent (D3012, `CardScript.damageUnpreventable`):
  * Leyline of Punishment, Sunspine Lynx. Every seat's battlefield, since it says all damage.
  */
-function preventionSwitchedOff(state: GameState): boolean {
+function preventionSwitchedOff(
+  state: GameState,
+  /** The creature dealing **combat** damage, or null for any other damage (D1388). */
+  combatSource: string | null = null,
+): boolean {
   if (scriptLookup === null) return false;
   const lookup = scriptLookup;
+  // Questing Beast's kind (D1388): only a creature its controller controls, dealing combat damage.
+  const dealer = combatSource === null ? undefined : state.instances[combatSource];
+  const dealerIsCreature = dealer !== undefined && dealer.zone === 'battlefield' && characteristicsOf(state, dealer).isCreature;
   return state.seats.some((row) => !row.eliminated && listAt(state, zoneKey(row.index, 'battlefield')).some((id) => {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
-    return lookup(state.cardDefs[inst.defKey])?.damageUnpreventable === true;
+    const kind = lookup(state.cardDefs[inst.defKey])?.damageUnpreventable;
+    if (kind === true) return true;
+    return kind === 'combat-by-your-creatures' && dealerIsCreature && dealer!.zoneSeat === inst.zoneSeat;
   }));
 }
 

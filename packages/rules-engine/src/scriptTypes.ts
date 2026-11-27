@@ -4659,7 +4659,11 @@ export interface CardScript {
    * permanent is on the battlefield with its abilities, every prevention `dealDamage` would apply is
    * skipped, the same as Skullcrack's turn.
    */
-  readonly damageUnpreventable?: true;
+  /**
+   * Or only **combat damage dealt by creatures you control** (D1388, Questing Beast): "Combat damage
+   * that would be dealt by creatures you control can't be prevented."
+   */
+  readonly damageUnpreventable?: true | 'combat-by-your-creatures';
   readonly lifeGainReplacement?: {
     readonly whose: 'you' | 'opponents' | 'players';
     readonly becomes: 'twice' | 'none' | 'loss' | { readonly plus: number };

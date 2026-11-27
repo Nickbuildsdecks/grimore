@@ -51784,6 +51784,57 @@ describe('"Where X is that creature\'s power" on an event (D1387)', () => {
   });
 });
 
+describe('"That much damage" to the hit player\'s side, and Questing Beast (D1388)', () => {
+  const BEAST = { name: 'Test Beast', type_line: 'Creature — Beast', mana_cost: '{2}{G}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: "Whenever Test Beast deals combat damage to an opponent, it deals that much damage to target planeswalker that player controls.\nCombat damage that would be dealt by creatures you control can't be prevented." };
+  const BALEFIRE = { name: 'Test Balefire', type_line: 'Creature — Dragon', mana_cost: '{5}{R}{R}', cmc: 7, colors: ['R'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: 'Whenever Test Balefire deals combat damage to a player, it deals that much damage to each creature that player controls.' };
+  const GUARD = { name: 'Test Guard', type_line: 'Creature — Human Knight', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '4',
+    oracle_text: 'Protection from green' };
+  const ROWS = [BEAST, BALEFIRE, GUARD];
+  const deck = customDeck({ id: 'd1388', name: 'Beast', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1388', 1: 'd1388' }, deckSpecs: { d1388: deck.deck }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const fight = (s: GameState, attacker: string, blocks: readonly { blocker: string; attacker: string }[] = []): GameState => {
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] } as Action);
+    for (let i = 0; i < 6 && s.step !== 'declare-blockers'; i++) s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [...blocks] } as Action);
+    for (let i = 0; i < 12 && s.step !== 'postcombat-main'; i++) s = s.pendingChoice !== null ? s : passBoth(s);
+    return drain(s, 20);
+  };
+
+  it('all three read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Balefire's hit deals 3 to each creature that player controls", () => {
+    const s0 = table(['Test Balefire'], ['Grizzly Bears', 'Grizzly Bears']);
+    const bears = ids(s0, 1, 'battlefield').filter((id) => nameOf(s0, id) === 'Grizzly Bears');
+    const s = fight(s0, find(s0, 0, 'battlefield', 'Test Balefire'));
+    expect(life(s, 1)).toBe(17);
+    for (const id of bears) expect(s.instances[id]!.zone).toBe('graveyard');
+  });
+
+  it("the Beast's combat damage gets through protection from green: the Guard dies", () => {
+    const s0 = table(['Test Beast'], ['Test Guard']);
+    const guard = find(s0, 1, 'battlefield', 'Test Guard');
+    const beast = find(s0, 0, 'battlefield', 'Test Beast');
+    const s = fight(s0, beast, [{ blocker: guard, attacker: beast }]);
+    expect(s.instances[guard]!.zone).toBe('graveyard');
+  });
+
+  it('and without the Beast the same protection still prevents a green creature\'s damage', () => {
+    const s0 = table(['Grizzly Bears'], ['Test Guard']);
+    const guard = find(s0, 1, 'battlefield', 'Test Guard');
+    const bear = find(s0, 0, 'battlefield', 'Grizzly Bears');
+    const s = fight(s0, bear, [{ blocker: guard, attacker: bear }]);
+    expect(s.instances[guard]!.zone).toBe('battlefield');
+    expect(s.instances[guard]!.damage).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
