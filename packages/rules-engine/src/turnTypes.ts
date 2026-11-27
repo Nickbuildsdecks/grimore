@@ -2179,6 +2179,11 @@ export interface AutoActivateAction {
   readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;
   readonly abilityIndex: number; readonly targets?: readonly Target[];
   /**
+   * For an ability that divides a quantity among its targets (D1378, CR 602.2b with 601.2d): how
+   * much each of `targets` is assigned. Mogg Mob, the -2 of Ral, Caller of Storms.
+   */
+  readonly division?: readonly number[];
+  /**
    * The X announced for an ability whose cost has {X} in it (D789, CR 602.2b): paid with the rest
    * of the cost and carried on the stack object, as a spell's is. Refused on a cost without one;
    * absent on a cost with one, it is zero.
@@ -2235,6 +2240,12 @@ export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by:
 /** Answers a triggered ability's request for targets. */
 export interface AutoChooseAction {
   readonly type: 'auto:choose'; readonly by: SeatIndex; readonly targets: readonly Target[];
+  /**
+   * For a trigger that divides a quantity among its targets (D1378, CR 603.3d with 601.2d): how
+   * much each of `targets` is assigned, position by position, announced with the targets as a
+   * spell's division is. Inferno Titan, Fury, Bogardan Hellkite. Refused when it does not add up.
+   */
+  readonly division?: readonly number[];
 }
 /** Answers a question a card asked while it was resolving. */
 export interface AutoDecideAction {

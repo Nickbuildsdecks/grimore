@@ -15401,8 +15401,11 @@ describe('the pronoun "it", and a referent anywhere in its clause (D533)', () =>
   });
 });
 
-describe('a trigger that divides a quantity is not emitted (D534)', () => {
+describe('a trigger that divides a quantity (D534, read since D1378)', () => {
   /*
+    **Read since D1378**, which gave `auto:choose` a division. What follows is why it was refused
+    from D534 until then.
+
     D463's rule, one ability kind over, and found by a pod rather than by a reader test: seed 40607
     of D533's sweep ended with `the engine cannot divide a triggered ability yet`. `auto:choose`
     carries no division, so `chooseTargets` throws rather than dealing the whole amount to one
@@ -15415,7 +15418,7 @@ describe('a trigger that divides a quantity is not emitted (D534)', () => {
     `composeEffects` has nothing aimed before it, the pronoun table is never consulted, and the
     reading comes from the clause vocabulary #119 added.
   */
-  it('leaves Gang of Devils\' line unread rather than emitting a trigger that throws', () => {
+  it('reads Gang of Devils\' line, the division on its target', () => {
     const read = compileCard({
       name: 'Gang of Devils', type_line: 'Creature — Devil', mana_cost: '{5}{R}', cmc: 6,
       colors: ['R'], layout: 'normal', power: '3', toughness: '3',
@@ -15424,8 +15427,8 @@ describe('a trigger that divides a quantity is not emitted (D534)', () => {
     });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.length).toBe(1);
-    expect(read.script?.triggers ?? []).toEqual([]);
+    expect(read.unread).toEqual([]);
+    expect(read.script?.triggers?.[0]?.targets?.[0]?.divided).toBe(3);
   });
 
   it('still divides on a SPELL, which the engine implements', () => {

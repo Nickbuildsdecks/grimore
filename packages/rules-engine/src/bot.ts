@@ -2270,7 +2270,7 @@ function aimings(
   // An amount that is X (D1358) is the X this file casts with: see the cast below.
   if (spec?.divided !== undefined) {
     const amount = spec.dividedX === true ? play.xDefault ?? play.xMax ?? 0 : spec.divided;
-    return amount > 0 ? dividedAimings(state, seat, play, amount) : [];
+    return amount > 0 ? dividedAimings(state, seat, spec, play.candidates[0] ?? [], amount) : [];
   }
   const first = chooseTargets(state, seat, play, opts);
   if (first === null) return [];
@@ -2327,12 +2327,11 @@ function lethalFor(state: GameState, id: string): number | null {
  * three copies of the same one.
  */
 function dividedAimings(
-  state: GameState, seat: SeatIndex, play: LegalPlay, amount: number,
+  state: GameState, seat: SeatIndex, spec: LegalPlay['targetSpecs'][number] | undefined, candidates: readonly Target[], amount: number,
 ): Aiming[] {
-  const spec = play.targetSpecs[0];
   const most = Math.min(Math.max(1, spec?.count ?? 1), amount);
   const foes = foesOf(state, seat);
-  const ranked = [...(play.candidates[0] ?? [])]
+  const ranked = [...candidates]
     .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
   const best = ranked[0];
   if (best === undefined) return [];
@@ -2387,6 +2386,32 @@ function dividedAimings(
     add(wide, wide.map((_, i) => (i === wide.length - 1 ? amount - (wide.length - 1) : 1)));
   }
   return out.slice(0, AIM_WIDTH);
+}
+
+/**
+ * One of `dividedAimings`' options for a trigger, which has no search to price them (D1378).
+ *
+ * The one that kills the most of the opponents' creatures, and of equals the first (everything on
+ * the best target). An option that puts any of it on this seat's own side is dropped while one
+ * that does not exists: Fury's "any number of target creatures" lists its own creatures too, and a
+ * spread "one each" would hit them.
+ */
+function dividedPick(state: GameState, seat: SeatIndex, options: readonly Aiming[]): Aiming | undefined {
+  const foes = foesOf(state, seat);
+  const mine = (t: Target): boolean => (t.kind === 'player' ? t.seat === seat
+    : t.kind === 'card' && state.instances[t.id]?.zoneSeat === seat);
+  const kills = (a: Aiming): number => a.targets.filter((t, i) => {
+    if (t.kind !== 'card') return false;
+    const inst = state.instances[t.id];
+    if (inst === undefined || !foes.includes(inst.zoneSeat)) return false;
+    const needed = lethalFor(state, t.id);
+    return needed !== null && needed <= (a.division?.[i] ?? 0);
+  }).length;
+  const clean = options.filter((a) => !a.targets.some(mine));
+  const pool = clean.length > 0 ? clean : options;
+  let best: Aiming | undefined;
+  for (const option of pool) if (best === undefined || kills(option) > kills(best)) best = option;
+  return best;
 }
 
 /** How many plays are worth simulating, best-first by the shallow ranking. */
@@ -2684,6 +2709,7 @@ function candidateActions(
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             returned: smallest,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
+            ...(aim.division === undefined ? {} : { division: [...aim.division] }),
           },
         });
         continue;
@@ -2729,6 +2755,7 @@ function candidateActions(
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             discarded: pitch,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
+            ...(aim.division === undefined ? {} : { division: [...aim.division] }),
           },
         });
         continue;
@@ -2758,6 +2785,7 @@ function candidateActions(
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             sacrifice: spent,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
+            ...(aim.division === undefined ? {} : { division: [...aim.division] }),
           },
         });
         continue;
@@ -2780,6 +2808,7 @@ function candidateActions(
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             sacrifice: fodder,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
+            ...(aim.division === undefined ? {} : { division: [...aim.division] }),
           },
         });
         continue;
@@ -2791,6 +2820,8 @@ function candidateActions(
             ...(play.xMax === undefined ? {} : { x: play.xMax }),
           ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
           ...(targets.length > 0 ? { targets: [...targets] } : {}),
+          // And the division (D1378), for an ability that divides a quantity among its targets.
+          ...(aim.division === undefined ? {} : { division: [...aim.division] }),
         },
       });
     }
@@ -3121,6 +3152,15 @@ function aimPending(
   opts: BotOptions = {},
 ): Action {
   const foes = foesOf(state, seat);
+  // A trigger that divides a quantity (D1378): one of the ways to spend it, with its division.
+  const dividing = choice.specs[0];
+  if (choice.specs.length === 1 && dividing?.divided !== undefined && dividing.dividedX !== true) {
+    const pick = dividedPick(state, seat,
+      dividedAimings(state, seat, dividing, choice.candidates[0] ?? [], dividing.divided));
+    return pick === undefined
+      ? { type: 'auto:choose', by: seat, targets: [] }
+      : { type: 'auto:choose', by: seat, targets: [...pick.targets], division: [...(pick.division ?? [])] };
+  }
   const chosen: Target[] = [];
   const used = new Set<string>();
   for (let i = 0; i < choice.specs.length; i++) {

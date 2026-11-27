@@ -46,7 +46,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt,
+  IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt, choiceDivided,
   damageTakenFrom, dividedAmount,
   eliminatedLabel, feedOptions, pactBadge, playsForCard, reasonCannotPlay, sparedYouBy, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
@@ -1673,6 +1673,10 @@ function Board({ table }: { table: UseTable }) {
       but a seat strip is lit by this set alone.
     */
     ...(arenaMode.kind === "targeting" && dividedAmount(arenaMode.play) !== undefined
+      ? arenaMode.chosen.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat)
+      : []),
+    // And a dividing trigger's (D1378), for the same reason.
+    ...(arenaMode.kind === "choosing" && choiceDivided(arenaMode.specs) !== undefined
       ? arenaMode.chosen.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat)
       : []),
   ])

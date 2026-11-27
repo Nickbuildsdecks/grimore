@@ -51301,6 +51301,71 @@ describe('Evoke by exiling a card of a colour, and Solitude (D1377)', () => {
   });
 });
 
+describe('Divided damage on triggered and activated abilities (D1378)', () => {
+  const FURY = { name: 'Test Fury', type_line: 'Creature — Elemental Incarnation', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: 'Double strike\nWhen Test Fury enters, it deals 4 damage divided as you choose among any number of target creatures and/or planeswalkers.' };
+  const MOB = { name: 'Test Mob', type_line: 'Creature — Goblin', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '5', toughness: '3',
+    oracle_text: 'Sacrifice Test Mob: It deals 3 damage divided as you choose among one, two, or three targets.' };
+  const ROWS = [FURY, MOB];
+  const deck = customDeck({ id: 'd1378', name: 'Fury', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Mountain', count: 46 }], data: ROWS as never[] });
+  const table = (over: { hand?: readonly string[]; mine?: readonly string[] } = {}): GameState => advanceTo(arena({
+    decks: { 0: 'd1378', 1: 'd1378' }, deckSpecs: { d1378: deck.deck }, hands: { 0: [...(over.hand ?? [])] },
+    battlefield: { 0: [...(over.mine ?? [])], 1: ['Grizzly Bears', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bears = (s: GameState): string[] => ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+  // Fury cast and resolved, its trigger waiting for targets.
+  const furyWaiting = (): GameState => {
+    let s = table({ hand: ['Test Fury'] });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fury') } as Action));
+    for (let i = 0; i < 4 && s.pendingChoice === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Fury's trigger takes its division with its targets: two and two kills both Bears", () => {
+    let s = furyWaiting();
+    expect(s.pendingChoice?.seat).toBe(0);
+    const [a, b] = bears(s);
+    const both = [{ kind: 'card', id: a! }, { kind: 'card', id: b! }] as const;
+    // No division, or one that does not add up to four, is refused.
+    expect(() => apply(s, { type: 'auto:choose', by: 0, targets: [...both] } as Action)).toThrow();
+    expect(() => apply(s, { type: 'auto:choose', by: 0, targets: [...both], division: [2, 1] } as Action)).toThrow();
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [...both], division: [2, 2] } as Action);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.instances[a!]!.zone).toBe('graveyard');
+    expect(s.instances[b!]!.zone).toBe('graveyard');
+  });
+
+  it("the bot aims Fury's trigger at the opponent's creatures, killing both, and never at its own", () => {
+    const s = furyWaiting();
+    const action = botAction(s, 0) as unknown as { type: string; targets: { kind: string; id: string }[]; division: number[] };
+    expect(action.type).toBe('auto:choose');
+    expect(action.targets.map((t) => t.id).sort()).toEqual([...bears(s)].sort());
+    expect(action.division).toEqual([2, 2]);
+    expect(action.targets.some((t) => s.instances[t.id]?.zoneSeat === 0)).toBe(false);
+  });
+
+  it("Mob's sacrifice ability divides three: one to the opponent and two to a Bear", () => {
+    let s = table({ mine: ['Test Mob'] });
+    const mob = find(s, 0, 'battlefield', 'Test Mob');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === mob);
+    expect(play?.targetSpecs[0]?.divided).toBe(3);
+    const bear = bears(s)[0]!;
+    const theirs = life(s, 1);
+    const targets = [{ kind: 'player', seat: 1 }, { kind: 'card', id: bear }];
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: mob, abilityIndex: play!.abilityIndex ?? 0, targets } as Action)).toThrow();
+    s = apply(s, { type: 'auto:activate', by: 0, card: mob, abilityIndex: play!.abilityIndex ?? 0, targets, division: [1, 2] } as Action);
+    expect(s.instances[mob]!.zone).toBe('graveyard');
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(life(s, 1)).toBe(theirs - 1);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -65948,8 +66013,11 @@ describe('an Aura the compiler only half reads still goes onto something (D456)'
   });
 });
 
-describe('an activated ability that divides a quantity (D463)', () => {
+describe('an activated ability that divides a quantity (D463, read since D1378)', () => {
   /*
+    **Read since D1378**, which gave `auto:activate` a division. What follows is why it was refused
+    from D463 until then.
+
     The engine refuses to resolve a divided **activated** ability — `autoActions.ts` says so and
     throws, because `AutoActivateAction` carries no division and dealing the whole amount to the
     first target would be a wrong card. Its comment stated the premise: "no ability in the pool
@@ -65979,13 +66047,11 @@ describe('an activated ability that divides a quantity (D463)', () => {
       + 'three targets.',
   };
 
-  it('is not read, so the card ships with the line flagged rather than offered', () => {
+  it('is read, the division on the ability\'s target', () => {
     const compiled = compileCard(MOB as never);
     expect(compiled.ok).toBe(true);
-    // No ability at all, rather than one the engine would refuse.
-    expect(compiled.ok ? (compiled.script?.abilities ?? null) : 'not ok').toBe(null);
-    // And the line says so, which is what the table shows the player.
-    expect(compiled.ok ? compiled.unread.map((u) => u.why) : []).toEqual(['no-reader']);
+    expect(compiled.ok ? compiled.unread : ['not ok']).toEqual([]);
+    expect(compiled.ok ? compiled.script?.abilities?.[0]?.targets?.[0]?.divided : null).toBe(3);
   });
 
   it('still divides on a spell, which is where the engine implements it', () => {
@@ -66012,7 +66078,7 @@ describe('an activated ability that divides a quantity (D463)', () => {
     Both are refused through one predicate now, so the next reader added to either branch cannot
     drift apart from the other.
   */
-  it('is refused on a planeswalker loyalty ability too, which is the second place one is built', () => {
+  it('is read on a planeswalker loyalty ability too, which is the second place one is built', () => {
     const ral = compileCard({
       name: 'Ral, Caller of Storms', type_line: 'Legendary Planeswalker — Ral',
       mana_cost: '{3}{U}{R}', cmc: 5, colors: ['U', 'R'],
@@ -66025,15 +66091,13 @@ describe('an activated ability that divides a quantity (D463)', () => {
     } as never);
     expect(ral.ok).toBe(true);
     const abilities = ral.ok ? (ral.script?.abilities ?? []) : [];
-    // The +1 still reads — the refusal is per line, not per card — and since D601 so does the -7,
-    // whose sweep over "each creature your opponents control" divides nothing. Only the -2 is out.
-    expect(abilities.map((a) => a.cost.loyalty)).toEqual([1, -7]);
-    // And nothing left on the card divides anything.
-    expect(abilities.flatMap((a) => (a.targets ?? []).filter((t) => t.divided !== undefined)))
-      .toEqual([]);
+    // All three, and the -2 divides its three damage (D1378).
+    expect(abilities.map((a) => a.cost.loyalty)).toEqual([1, -2, -7]);
+    expect(abilities.flatMap((a) => (a.targets ?? []).flatMap((t) => (t.divided === undefined ? [] : [t.divided]))))
+      .toEqual([3]);
   });
 
-  it('is never offered at a real table, so no seat can press a button the engine refuses', () => {
+  it('is offered at a real table with its division, which the engine now takes', () => {
     const built = customDeck({
       id: 'd463-list',
       name: 'Divided ability',
@@ -66055,13 +66119,11 @@ describe('an activated ability that divides a quantity (D463)', () => {
     }), 'precombat-main');
 
     const mob = find(s, 0 as SeatIndex, 'battlefield', 'Mogg Mob');
-    /*
-      The card is on the battlefield and it is a creature — it was cast and it can attack. What it
-      does not have is an activate play, because the line that would have made one is unread.
-    */
+    // One activate play, its spec carrying the three to divide (D1378).
     expect(ids(s, 0 as SeatIndex, 'battlefield')).toContain(mob);
     expect(legalActions(s, 0 as SeatIndex).plays
-      .filter((play) => play.card === mob && play.kind === 'activate')).toEqual([]);
+      .filter((play) => play.card === mob && play.kind === 'activate')
+      .map((play) => play.targetSpecs[0]?.divided)).toEqual([3]);
   });
 });
 

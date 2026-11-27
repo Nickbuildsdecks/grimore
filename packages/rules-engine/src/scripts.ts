@@ -25663,27 +25663,10 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     const read = reader(asRead) ?? optionalEffect(asRead, reader, true) ?? punisherEffect(asRead, reader, on, name);
     if (read === null) return null;
     /*
-      **A trigger that divides a quantity is not emitted at all**, the third call site of
-      `dividesAQuantity` and for the reason the first two have (D463): `auto:choose` carries no
-      division, so `chooseTargets` throws rather than dealing the whole amount to one target. Before
-      this, the compiler emitted such a trigger and the game ended with an engine error the moment it
-      fired — which is strictly worse than an unread line, because the line a human resolves is a
-      line a human can resolve (D362).
-
-      Found by a pod sweep, not by a reader test: seed 40607 of D533's sweep threw on **Gang of
-      Devils**, "When Gang of Devils dies, it deals 3 damage divided as you choose among one, two, or
-      three targets". It is the only legal card in the corpus whose compiled trigger divides
-      anything, so this costs exactly that one card its script line — and that line did not work.
-
-      Not D533's doing, and the distinction is worth the sentence: that clause is the only one on its
-      line, so `composeEffects` has nothing aimed before it and the pronoun table is never consulted.
-      The reading comes from the plain clause vocabulary, which has been there since #119. The sweep
-      is what surfaced it.
-
-      Division on a *trigger* is a real feature and this is not it — tracked separately. Spells
-      divide correctly (#119); it is the choose path that has no machinery.
+      A trigger that divides a quantity is emitted (D1378). It was refused here from D533 until
+      `auto:choose` carried a division: Gang of Devils threw at seed 40607 when the trigger was
+      emitted with nothing to divide by. Inferno Titan, Fury, Bogardan Hellkite, Dragonlord Atarka.
     */
-    if (dividesAQuantity(read)) return null;
     /*
       "Do this only once each turn" (D1301): the turn's one is spent when the effect did something,
       which a "no" to its "you may" does not, and is kept on the permanent beside the once-each-turn
@@ -27322,18 +27305,12 @@ function sweepDestination(
 }
 
 /**
- * Whether a reading carries a **divided** quantity, which an activated ability cannot resolve.
+ * Whether a reading carries a **divided** quantity.
  *
- * `AutoActivateAction` carries no division — `autoActions.ts` throws rather than dealing the whole
- * amount to the first target — so an ability built from such a reading is one the engine offers and
- * then refuses. The line stays unread instead, which is the honest half of D362: an unread line is
- * a line a human resolves, where an offered-then-refused one is a button that ends the game with an
- * error.
- *
- * One function and two call sites, because there are two: the ordinary `cost: effect` assembly and
- * the planeswalker `+N:` / `-N:` one. D463 guarded only the first, and the coverage figure caught it
- * — three cards print this and the count moved by one, so the other two were still emitting it.
- * Spells keep division, which the engine implements (#119); only the ability path has no machinery.
+ * Abilities and triggers divide since D1378, so the division is announced with their targets. Two
+ * places still refuse one: a reflexive "When you do" (its targets are chosen by a trigger the
+ * reading queues, which carries no division), and a sentence of several aimed parts, where the
+ * division would have to say which part's targets it is about.
  */
 const dividesAQuantity = (read: ReadEffect): boolean =>
   (read.targets ?? []).some((spec) => spec.divided !== undefined);
@@ -37294,8 +37271,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const read = loyaltyReader(clause) ?? optionalEffect(clause, loyaltyReader);
     if (read === null) return null;
-    // See `dividesAQuantity`: Ral, Caller of Storms and Samut, the Tested both print it on a -2.
-    if (dividesAQuantity(read)) return null;
+    // Ral, Caller of Storms and Samut, the Tested divide damage on a -2, read since D1378.
     const amount = loyalty[1] === '+' || loyalty[1] === '' ? Number(loyalty[2]) : -Number(loyalty[2]);
     return {
       abilities: [{
@@ -38007,30 +37983,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     */
     ?? optionalEffect(clause, (text) => composeEffects(clausesOf(text), name, 'battlefield')));
   if (read === null) return null;
-  /*
-    A **divided** quantity on an activated ability is refused, and the line stays unread.
-
-    `AutoActivateAction` carries no division — `autoActions.ts` says so and throws rather than
-    dealing the whole amount to the first target — so emitting the ability here produces a card the
-    engine offers and then refuses. That is not a wrong reading in the D362 sense; it is worse,
-    because `legalActions` puts the button on the table and pressing it ends the game with an error.
-    `playout.test.ts`' standing invariant says the engine never offers a play it then refuses, and
-    this is the second place this session where that assertion was green only because no built-in
-    deck had the card (D460 was the first).
-
-    So the honest reading is no reading: the line is flagged, the rest of the card still compiles,
-    and the card is cast and played with one line a human has to resolve.
-
-    Found by `corpus-decks.mjs` at seed 30072 of a 100-pod sweep (#336, D463). Three legal cards
-    print it on an activated ability — **Mogg Mob** ("Sacrifice Mogg Mob: It deals 3 damage divided
-    as you choose among one, two, or three targets"), and the -2 of **Ral, Caller of Storms** and
-    **Samut, the Tested**. Counted over the whole corpus rather than guessed, which is what decided
-    the fix: three cards is a line here, not a feature in the engine.
-
-    The **spell** path keeps division, because the engine implements it there (#119): the amounts are
-    announced as the spell is cast. Only the ability path has no machinery for it.
-  */
-  if (dividesAQuantity(read)) return null;
+  // A divided quantity on an activated ability is read since D1378 (Mogg Mob, Arc Mage): the
+  // division is announced with the targets. Refused from D463 until the action carried one.
   /*
     "Sacrifice Carapace: Regenerate enchanted creature" (D625). The host is read off the source's
     `attachedTo` when the ability resolves, and a cost that moved the source away has cleared it by

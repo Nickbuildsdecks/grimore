@@ -94,6 +94,34 @@ describe("choosing a play", () => {
     expect(arenaReducer(mode, { kind: "undoTarget" }).mode).toEqual(IDLE)
   })
 
+  describe("a trigger that divides a quantity among its targets (D1378)", () => {
+    const specs: LegalPlay["targetSpecs"] = [{ kind: "any", description: "any target", count: 99, optional: true, divided: 4 }]
+    const start = (): ArenaMode => arenaReducer(IDLE, {
+      kind: "startChoosing", specs, candidates: [[card("a"), card("b"), player(1)]], description: "Fury",
+    }).mode
+
+    it("spends one point per tap, and answers with the division when the last is spent", () => {
+      let mode = start()
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("a") }).mode
+      mode = arenaReducer(mode, { kind: "pickTarget", target: card("b") }).mode
+      expect(mode).toMatchObject({ kind: "choosing", chosen: [card("a"), card("b")], shares: [2, 1] })
+      // Half spent is not an answer.
+      expect(arenaReducer(mode, { kind: "confirm" }).action).toBeNull()
+      const result = arenaReducer(mode, { kind: "pickTarget", target: card("b") })
+      expect(result.mode).toEqual(IDLE)
+      expect(result.action).toEqual({ type: "auto:choose", targets: [card("a"), card("b")], division: [2, 2] })
+    })
+
+    it("steps back one point at a time, and stays in the prompt with nothing spent", () => {
+      let mode = start()
+      mode = arenaReducer(mode, { kind: "pickTarget", target: player(1) }).mode
+      mode = arenaReducer(mode, { kind: "undoTarget" }).mode
+      expect(mode).toMatchObject({ kind: "choosing", chosen: [], shares: [] })
+      expect(arenaReducer(mode, { kind: "undoTarget" }).mode.kind).toBe("choosing")
+    })
+  })
+
   describe("a spell that divides a quantity among its targets (CR 601.2d)", () => {
     const arcLightning = play({
       name: "Arc Lightning",

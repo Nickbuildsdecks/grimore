@@ -2055,6 +2055,7 @@ function activate(
     sacrifices?: readonly string[];
     discards?: readonly string[];
     grantedBy?: GrantedTriggerRef;
+    division?: readonly number[];
   },
 ): Outcome {
   requireAutomated(state);
@@ -2239,15 +2240,12 @@ function activate(
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
   /*
-    An **ability** that divides a quantity is refused rather than resolved as if it divided nothing.
-
-    `AutoActivateAction` carries no division, because no ability in the pool divides anything — and
-    the day one does, this is the line that says so instead of the ability silently dealing its
-    whole amount to the first target. An honest refusal beats a card that looks like it works.
+    An ability that divides a quantity (D1378): the division is announced with the targets, as a
+    spell's is (CR 602.2b follows 601.2d), and checked the same way. It was refused outright until
+    `AutoActivateAction` carried one: Mogg Mob, and the -2 of Ral, Caller of Storms.
   */
-  if (specs.some((spec) => spec.divided !== undefined)) {
-    throw new EngineError('RULE_NOT_APPLICABLE', 'the engine cannot divide an activated ability yet');
-  }
+  const divided = checkDivision(specs, chosen, action.division, action.x ?? 0);
+  if (!divided.ok) throw new EngineError('RULE_NOT_APPLICABLE', divided.reason ?? 'that division does not add up');
 
   // The sacrifice is chosen and checked before anything is spent, so a refusal leaves the board
   // exactly as it was rather than halfway through paying.
@@ -2638,6 +2636,14 @@ function activate(
     action.grantedBy,
     // The face it was activated from, read before the costs were paid (D982).
     inst.defKey);
+  // And the division, on the stack object the effect reads it from (D1378).
+  if (action.division !== undefined && action.division.length > 0) {
+    const pushed = next.stackOrder[next.stackOrder.length - 1]!;
+    next = {
+      ...next,
+      stackObjects: { ...next.stackObjects, [pushed]: { ...next.stackObjects[pushed]!, division: [...action.division] } },
+    };
+  }
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
   // at a warded creature is exactly the case the keyword is printed for. See `raiseTargeted`.
   next = raiseTargeted(next, next.stackOrder[next.stackOrder.length - 1]!);
@@ -3573,7 +3579,7 @@ function beginFirstTurn(state: GameState): GameState {
  * something a spell could not be — and once it is answered, play carries on from exactly where it
  * stopped, with the active player holding priority.
  */
-function chooseTargets(state: GameState, action: { by: SeatIndex; targets: readonly Target[] }): Outcome {
+function chooseTargets(state: GameState, action: { by: SeatIndex; targets: readonly Target[]; division?: readonly number[] }): Outcome {
   requireAutomated(state);
   const pending = state.pendingChoice;
   if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is waiting for a choice');
@@ -3609,11 +3615,9 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   }
   const check = checkTargets(state, specs, action.targets, action.by, object.source);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
-  // And a *trigger* that divides something, refused for the same reason an activated ability is:
-  // `auto:choose` carries no division, so resolving one would deal its whole amount to one target.
-  if (specs.some((spec) => spec.divided !== undefined)) {
-    throw new EngineError('RULE_NOT_APPLICABLE', 'the engine cannot divide a triggered ability yet');
-  }
+  // And a trigger that divides something (D1378): the division comes with the targets (CR 603.3d).
+  const divided = checkDivision(specs, action.targets, action.division);
+  if (!divided.ok) throw new EngineError('RULE_NOT_APPLICABLE', divided.reason ?? 'that division does not add up');
 
   let next: GameState = {
     ...state,
@@ -3623,6 +3627,7 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
         ...object,
         targets: [...action.targets],
         targetSeqs: targetSeqsFor(state, action.targets),
+        ...(action.division === undefined || action.division.length === 0 ? {} : { division: [...action.division] }),
       },
     },
     pendingChoice: null,

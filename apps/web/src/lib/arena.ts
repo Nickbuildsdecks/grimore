@@ -55,7 +55,7 @@ export type ArenaMode =
       fed?: readonly string[]
     }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
-  | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
+  | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[]; shares?: number[] }
   /**
    * Choosing X, before anything else about the spell.
    *
@@ -357,6 +357,15 @@ export function dividedAmount(play: LegalPlay, x?: number): number | undefined {
   if (spec === undefined) return undefined
   // "Deals X damage divided as you choose" (D1358): the X chosen before the targets.
   return spec.dividedX === true ? x ?? 0 : spec.divided
+}
+
+/**
+ * The quantity a waiting trigger divides among its targets (D1378), or undefined when it divides
+ * nothing. A trigger has no X of its own to divide, so an X amount is not one this table collects.
+ */
+export function choiceDivided(specs: readonly LegalPlay["targetSpecs"][number][]): number | undefined {
+  const spec = specs.find((spec) => spec.divided !== undefined)
+  return spec === undefined || spec.dividedX === true ? undefined : spec.divided
 }
 
 /** Which spec the next pick is for, so the prompt can name it. */
@@ -682,6 +691,24 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     case "pickTarget": {
       if (mode.kind === "choosing") {
         const key = targetKey(event.target)
+        /*
+          A trigger that divides a quantity (D1378): one tap is one point, as for a dividing spell,
+          and the answer goes when the last point is spent.
+        */
+        const amount = choiceDivided(mode.specs)
+        if (amount !== undefined) {
+          const shares = mode.shares ?? []
+          if (shares.reduce((n, d) => n + d, 0) >= amount) return { mode, action: null }
+          const at = mode.chosen.findIndex((t) => targetKey(t) === key)
+          const most = Math.min(specsWanted(mode.specs), amount)
+          if (at < 0 && mode.chosen.length >= most) return { mode, action: null }
+          const picked = at < 0 ? [...mode.chosen, event.target] : mode.chosen
+          const spread = at < 0 ? [...shares, 1] : shares.map((d, i) => (i === at ? d + 1 : d))
+          if (spread.reduce((n, d) => n + d, 0) >= amount) {
+            return { mode: IDLE, action: { type: "auto:choose", targets: picked, division: spread } }
+          }
+          return { mode: { ...mode, chosen: picked, shares: spread }, action: null }
+        }
         if (mode.chosen.some((t) => targetKey(t) === key)) {
           return { mode: { ...mode, chosen: mode.chosen.filter((t) => targetKey(t) !== key) }, action: null }
         }
@@ -751,6 +778,17 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     }
 
     case "undoTarget": {
+      // A dividing trigger's point back (D1378). Never out of the prompt: the ability is on the
+      // stack already, and the question is still owed.
+      if (mode.kind === "choosing" && choiceDivided(mode.specs) !== undefined) {
+        const shares = mode.shares ?? []
+        const last = shares.length - 1
+        if (last < 0) return { mode, action: null }
+        const left = (shares[last] ?? 0) - 1
+        return left <= 0
+          ? { mode: { ...mode, chosen: mode.chosen.slice(0, -1), shares: shares.slice(0, -1) }, action: null }
+          : { mode: { ...mode, shares: shares.map((d, i) => (i === last ? left : d)) }, action: null }
+      }
       if (mode.kind !== "targeting") return { mode, action: null }
       // For a dividing spell, one step back is one *point* back rather than one target: the last
       // target tapped loses a point, and loses its place only when it has none left.
@@ -838,6 +876,8 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
           the prompt open and no card lit, for two thousand moves.
         */
         if (mode.chosen.length < specsRequired(mode.specs)) return { mode, action: null }
+        // A dividing trigger is answered by its last point (D1378), never by a half-spent button.
+        if (choiceDivided(mode.specs) !== undefined) return { mode, action: null }
         return { mode: IDLE, action: { type: "auto:choose", targets: [...mode.chosen] } }
       }
       return { mode, action: null }

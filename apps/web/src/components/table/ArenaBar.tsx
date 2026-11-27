@@ -18,7 +18,7 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, decisionLabel, dividedAmount, feedWords, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
+  attackRead, choiceDivided, decisionLabel, dividedAmount, feedWords, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
   playsForCard, primaryMove, specAt, specsRequired, specsWanted, targetKey, targetName,
   targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
@@ -251,16 +251,48 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             the player has to be able to tell which one they are being asked. A modular creature's
             counters go on "up to one target artifact creature" (CR 702.43b), so none is an answer.
           */}
-          <span className="text-[var(--g-text-muted)]">
-            {specsRequired(mode.specs) === 0 ? "choose a target, or none" : "choose a target"}
-          </span>
+          {choiceDivided(mode.specs) === undefined ? (
+            <span className="text-[var(--g-text-muted)]">
+              {specsRequired(mode.specs) === 0 ? "choose a target, or none" : "choose a target"}
+            </span>
+          ) : (() => {
+            // A trigger that divides a quantity (D1378), drawn as a dividing spell's prompt is.
+            const amount = choiceDivided(mode.specs) ?? 0
+            const shares = mode.shares ?? []
+            const spent = shares.reduce((n, d) => n + d, 0)
+            return (
+              <>
+                <span data-testid="divide-left" className="text-[var(--g-text-muted)]">
+                  tap a target for each point &mdash; {amount - spent} of {amount} left
+                </span>
+                {mode.chosen.length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {mode.chosen.map((t, i) => (
+                      <span
+                        key={targetKey(t)}
+                        data-testid={`divide-share-${targetKey(t)}`}
+                        className="rounded bg-white/10 px-1.5 py-0.5 tabular-nums text-[var(--g-text-high)]"
+                      >
+                        {targetName(view, t)} {shares[i] ?? 0}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+                {spent > 0 ? (
+                  <Button size="sm" variant="ghost" data-testid="undo-target" onClick={() => dispatch({ kind: "undoTarget" })}>
+                    <Undo2 className="size-3.5" /> Back
+                  </Button>
+                ) : null}
+              </>
+            )
+          })()}
           {/*
             And the button that answers it, which was missing — the whole prompt had no control on
             it, on the assumption that a trigger always has a target it must take. A dying Arcbound
             Worker with no other artifact creature on the board stopped the table permanently: the
             ability was on the stack, the prompt was open, and nothing on screen could answer it.
           */}
-          {specsRequired(mode.specs) < specsWanted(mode.specs)
+          {choiceDivided(mode.specs) === undefined && specsRequired(mode.specs) < specsWanted(mode.specs)
             && mode.chosen.length >= specsRequired(mode.specs) ? (
             <Button size="sm" data-testid="confirm-choice" onClick={() => dispatch({ kind: "confirm" })}>
               <Check className="size-3.5" />
