@@ -50510,3 +50510,40 @@ stack, so no test reached it.
 The scripts tests, compile tests and pins: 6577 of 6577 pass.
 
 Coverage: 17,604 of 31,900 cards (+0 over D1361's 17,604), 40,480 of 59,888 lines (+0).
+
+## D1363 — Expropriate
+
+"Council's dilemma — Starting with you, each player votes for time or money. For each time vote,
+take an extra turn after this one. For each money vote, choose a permanent owned by the voter and
+gain control of it. Exile Expropriate." On the second staples list since it was drawn up.
+
+D1361's vote reads every sentence but the money one, which asks the caster a question about each
+money voter. A question after an each-player vote could not be placed when the card is read. Here
+its number depends on the votes.
+
+**The rule.** "For each <word> vote, choose a permanent owned by the voter and gain control of it"
+adds eight questions after the vote (`MAX_VOTERS`, more than a pod seats), all asked of the
+caster. Each is written as a function of the answers so far (`DecisionSpecOf`, D1333). The k-th is
+about the k-th player who voted that word, with candidates from every battlefield owned by that
+player. It is skipped where there is no such voter, so it is answered empty and the positions do
+not move. Each permanent chosen comes under the caster's control for good. One such sentence per
+card, because its answers are the only card answers the vote's effect reads.
+
+**Tests.** 4 engine tests:
+- The card reads whole, with nine questions: the vote and eight.
+- Time and money: the caster is asked to choose among the permanents seat 1 owns, takes the
+  Grizzly Bears, gets one extra turn, and Expropriate is exiled.
+- Two time votes: two extra turns and no question.
+- The caster's own money vote asks about the caster's own permanents.
+
+Faults injected by hand: 3, all caught.
+- Any permanent offered.
+- The question tied to any voter rather than the money voters.
+- No control change.
+
+The scripts tests, compile tests and pins: 6581 of 6581 pass.
+
+Staples: the second list is at 123 of 125. Food Chain, Doomsday and Castle Garenbrig remain (the last
+on the first list).
+
+Coverage: 17,605 of 31,900 cards (+1 over D1362's 17,604), 40,481 of 59,888 lines (+1).
