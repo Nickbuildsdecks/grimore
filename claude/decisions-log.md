@@ -69035,3 +69035,39 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6666 of 6666 pass. Test typecheck clean.
 
 Coverage: 17,768 of 31,900 cards (+2 over D1389's 17,766), 40,730 of 59,888 lines (+5).
+
+## D1391 — Gideon of the Trials: prevention until your next turn, and an emblem that keeps you in
+
+With D1390's animation, Gideon of the Trials had two lines left. Both read now, and so does the
+card.
+
+**"+1: Until your next turn, prevent all damage target permanent would deal."** D738's family
+reads "prevent all damage that would be dealt by target …". This reads the other word order, "…
+target permanent would deal", for a target permanent of any kind. It is "this turn" or "until your
+next turn"; `preventDamageThisTurn` takes the second as the existing `until-controllers-next-turn`
+duration.
+
+**The emblem: "As long as you control a Gideon planeswalker, you can't lose the game and your
+opponents can't win the game."**
+- `CardScript.cantLose` (D3009, Platinum Angel) can now carry a condition, `{ while }`, read
+  through `interveningConditionFor` (D1366's "you control a Gideon planeswalker").
+- `cantLoseTheGame` now asks emblems too. It only looked at the battlefield, so no emblem could
+  have kept a player in the game.
+- The static reader is handed the card's name for the condition.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- The +1 on an opposing Bear prevents its damage, with the until-your-next-turn duration.
+- The emblem keeps its owner in the game while a Gideon is on the battlefield, and not once it's
+  gone.
+
+Faults injected by hand: 4, all caught.
+- Emblems not asked.
+- The condition ignored.
+- The duration this turn only.
+- The prevention on damage dealt to the target instead of by it.
+
+The scripts tests, compile tests and pins: 6669 of 6669 pass. Test typecheck and web typecheck
+clean.
+
+Coverage: 17,771 of 31,900 cards (+3 over D1390's 17,768), 40,736 of 59,888 lines (+6).
