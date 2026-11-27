@@ -68315,3 +68315,28 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6607 of 6607 pass.
 
 Coverage: 17,638 of 31,900 cards (+6 over D1371's 17,632), 40,522 of 59,888 lines (+6).
+
+## D1373 — "You may reveal a noncreature, nonland card from among them"
+
+Narset, Parter of Veils' −2 ("Look at the top four cards of your library. You may reveal a
+noncreature, nonland card from among them and put it into your hand. Put the rest on the bottom of
+your library in a random order."), Spock, Always Your Friend, Thundertrap Trainer, Wandering Mind.
+D584's look-at-the-top reader read the kind with `graveyardTypeTest` alone, which takes a list of
+types but not stacked negations, and D584 pinned this sentence as refused for that reason.
+
+**The rule.** The reader uses `handCardTypeTest` (D970), which the hand questions already use. It
+reads the same comma lists and also "a noncreature, nonland card": each word a card type, or
+legendary, and each one excluded.
+
+Read whole now: Narset, Parter of Veils; Spock; Thundertrap Trainer; Wandering Mind.
+
+**Tests.** 1 engine test, and 1 pin moved:
+- With the top four stacked as a sorcery, a creature, a land and another sorcery, the fixture
+  offers exactly the two sorceries.
+- D584's refused row "two negations, which is not a list of types" is now a read row.
+
+Faults injected by hand: 1, caught (the old type test put back).
+
+The scripts tests, compile tests and pins: 6608 of 6608 pass.
+
+Coverage: 17,642 of 31,900 cards (+4 over D1372's 17,638), 40,527 of 59,888 lines (+5).
