@@ -2506,8 +2506,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       nothing and madness pays a cost of its own, and both are on the offer rather than on the card.
     */
     const costShown = offered ? state.pendingOfferedCast?.cost ?? ''
-      // A plotted card is cast without paying its mana cost (D922).
-      : plottedCast ? ''
+      // A plotted card is cast without paying its mana cost (D922), and so is Mind's Desire's (D1344).
+      : plottedCast || (impulse && inst.playFromExile?.free === true) ? ''
       : flashback ? flashbackCostOf(state, id) ?? ''
         // Escape replaces the printed cost like flashback and foretell, which is why it is in the
         // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of

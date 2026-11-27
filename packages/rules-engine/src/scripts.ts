@@ -27952,6 +27952,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  // "Shuffle your library" on its own (D1344): Mind's Desire's and Urza's first step.
+  if (/^shuffle your library\.?$/i.test(text)) return { effect: (c) => shuffleLibrary(c.state, c.controller) };
   // The spell Sacrifice (D1342): "Add an amount of {B} equal to the sacrificed creature's mana value."
   const spellBySacrificed = /^add an amount of \{([WUBRGC])\} equal to the sacrificed creature['’]s (power|mana value)\.?$/i.exec(text);
   if (spellBySacrificed !== null) {
@@ -32817,13 +32819,18 @@ const IMPULSE_PLAY = [
 
 function impulseDraw(first: string, second: string | undefined): ReadEffect | null {
   if (second === undefined) return null;
-  const exiled = /^exile the top (card|([a-z]+) cards) of your library$/i.exec(first.trim());
+  // Urza's "exile the top card" (D1344) says whose library by the shuffle before it.
+  const exiled = /^exile the top (card|([a-z]+) cards)(?: of your library)?$/i.exec(first.trim());
   if (exiled === null) return null;
   const count = exiled[2] === undefined ? 1 : WORD_NUMBERS[exiled[2].toLowerCase()];
   if (count === undefined || count < 1) return null;
-  const through = IMPULSE_PLAY.find(([shape]) => shape.test(second.trim()))?.[1];
+  // "… without paying its mana cost" (D1344): the same permission, for nothing.
+  const free = /\s+without paying (?:its|their) mana costs?$/i;
+  const permission = second.trim().replace(/\.$/, '');
+  const freely = free.test(permission);
+  const through = IMPULSE_PLAY.find(([shape]) => shape.test(permission.replace(free, '')))?.[1];
   if (through === undefined) return null;
-  return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through) };
+  return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through, c.controller, false, freely) };
 }
 
 /**

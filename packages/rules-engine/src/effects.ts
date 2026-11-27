@@ -2128,6 +2128,7 @@ export function exileTopToPlay(
   /** Whose library (D1236): Ragavan's "the top card of that player's library". Its owner's exile. */
   librarySeat: SeatIndex = seat,
   castOnly = false,
+  free = false,
 ): GameState {
   let next = state;
   for (let i = 0; i < Math.max(0, count); i++) {
@@ -2138,7 +2139,10 @@ export function exileTopToPlay(
     next = relocate(next, inst, 'exile', inst.owner, 'bottom');
     next = withInstance(next, inst.id, {
       faceDown: false,
-      playFromExile: { by: seat, grantedTurn: next.turn, through, ...(castOnly ? { castOnly: true as const } : {}) },
+      playFromExile: {
+        by: seat, grantedTurn: next.turn, through,
+        ...(castOnly ? { castOnly: true as const } : {}), ...(free ? { free: true as const } : {}),
+      },
     });
   }
   return next;

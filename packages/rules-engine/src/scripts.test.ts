@@ -49741,6 +49741,41 @@ describe('sacrifice costs by colour and the narrower kinds (D1343)', () => {
   });
 });
 
+describe("Mind's Desire and Urza: a card exiled to be played for nothing (D1344)", () => {
+  const DESIRE = { name: 'Test Desire', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: 'Shuffle your library. Then exile the top card of your library. Until end of turn, you may play that card without paying its mana cost.' };
+  const PAID = { ...DESIRE, name: 'Test Paid', oracle_text: 'Exile the top card of your library. Until end of turn, you may play that card.' };
+  const deck = customDeck({ id: 'd1344', name: 'Desire', entries: [{ name: 'Test Desire', count: 2 }, { name: 'Test Paid', count: 2 }, { name: 'Hill Giant', count: 56 }], data: [DESIRE, PAID] as never[] });
+  const resolve = (name: string): { s: GameState; exiled: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1344', 1: 'd1344' }, deckSpecs: { d1344: deck.deck }, hands: { 0: [name] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = new Set(ids(s, 0, 'exile'));
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action)), 20);
+    return { s, exiled: ids(s, 0, 'exile').find((id) => !before.has(id))! };
+  };
+
+  it('reads whole, the shuffle included', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(DESIRE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the exiled card is offered for nothing and cast with no mana at all', () => {
+    let { s, exiled } = resolve('Test Desire');
+    expect(s.instances[exiled]!.playFromExile).toMatchObject({ by: 0, through: 'this-turn', free: true });
+    const play = legalActions(s, 0).plays.find((p) => p.card === exiled && p.kind === 'cast')!;
+    expect(play.manaCost).toBe('');
+    s = apply(s, { type: 'auto:cast', by: 0, card: exiled } as Action);
+    expect(s.stackOrder).toContain(exiled);
+  });
+
+  it('without the words it is offered at its printed cost, which no mana pays', () => {
+    const { s, exiled } = resolve('Test Paid');
+    expect(s.instances[exiled]!.playFromExile?.free).toBeUndefined();
+    expect(legalActions(s, 0).plays.some((p) => p.card === exiled && p.kind === 'cast')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -18482,10 +18482,9 @@ describe('playing a card out of exile: what the reader takes and what it leaves 
   it.each([
     ['a cast, which leaves a land in exile',
       'Exile the top card of your library. You may cast that card this turn.'],
-    ['a free play, which is a different cost',
-      'Exile the top card of your library. Until end of turn, you may play that card without paying its mana cost.'],
-    ['a free play of several',
-      'Exile the top three cards of your library. You may play them this turn without paying their mana costs.'],
+    // A free play reads since D1344 (Mind's Desire, Urza): `playFromExile.free`.
+    ['a free play with a deadline of its own',
+      'Exile the top card of your library. Until the beginning of your next upkeep, you may play that card without paying its mana cost.'],
     ['a choice of one among those exiled',
       'Exile the top two cards of your library. Until your next end step, you may play one of those cards.'],
     ['a filtered cast from among them',

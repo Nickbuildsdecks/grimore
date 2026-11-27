@@ -414,6 +414,11 @@ export interface CardInstance {
     readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted' | 'warped' | 'while-exiled';
     /** "You may **cast** that card" (D1236): a spell only, never a land drop. */
     readonly castOnly?: true;
+    /**
+     * "… without paying its mana cost" (D1344): Mind's Desire, Urza, Lord High Artificer, Oracle's
+     * Vault. Played for nothing, at its own timing, until the deadline.
+     */
+    readonly free?: true;
   };
   /**
    * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the
