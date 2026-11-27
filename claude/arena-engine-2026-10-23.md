@@ -49672,3 +49672,37 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6500 of 6500 pass. Web: typecheck clean.
 
 Coverage: 17,533 of 31,900 cards (+4 over D1339's 17,529), 40,367 of 59,888 lines (+4).
+
+## D1341 — Isochron Scepter: a copy of the imprinted card, cast for nothing
+
+Isochron Scepter is on the second staples list. Its imprint has read since D717. Its ability did
+not: "{2}, {T}: You may copy the exiled card. If you do, you may cast the copy without paying its
+mana cost." Spellbinder's trigger prints the same two sentences.
+
+**The reading.** `castImprintedCopy` finds the card this permanent imprinted as it is now: an
+`imprintedOn` with this permanent's id and its current `objectSeq`. An imprint from before the
+permanent last changed zones does not count (CR 400.7). The copy is made in exile by D936's
+`copyCardInExile` and offered as a free cast (`pendingOfferedCast`), as cipher's copy is.
+
+Declining the cast leaves the same game as declining to copy, so the two "you may"s are one offer.
+The imprinted card never leaves exile, and the copy ceases to exist once it has resolved
+(CR 707.12).
+
+Elite Arcanist ("{X} … X is the mana value of the exiled card") stays unread.
+
+**Tests.** 4 engine tests, on a fixture Scepter and an instant that deals 3 damage:
+- It reads whole.
+- Cast from hand, its imprint exiles the instant and links it to the Scepter as it now is.
+- Activated:
+  - a copy is offered, not the card;
+  - cast at the opponent, the copy deals 3;
+  - the card stays in exile, and the copy is gone.
+- An imprint from before the Scepter last moved copies nothing.
+
+Faults injected by hand: 2, both caught.
+- The object check removed.
+- The card itself offered in place of a copy.
+
+The scripts tests, compile tests and pins: 6504 of 6504 pass.
+
+Coverage: 17,535 of 31,900 cards (+2 over D1340's 17,533), 40,369 of 59,888 lines (+2).
