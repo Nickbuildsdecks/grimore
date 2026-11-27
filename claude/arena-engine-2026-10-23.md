@@ -51026,3 +51026,59 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6620 of 6620 pass. Web typecheck clean.
 
 Coverage: 17,671 of 31,900 cards (+2 over D1376's 17,669), 40,580 of 59,888 lines (+8).
+
+## D1378 — Divided damage on triggered and activated abilities
+
+"When Fury enters, it deals 4 damage divided as you choose among any number of target creatures
+and/or planeswalkers." Spells have divided a quantity since #119, with the division announced as
+the spell is cast. Abilities did not. `auto:choose` and `auto:activate` carried no division, so the
+engine refused one, and the compiler left such lines unread: D463 for activated abilities and
+loyalty abilities, D534 for triggers.
+
+**The rule.** Both actions now carry `division`. It is announced with the targets, as a spell's is
+(CR 601.2d, applied to abilities by 602.2b and 603.3d), and checked by the same `checkDivision`:
+one number per target, each at least one, adding up to the amount. The stack object keeps it, so
+the effect's `dividedAmong` reads it as a spell's does.
+
+**The bot.** An activated ability goes through the same aimings a dividing spell does, so the
+search prices them. A trigger has no search, so `dividedPick` chooses among those options: the one
+that kills the most of the opponents' creatures, or the first (everything on the best target) when
+none kills more. Options that put any damage on its own side are dropped while one that doesn't
+exists. Fury's "any number of target creatures" lists its own creatures too.
+
+**The table.** A waiting trigger that divides is answered the way a dividing spell is aimed: one
+tap per point, the share chips on screen, a Back button that peels one point off, and the answer
+sent with the last point. There is no Confirm while points are left.
+
+Two places still refuse a division:
+- A reflexive "When you do" (Blaster Hulk, Death to Our Enemies), whose queued trigger carries
+  none.
+- A sentence of several aimed parts (Magma Opus), where the division would have to say which
+  part's targets it is about.
+
+Read whole now: Fury, Inferno Titan, Bogardan Hellkite, Gang of Devils, Mogg Mob, Ral, Caller of
+Storms, and others.
+
+**Tests.** 4 engine tests and 2 web tests:
+- The fixtures read whole.
+- Fury's trigger refuses no division and a division of 2 and 1, and takes 2 and 2, which kills
+  both Bears.
+- The bot aims Fury's trigger at both Bears, 2 and 2, and at nothing of its own.
+- Mogg Mob's sacrifice ability, divided 1 to the opponent and 2 to a Bear, is refused without a
+  division.
+- The table's reducer collects a trigger's division a point at a time and steps back a point.
+
+The old refusal pins (D463's three, D534's Gang of Devils) now assert the reading.
+
+Faults injected by hand: 6, all caught.
+- The trigger's division unchecked.
+- The trigger's division not kept.
+- The bot's trigger branch removed.
+- The bot taking the first option instead of the most kills.
+- The ability's division not kept.
+- The ability's division unchecked.
+
+The scripts tests, compile tests and pins: 6624 of 6624 pass. Web tests: 283 of 283. Web
+typecheck clean.
+
+Coverage: 17,678 of 31,900 cards (+7 over D1377's 17,671), 40,590 of 59,888 lines (+10).
