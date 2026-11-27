@@ -1963,6 +1963,11 @@ export interface CardsDecisionSpec {
    */
   readonly askOnlyIfNonePicked?: true;
   /**
+   * The cards chosen must have **different names** (D1340): Gifts Ungiven's "up to four cards with
+   * different names". Checked when the answer is given, since no one card is wrong on its own.
+   */
+  readonly distinctNames?: true;
+  /**
    * Ask this question **only if** the board says so, as the question comes up (D590).
    *
    * `askOnlyIfChosen`'s sibling, for a condition that is a fact rather than an earlier answer:

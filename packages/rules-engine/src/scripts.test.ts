@@ -49525,6 +49525,66 @@ describe('a target that is a spell or a permanent: Venser and Unsubstantiate (D1
   });
 });
 
+describe('Intuition and Gifts Ungiven: a search the opponent splits (D1340)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text });
+  const INTUITION = card('Test Intuition', 'Search your library for three cards and reveal them. Target opponent chooses one. Put that card into your hand and the rest into your graveyard. Then shuffle.');
+  const GIFTS = card('Test Gifts', 'Search your library for up to four cards with different names and reveal them. Target opponent chooses two of those cards. Put the chosen cards into your graveyard and the rest into your hand. Then shuffle.');
+  const ROWS = [INTUITION, GIFTS];
+  const deck = customDeck({ id: 'd1340', name: 'Gifts', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Hill Giant', count: 6 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 42 }], data: ROWS as never[] });
+  const cast = (name: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1340', 1: 'd1340' }, deckSpecs: { d1340: deck.deck },
+      hands: { 0: [name] }, battlefield: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'player', seat: 1 }] } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+  const inLibrary = (s: GameState, name: string): string => ids(s, 0, 'library').find((id) => nameOf(s, id) === name)!;
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Intuition: three found, the opponent picks one for the hand, the rest go to the graveyard', () => {
+    let s = cast('Test Intuition');
+    expect(s.pendingDecision).toMatchObject({ seat: 0, min: 3, max: 3 });
+    const found = [inLibrary(s, 'Hill Giant'), inLibrary(s, 'Grizzly Bears'), inLibrary(s, 'Forest')];
+    s = apply(s, { type: 'auto:decide', by: 0, cards: found } as Action);
+    // The opponent chooses, from the three now revealed to the table.
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...found].sort());
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [found[2]!] } as Action), 20);
+    expect(s.instances[found[2]!]!.zone).toBe('hand');
+    expect(s.instances[found[0]!]!.zone).toBe('graveyard');
+    expect(s.instances[found[1]!]!.zone).toBe('graveyard');
+    expect(s.revealed).toBeUndefined();
+  });
+
+  it('Gifts Ungiven: two of a name refused; four different, two to the graveyard and two to hand', () => {
+    let s = cast('Test Gifts');
+    expect(s.pendingDecision).toMatchObject({ seat: 0, min: 0, max: 4 });
+    const forests = ids(s, 0, 'library').filter((id) => nameOf(s, id) === 'Forest').slice(0, 2);
+    expect(() => apply(s, { type: 'auto:decide', by: 0, cards: forests } as Action)).toThrow(/different names/);
+    const found = [inLibrary(s, 'Hill Giant'), inLibrary(s, 'Grizzly Bears'), inLibrary(s, 'Forest'), inLibrary(s, 'Test Gifts')];
+    s = apply(s, { type: 'auto:decide', by: 0, cards: found } as Action);
+    expect(s.pendingDecision).toMatchObject({ seat: 1, min: 2, max: 2 });
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [found[0]!, found[1]!] } as Action), 20);
+    expect([found[0]!, found[1]!].map((id) => s.instances[id]!.zone)).toEqual(['graveyard', 'graveyard']);
+    expect([found[2]!, found[3]!].map((id) => s.instances[id]!.zone)).toEqual(['hand', 'hand']);
+  });
+
+  it('the bot, as the opponent, gives Intuition its least valuable card', () => {
+    let s = cast('Test Intuition');
+    const found = [inLibrary(s, 'Hill Giant'), inLibrary(s, 'Grizzly Bears'), inLibrary(s, 'Forest')];
+    s = apply(s, { type: 'auto:decide', by: 0, cards: found } as Action);
+    s = drain(apply(s, botAction(s, 1)!), 20);
+    // Grizzly Bears, mana value 2, against the Forest's 2.5 and the Giant's 4.
+    expect(s.instances[found[1]!]!.zone).toBe('hand');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

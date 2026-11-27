@@ -34203,6 +34203,80 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * "Search your library for three cards and reveal them. Target opponent chooses one. Put that card
+ * into your hand and the rest into your graveyard. Then shuffle." (D1340): Intuition; and the up-to-
+ * four "with different names" family: Gifts Ungiven, Realms Uncharted, Elemental Teachings ("the
+ * rest onto the battlefield tapped").
+ *
+ * The caster searches; as the opponent's question is reached the cards found are revealed to the
+ * table (`AutomationState.revealed`, Fact or Fiction's), and the opponent chooses from them
+ * (`DecisionZone` `revealed`). The chosen and the rest go where the card says, then the library is
+ * shuffled. "Three cards" is exactly three (no quality, so the search cannot fail to find, CR
+ * 701.19b); "up to four … with different names" is checked as it is answered (`distinctNames`).
+ *
+ * The bot, searching, takes its most valuable cards, one of each name; as the opponent it gives the
+ * caster the least valuable card where the chosen go to hand, and takes the most valuable where the
+ * chosen go to the graveyard.
+ */
+function searchOpponentSplits(clauses: readonly string[]): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const m = /^search your library for (three cards|up to four (land |creature )?cards with different names) and reveal them\. (target opponent|an opponent) chooses (one|two of those cards)\. put (that card|the chosen cards) into your (hand|graveyard) and the rest (into your hand|into your graveyard|onto the battlefield tapped)\.? (?:then )?shuffle\.?$/i.exec(text);
+  if (m === null) return null;
+  const exact = /^three/i.test(m[1]!);
+  const n = exact ? 3 : 4;
+  const kind = m[2]?.trim().toLowerCase();
+  const targeted = /^target/i.test(m[3]!);
+  const k = /^one$/i.test(m[4]!) ? 1 : 2;
+  const chosenTo = m[6]!.toLowerCase() as 'hand' | 'graveyard';
+  const restTo = /hand/i.test(m[7]!) ? 'hand' : /graveyard/i.test(m[7]!) ? 'graveyard' : 'battlefield';
+  if (chosenTo === restTo) return null;
+  const worth = (state: GameState, id: string): number => {
+    const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+    return hasType(parseTypeLine(def?.typeLine), 'land') ? 2.5 : (def?.cmc ?? 0);
+  };
+  const nameOf = (state: GameState, id: string): string => state.cardDefs[state.instances[id]?.defKey ?? '']?.name ?? id;
+  const move = (state: GameState, ids: readonly string[], to: 'hand' | 'graveyard' | 'battlefield', seat: SeatIndex): GameState => (
+    to === 'hand' ? moveToHand(state, ids) : to === 'graveyard' ? moveToGraveyard(state, ids)
+      : ids.reduce((s, id) => putOntoBattlefield(s, id, seat, { tapped: true }), state));
+  return {
+    ...(targeted ? { targets: [TARGET_OPPONENT] } : {}),
+    decisions: [
+      {
+        who: 'controller', from: 'library', min: exact ? n : 0, max: n,
+        prompt: exact ? 'Search your library for three cards' : `Search your library for up to four ${kind === undefined ? '' : `${kind} `}cards with different names`,
+        ...(exact ? {} : { distinctNames: true as const }),
+        ...(kind === undefined ? {} : {
+          filter: (state: GameState, id: string) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), kind),
+        }),
+        pick: (state: GameState, _chooser: SeatIndex, candidates: readonly string[]) => {
+          const seen = new Set<string>();
+          return [...candidates].sort((a, b) => worth(state, b) - worth(state, a))
+            .filter((id) => (exact || !seen.has(nameOf(state, id))) && (seen.add(nameOf(state, id)), true)).slice(0, n);
+        },
+      },
+      {
+        who: targeted ? 'target-player' : 'an-opponent', from: 'revealed', min: k, max: k,
+        prompt: k === 1 ? 'Choose one of the revealed cards' : 'Choose two of the revealed cards',
+        onReach: (state, _controller, _source, answers) => ({
+          ...state, revealed: (answers[0]?.ids ?? []).filter((id) => state.instances[id]?.zone === 'library'),
+        }),
+        // The least for the caster's hand, the most for the graveyard.
+        pick: (state: GameState, _chooser: SeatIndex, candidates: readonly string[]) => [...candidates]
+          .sort((a, b) => (chosenTo === 'hand' ? worth(state, a) - worth(state, b) : worth(state, b) - worth(state, a))).slice(0, k),
+      },
+    ],
+    effect: (c) => {
+      const revealed = (c.state.revealed ?? []).filter((id) => c.state.instances[id]?.zone === 'library');
+      const chosen = (c.decisions[1]?.ids ?? []).filter((id) => revealed.includes(id));
+      const rest = revealed.filter((id) => !chosen.includes(id));
+      let next = move(c.state, chosen, chosenTo, c.controller);
+      next = move(next, rest, restTo, c.controller);
+      return { ...shuffleLibrary(next, c.controller), revealed: undefined };
+    },
+  };
+}
+
+/**
  * "Lands", "creatures", "Mountains", "artifacts, enchantments, and/or tokens" (D1332): what a
  * "sacrifice any number of" may take, as a test of a permanent. `null` for anything else.
  */
@@ -34827,6 +34901,9 @@ function composeEffectsAsPrinted(
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;
+  // Intuition and Gifts Ungiven (D1340): see `searchOpponentSplits`.
+  const split = searchOpponentSplits(clauses);
+  if (split !== null) return split;
   // Tymna (D1259): see `payXLifeDrawX`.
   const paid = payXLifeDrawX(clauses, name);
   if (paid !== null) return paid;

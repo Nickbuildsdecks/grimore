@@ -3839,6 +3839,11 @@ function decide(
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not one of the choices');
     }
   }
+  // "With different names" (D1340): Gifts Ungiven's search.
+  if (pending.distinctNames === true) {
+    const names = chosen.map((id) => state.cardDefs[requireInstance(state, id).defKey]?.name ?? id);
+    if (new Set(names).size !== names.length) throw new EngineError('RULE_NOT_APPLICABLE', 'the cards chosen must have different names');
+  }
   /*
     What the log will say, and the one answer that is not a card: a proliferate may choose a
     **player** (CR 701.27a), which arrives as `seat:N` and has no instance to look a name up on.

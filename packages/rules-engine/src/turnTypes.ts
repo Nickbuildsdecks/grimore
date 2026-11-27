@@ -1737,6 +1737,8 @@ export interface AutomationState {
     readonly candidates: readonly string[];
     readonly min: number;
     readonly max: number;
+    /** The cards chosen must have different names (D1340). See `CardsDecisionSpec.distinctNames`. */
+    readonly distinctNames?: true;
     /**
      * Every card the chooser is **looking at**, when that is more than the ones they may pick
      * (D584): "Look at the top five cards of your library. You may reveal a creature card from
