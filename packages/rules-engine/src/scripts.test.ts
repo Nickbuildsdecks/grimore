@@ -51495,6 +51495,70 @@ describe('A legendary card that calls itself by the name before its epithet (D13
   });
 });
 
+describe('"Loses the game", and Phage the Untouchable (D1382)', () => {
+  const DOOM = { name: 'Test Doom', type_line: 'Creature — Avatar', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: "When Test Doom enters, if you didn't cast it from your hand, you lose the game.\nWhenever Test Doom deals combat damage to a creature, destroy that creature. It can't be regenerated.\nWhenever Test Doom deals combat damage to a player, that player loses the game." };
+  const DOOR = { name: 'Test Door', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{T}: Target player loses the game.' };
+  const ROWS = [DOOM, DOOR];
+  const deck = customDeck({ id: 'd1382', name: 'Doom', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Swamp', count: 46 }], data: ROWS as never[] });
+  const table = (over: { hand?: readonly string[]; mine?: readonly string[]; theirs?: readonly string[] } = {}): GameState => advanceTo(arena({
+    decks: { 0: 'd1382', 1: 'd1382' }, deckSpecs: { d1382: deck.deck }, hands: { 0: [...(over.hand ?? [])] },
+    battlefield: { 0: [...(over.mine ?? [])], 1: [...(over.theirs ?? [])] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const out = (s: GameState, seat: number): boolean => s.seats[seat]!.eliminated === true;
+  // Priority passed until combat is over or the game is: \`drain\` empties the stack, not the steps.
+  const throughCombat = (s: GameState): GameState => {
+    for (let i = 0; i < 12 && s.step !== 'postcombat-main' && !s.seats.some((seat) => seat.eliminated); i++) {
+      s = s.stackOrder.length > 0 || s.priority !== null ? passBoth(s) : s;
+      if (s.pendingDecision === null && s.pendingChoice === null && s.priority === null) break;
+    }
+    return drain(s);
+  };
+
+  it('both read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Door makes its target lose the game', () => {
+    let s = table({ mine: ['Test Door'] });
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Door'), abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(out(s, 1)).toBe(true);
+    expect(out(s, 0)).toBe(false);
+  });
+
+  it('cast from the hand, its controller does not lose', () => {
+    let s = table({ hand: ['Test Doom'] });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Doom') } as Action));
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(find(s, 0, 'battlefield', 'Test Doom')).toBeDefined();
+    expect(out(s, 0)).toBe(false);
+  });
+
+  it('unblocked, the player it hits loses the game', () => {
+    let s = table({ mine: ['Test Doom'] });
+    s = apply(advanceTo(s, 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Doom'), defender: 1 }],
+    } as Action);
+    s = throughCombat(s);
+    expect(out(s, 1)).toBe(true);
+  });
+
+  it('blocked by a 2/2 with a regeneration shield, the trigger destroys it anyway: it can\'t be regenerated', () => {
+    let s = table({ mine: ['Test Doom'], theirs: ['Grizzly Bears'] });
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const doom = find(s, 0, 'battlefield', 'Test Doom');
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker: doom, defender: 1 }] } as Action);
+    for (let i = 0; i < 6 && s.step !== 'declare-blockers'; i++) s = passBoth(s);
+    s = regenerate(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bear, attacker: doom }] } as Action), bear);
+    s = throughCombat(s);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(out(s, 1)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

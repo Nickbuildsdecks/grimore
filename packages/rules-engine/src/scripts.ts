@@ -24521,8 +24521,14 @@ function eventRelativeEffect(
   }
 
   // Evil Eye of Urborg's shape: the block itself is the removal, with no timing attached.
-  if (/^destroy that creature$/i.test(text) && aboutTheOther) {
-    return { effect: (c) => (c.blocked === undefined ? c.state : destroy(c.state, c.blocked)) };
+  // And with the rider (D1382, Phage the Untouchable): "destroy that creature. It can't be regenerated."
+  const otherDestroyed = /^destroy that creature(\. (?:it|that creature) can['’]t be regenerated)?\.?$/i.exec(text.trim());
+  if (otherDestroyed !== null && aboutTheOther) {
+    const regenerates = otherDestroyed[1] === undefined;
+    return {
+      effect: (c) => (c.blocked === undefined ? c.state
+        : destroy(c.state, c.blocked, { regenerates: regenerates && c.noRegeneration !== true })),
+    };
   }
   /*
     The basilisks (D969): "destroy that creature at end of combat". Thicket Basilisk's hand-written
@@ -30634,6 +30640,24 @@ function abilityCopyEffect(clause: string): ReadEffect | null {
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  /*
+    "Target player loses the game", "you lose the game" (D1382, CR 104.3a): Door to Nothingness,
+    and through the hit-player swap Phage the Untouchable's "Whenever Phage deals combat damage to a
+    player, that player loses the game". `loseTheGame` keeps Platinum Angel's rule (CR 104.3a's
+    "can't lose") and the seat leaves as a conceding one does.
+  */
+  const losesGame = /^(target player|target opponent|you) loses? the game$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (losesGame !== null) {
+    const who = losesGame[1]!.toLowerCase();
+    if (who === 'you') return { effect: (c) => loseTheGame(c.state, c.controller) };
+    return {
+      targets: [who === 'target opponent' ? TARGET_OPPONENT : TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? c.state : loseTheGame(c.state, seat);
+      },
+    };
+  }
   /*
     "For each opponent, return up to one target nonland permanent that player controls to its
     owner's hand" (D1375, Enigma Thief), "… tap up to one target creature that player controls"
@@ -41199,15 +41223,18 @@ function interveningConditionRows(
       };
     }
   }
-  const castIt = /^you cast it( from your hand)?$/i.exec(text);
+  // And its negation (D1382): Phage the Untouchable's "if you didn't cast it from your hand".
+  const castIt = /^you (cast|didn't cast|did not cast) it( from your hand)?$/i.exec(text);
   if (castIt !== null) {
-    const fromHand = castIt[1] !== undefined;
-    return (c) => {
+    const fromHand = castIt[2] !== undefined;
+    const negated = castIt[1]!.toLowerCase() !== 'cast';
+    const wasCast = (c: EffectContext): boolean => {
       const record = c.state.castPermanents?.[c.source];
       const inst = c.state.instances[c.source];
       if (record === undefined || inst === undefined || record.seq !== (inst.objectSeq ?? 0)) return false;
       return !fromHand || record.from === 'hand';
     };
+    return negated ? (c) => !wasCast(c) : wasCast;
   }
   if (/^an opponent lost life this turn$/i.test(text)) {
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller

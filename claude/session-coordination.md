@@ -297,3 +297,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1378 pushed in a6d2ca1. D1379 "you may pay {X}" (NumberDecisionSpec.payX): scriptTypes, automation, scripts.ts.
 - D1379 pushed in 9047d8c, checkpoint in e348963. D1380 reflexive pay {X} and self pronouns: turnTypes, automation, scripts.ts.
 - D1380 pushed in 58dfa9e. D1381 epithet short names on legendary cards: scripts.ts (selfRef, withEpithetAlias), compile.ts.
+- D1381 pushed in 6e30946. D1382 loses the game, didn't cast it from your hand, Phage's rider: scripts.ts.
