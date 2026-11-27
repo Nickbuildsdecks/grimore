@@ -69108,3 +69108,35 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6671 of 6671 pass. Test typecheck clean.
 
 Coverage: 17,799 of 31,900 cards (+28 over D1391's 17,771), 41,034 of 59,888 lines (+298).
+
+## D1393 — A Saga that returns transformed
+
+"III — Exile this Saga, then return it to the battlefield transformed under your control." This is
+the last chapter of Fable of the Mirror-Breaker and the Kamigawa Sagas, which turn into enchantment
+creatures. D1392 read chapters through the trigger reader, which cuts this sentence at ", then", so
+the two halves never met.
+
+**The rule.** The Saga is exiled, and a new object (CR 400.7) enters showing its back face. It
+never transformed into that face (CR 712.14), so nothing that watches "transforms" hears it, and
+it carries no lore counters: the last chapter's sacrifice doesn't apply to the creature it came
+back as. This is D593's arrival of a daybound card at night, after a blink. A card with no back
+face is exiled and stays there (CR 701.28c). The chapter reader matches the whole sentence before
+handing a chapter to the trigger reader.
+
+7 more Sagas read whole (35 of 220), and 324 of 575 chapter lines read, among them The Restoration
+of Eiganjo and the other Kamigawa Sagas. Fable of the Mirror-Breaker still has chapter II: the
+corpus prints it "discard up two cards".
+
+**Tests.** 2 engine tests, on a fixture two-faced Saga:
+- The front face reads whole.
+- Chapter II exiles it, and it returns as its back face: a 3/3 creature on the battlefield with no
+  lore counters, not sacrificed.
+
+Faults injected by hand: 3, all caught.
+- Not turned to the back face.
+- Not returned.
+- No reader.
+
+The scripts tests, compile tests and pins: 6673 of 6673 pass. Test typecheck clean.
+
+Coverage: 17,806 of 31,900 cards (+7 over D1392's 17,799), 41,062 of 59,888 lines (+28).
