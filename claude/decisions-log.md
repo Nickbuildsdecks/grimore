@@ -66794,3 +66794,36 @@ Faults injected by hand: 4.
 The scripts tests, compile tests and pins: 6468 of 6468 pass. Web: typecheck clean, 280 of 280.
 
 Coverage: 17,509 of 31,900 cards (+9 over D1329's 17,500), 40,331 of 59,888 lines (+12).
+
+## D1331 — "Discard your hand" as a cost: Lion's Eye Diamond
+
+"Discard your hand" is a cost on Lion's Eye Diamond, Bomat Courier and Connecting the Dots, and
+the cost reader had no component for it. Lion's Eye Diamond reads whole now. The other two still
+wait on "exile the top card of your library face down" and on putting the cards exiled with them
+into their owner's hand.
+
+**The cost.** `AbilityCost.discardHand` is a flag. It takes every card in hand, with nothing
+chosen, and an empty hand pays it. `activate` moves the hand to the graveyard as the cost is paid,
+before the mana is made. The cost reader refuses it alongside another discard component.
+
+**Not the auto-payer's.** `manaSources` skips it: a hand thrown away to pay for a spell is the
+player's choice, never a payment plan's. Pressed by hand, the five rows ("Add {R}{R}{R}" and so on)
+are offered as plays like any instant-speed mana ability.
+
+No compile.ts route was needed. The Diamond's cost has no {T}, so the line never reaches the
+mana parser, and the general reader takes it. A route was written and then removed when its fault
+check showed it did nothing.
+
+**Tests.** 2 engine tests:
+- The fixture reads whole as five rows of three, each one discarding the hand and sacrificing the
+  Diamond.
+- Pressed:
+  - it is not an auto-payer source;
+  - three red mana is made;
+  - the whole hand goes to the graveyard, and so does the Diamond.
+
+Faults injected by hand: 2.
+- The hand not discarded: caught.
+- The auto-payer skip removed: caught.
+
+Coverage: 17,512 of 31,900 cards (+3 over D1330's 17,509), 40,336 of 59,888 lines (+5).
