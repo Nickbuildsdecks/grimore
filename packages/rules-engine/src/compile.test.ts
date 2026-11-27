@@ -17154,8 +17154,9 @@ describe('the Evoke keyword line, read ahead of the other lines (D548)', () => {
     expect(printedKeywords(read.def.oracleText)).toEqual(['flying']);
   });
 
+  // The five Elemental Incarnations' "Evoke—Exile a green card from your hand." read since D1377
+  // (`CardScript.evoke.pitch`), and are tested there; Infestation's mana and life together still do not.
   it.each([
-    ['the five Elemental Incarnations', 'Evoke—Exile a green card from your hand.'],
     ['Infestation', 'Evoke—{1}{B}{B}, Pay 3 life.'],
   ])('leaves the non-mana evoke cost of %s unread', (_which, line) => {
     /*

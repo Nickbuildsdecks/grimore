@@ -51248,6 +51248,59 @@ describe('"Create a … token, then attach ~ to it" (D1376)', () => {
   });
 });
 
+describe('Evoke by exiling a card of a colour, and Solitude (D1377)', () => {
+  const GRIEF = { name: 'Test Grief', type_line: 'Creature — Elemental Incarnation', mana_cost: '{2}{B}{B}', cmc: 4, colors: ['B'], layout: 'normal', power: '3', toughness: '2',
+    oracle_text: 'Menace\nWhen Test Grief enters, you gain 1 life.\nEvoke—Exile a black card from your hand.' };
+  const SOLITUDE = { name: 'Test Solitude', type_line: 'Creature — Elemental Incarnation', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '2',
+    oracle_text: "When Test Solitude enters, exile up to one other target creature. That creature's controller gains life equal to its power." };
+  const INK = { name: 'Test Ink', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: 'You gain 1 life.' };
+  const ROWS = [GRIEF, SOLITUDE, INK];
+  const deck = customDeck({ id: 'd1377', name: 'Grief', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const table = (hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1377', 1: 'd1377' }, deckSpecs: { d1377: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const evokePlay = (s: GameState) => legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.name === 'Test Grief' && p.evoked === true);
+
+  it('all three read whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [GRIEF, SOLITUDE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('evoked for another black card, with no mana: the card is exiled, Grief enters, triggers and is sacrificed', () => {
+    let s = table(['Test Grief', 'Test Ink']);
+    const ink = find(s, 0, 'hand', 'Test Ink');
+    const play = evokePlay(s);
+    expect(play?.discardOptions).toEqual([ink]);
+    const grief = find(s, 0, 'hand', 'Test Grief');
+    const lifeBefore = life(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: grief, evoked: true, discarded: ink } as Action);
+    expect(s.instances[ink]!.zone).toBe('exile');
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.instances[grief]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(lifeBefore + 1);
+  });
+
+  it('with no other black card in hand, evoke is not offered, and a card of another colour is refused', () => {
+    expect(evokePlay(table(['Test Grief']))).toBeUndefined();
+    const s = table(['Test Grief', 'Test Solitude']);
+    expect(evokePlay(s)).toBeUndefined();
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Grief'), evoked: true, discarded: find(s, 0, 'hand', 'Test Solitude') } as Action)).toThrow();
+  });
+
+  it("Solitude exiles the opponent's creature, and that player gains life equal to its power", () => {
+    let s = table(['Test Solitude']);
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const theirs = life(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Solitude') } as Action));
+    for (let i = 0; i < 4 && s.pendingChoice === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] } as Action);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.instances[bear]!.zone).toBe('exile');
+    expect(life(s, 1)).toBe(theirs + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

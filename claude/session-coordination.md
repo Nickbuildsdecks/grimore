@@ -292,3 +292,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1373 pushed in 6fc1a86. D1374 tribute (entersChoice 'tribute', TRIBUTED marker, condition): scriptTypes, effects, automation, scripts.ts.
 - D1374 pushed in e94ff1c. D1375 per-opponent targets (TargetSpec.differentControllers, both bot target paths, D1356 side rule on the trigger path): scriptTypes, targeting, bot, scripts.ts. Sweep 103001 running on e94ff1c.
 - D1375 pushed in 8eb7b00. D1376 create a token then attach (Equipment ETB, priced): scripts.ts only.
+- D1376 pushed in f8e6dc1. D1377 pitch evoke (CardScript.evoke.pitch) and Solitude's trigger: scriptTypes, legalActions, autoActions, scripts.ts, compile.test.ts pin.

@@ -4348,6 +4348,12 @@ export interface CardScript {
   readonly evoke?: {
     /** The whole cost of an evoked casting, in the printed `{1}{U}` form. */
     readonly cost: string;
+    /**
+     * "Evoke—Exile a white card from your hand" (D1377): the Modern Horizons 2 Elementals. The
+     * evoke cost is a card of this colour exiled from the hand, as a pitch spell's is (D691), and no
+     * mana (`cost` is `{0}`).
+     */
+    readonly pitch?: Color;
   };
   /**
    * Dash: cast this creature for a cheaper cost, attack with it now, and give it back at the end

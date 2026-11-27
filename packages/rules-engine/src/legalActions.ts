@@ -2305,10 +2305,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           and then disappears. Two keywords, one shape, and the difference between them is this
           sentence — so it lives here with the cost rather than in two copies of the code below.
         */
-        ...(script?.evoke === undefined ? [] : [{
+        // A pitched evoke (D1377) is offered only while there is a card of its colour to exile.
+        ...(script?.evoke === undefined
+          || (script.evoke.pitch !== undefined && pitchOptions(state, seat, id, script.evoke.pitch).length === 0) ? [] : [{
           flag: 'evoked' as const,
           cost: script.evoke.cost,
-          note: `evoke cost (${script.evoke.cost}, sacrificed as it arrives)`,
+          note: script.evoke.pitch === undefined
+            ? `evoke cost (${script.evoke.cost}, sacrificed as it arrives)`
+            : `evoke cost (exile a ${COLOUR_NAMES[script.evoke.pitch]} card from your hand, sacrificed as it arrives)`,
           specs: specsFor(script),
         }]),
         ...(script?.dash === undefined ? [] : [{
@@ -2473,6 +2477,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           ? {
             discardOptions: pitchOptions(state, seat, id, script.pitch.colour),
             pitchWords: `${COLOUR_NAMES[script.pitch.colour]} card`,
+          }
+          : {}),
+        ...(alternative.flag === 'evoked' && script?.evoke?.pitch !== undefined
+          ? {
+            discardOptions: pitchOptions(state, seat, id, script.evoke.pitch),
+            pitchWords: `${COLOUR_NAMES[script.evoke.pitch]} card`,
           }
           : {}),
       });

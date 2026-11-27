@@ -19420,6 +19420,14 @@ function bestowShapeFor(def: CardDef, lines: readonly string[]): WholeCardReadin
 
 function evokeShapeFor(lines: readonly string[]): WholeCardReading | null {
   for (const line of lines) {
+    // "Evoke—Exile a red card from your hand" (D1377): Fury, Grief, Solitude, Subtlety, Endurance.
+    const pitched = /^evoke\s*—\s*exile an? (white|blue|black|red|green) card from your hand\.?$/i.exec(plain(line).trim());
+    if (pitched !== null) {
+      return {
+        fragment: { evoke: { cost: '{0}', pitch: COLOUR_WORDS[pitched[1]!.toLowerCase()]! }, triggers: [evokeSacrifice()] },
+        claimed: [line],
+      };
+    }
     const evoked = /^evoke\s+((?:\{[^}]*\})+)$/i.exec(plain(line).trim());
     if (evoked === null) continue;
     return {
@@ -35758,6 +35766,28 @@ function composeEffectsAsPrinted(
   // "Mill three cards. You may put … into your hand. If you don't, …" (D1372): see `millPickOrElse`.
   const milled = millPickOrElse(clauses, name, where);
   if (milled !== null) return milled;
+  /*
+    Solitude (D1377): "exile up to one other target creature. That creature's controller gains life
+    equal to its power." Swords to Plowshares' trade (`exileForLifeResolution`, a spell's), on a
+    trigger, with "up to one other" and either spelling of the controller. The power is read before
+    the exile, as there.
+  */
+  if (clauses.length === 2) {
+    const first = /^exile ((?:up to one other |up to one |another )?target creature)$/i.exec(plain(clauses[0]!).trim().replace(/\.$/, ''));
+    const second = /^(?:its|that creature's) controller gains life equal to its power$/i.test(plain(clauses[1]!).trim().replace(/\.$/, ''));
+    const spec = first === null || !second ? null : targetSpecFrom(first[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          const inst = id === null ? undefined : c.state.instances[id];
+          if (id === null || inst === undefined || inst.zone !== 'battlefield') return c.state;
+          return gainLife(exileCard(c.state, id), inst.zoneSeat, characteristicsOf(c.state, inst).power);
+        },
+      };
+    }
+  }
   // Kroxa (D1371): see `discardOrLose`.
   const kroxa = discardOrLose(clauses);
   if (kroxa !== null) return kroxa;

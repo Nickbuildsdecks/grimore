@@ -838,6 +838,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', `choose another ${script?.pitch?.colour ?? ''} card in your hand to exile for ${characteristics.name}`);
     }
     pitchedForCost = action.discarded;
+  } else if (evoked && script?.evoke?.pitch !== undefined) {
+    // A pitched evoke (D1377), exiled the way the pitch above is.
+    const options = pitchOptions(state, action.by, inst.id, script.evoke.pitch);
+    if (action.discarded === undefined || !options.includes(action.discarded)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose another ${script.evoke.pitch} card in your hand to exile to evoke ${characteristics.name}`);
+    }
+    pitchedForCost = action.discarded;
   } else if (action.discarded !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} does not ask for a discard`);
   }
