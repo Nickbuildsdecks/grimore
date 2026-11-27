@@ -51140,3 +51140,52 @@ typecheck clean.
 Coverage: 17,678 of 31,900 cards (+7 over D1377's 17,671), 40,590 of 59,888 lines (+10).
 
 Coverage: 17,678 of 31,900 cards (+7 over D1377's 17,671), 40,590 of 59,888 lines (+10).
+
+## D1379 — "You may pay {X}. If you do, …"
+
+"When Squealing Devil enters, you may pay {X}. If you do, target creature gets +X/+0 until end of
+turn." Also Flameblast Dragon ("{X}{R}"), Rise of the Hobgoblins and Tilonalli's Summoner. A fixed
+price ("you may pay {2}. If you do") has been read since D447, with the engine paying it. An X in
+the price was refused.
+
+**The rule.** Two questions:
+1. The yes-or-no, priced with any fixed part ("{R}" of "{X}{R}") as before.
+2. Asked only on a yes: X. This is a number question with a price, `NumberDecisionSpec.payX`.
+
+The range offered stops at the most the seat can pay, with the fixed part counted beside it. So
+three Mountains offer X up to three for "{X}" and up to two for "{X}{R}". After the answers, the
+engine pays X generic mana after the fixed part. An X that can't be paid by then reads as nought.
+The effect is handed the X paid.
+
+**The reading.** A bare X has been read on the spell path only (`xSpellResolution`), because
+everywhere else X was zero and a card would "work and do nothing". Here X is the X just paid, so the
+effect is read with X marked as "that many" is (D903) and run with the paid X as that amount. That
+reads tokens, counters, damage, life and cards. The spell path's X reader is the fallback, given the
+card's name for its "~ deals X damage".
+
+Refused:
+- An effect that asks its own question.
+- X in what a target must be ("target creature card with mana value X", Relentless Dead). The
+  target is chosen as the trigger goes on the stack, before X is.
+
+Still unread: the reflexive "When you do" forms (Electro, Isareth, Wildborn Preserver) and the
+"X can't be greater than …" riders (Mortarion, Shanna). The bot declines these questions, as it
+declines every compiled priced "may" (D447).
+
+**Tests.** 4 engine tests:
+- The fixtures read whole.
+- "{X}" with three lands: X is offered up to three. X of 2 makes two Goblins and taps two lands.
+- Declined: nothing paid, nothing made.
+- "{X}{R}" with three lands: X up to two, and X of 2 deals 2 with all three lands tapped.
+
+Faults injected by hand: 5, all caught.
+- No clamp.
+- X not paid.
+- The fixed part not counted in the clamp.
+- The effect not handed X.
+- The fixed part not priced.
+
+The scripts tests, compile tests and pins: 6628 of 6628 pass. Test typecheck and web typecheck
+clean.
+
+Coverage: 17,684 of 31,900 cards (+6 over D1378's 17,678), 40,598 of 59,888 lines (+8).
