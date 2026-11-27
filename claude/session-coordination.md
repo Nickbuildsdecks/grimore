@@ -251,3 +251,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1331 pushed in 9792612. D1332 "Sacrifice any number of …, then … that many" (sacrificeAnyThenThatMany, pluralPermanentKinds): scripts.ts group reader only.
 - D1332 pushed in 3d11857. D1333 Scapeshift (askingContext carries answers so far; askOrFinish works each question out as reached): automation.ts, scripts.ts sacrificeAnyThenThatMany.
 - D1333 pushed in 16268be. D1334 no land drop from a graveyard cast permission (legalActions land branch); D1335 PREVENTS on the en-Kor and Circle shield readers (scripts.ts). From sweep 96001 seed 96041.
+- D1334/D1335 pushed in 3647333, checkpoint at D1335 in bf2d718. D1336 a hand question beside a second target (composeEffects multi-target rule): scripts.ts only.

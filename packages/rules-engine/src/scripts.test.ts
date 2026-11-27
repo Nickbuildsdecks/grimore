@@ -49337,6 +49337,44 @@ describe('a shield the bot keeps for damage that is coming: the en-Kor and the C
   });
 });
 
+describe('a hand question beside a second target (D1336)', () => {
+  const DEAL = { name: 'Test Negotiations', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it and exile that card. Put a +1/+1 counter on up to one target creature you control.' };
+  const deck = customDeck({ id: 'd1336', name: 'Deal', entries: [{ name: 'Test Negotiations', count: 4 }, { name: 'Hill Giant', count: 6 }, { name: 'Swamp', count: 50 }], data: [DEAL] as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1336', 1: 'd1336' }, deckSpecs: { d1336: deck.deck },
+    battlefield: { 0: ['Hill Giant', 'Swamp'] }, hands: { 0: ['Test Negotiations'], 1: ['Hill Giant', 'Hill Giant', 'Swamp'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, with both targets', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(DEAL as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.targets?.map((t) => t.kind)).toEqual(['player', 'creature']);
+  });
+
+  it("the opponent's nonland card is exiled, and the counter goes on my creature", () => {
+    let s = table();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Negotiations'), targets: [{ kind: 'player', seat: 1 }, { kind: 'card', id: giant }] } as Action);
+    for (let i = 0; i < 12 && s.pendingDecision === null; i++) s = passBoth(s);
+    // The caster chooses, from the opponent's hand, nonland only.
+    expect(s.pendingDecision?.seat).toBe(0);
+    const theirs = ids(s, 1, 'hand').filter((id) => nameOf(s, id) === 'Hill Giant');
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...theirs].sort());
+    const theirGiant = theirs[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [theirGiant] } as Action), 20);
+    expect(s.instances[theirGiant]!.zone).toBe('exile');
+    expect(s.instances[giant]!.counters?.['+1/+1']).toBe(1);
+  });
+
+  it('still refused when a later target could be the player asked', () => {
+    const text = 'Target opponent reveals their hand. You choose a nonland card from it and exile that card. Test Refused deals 2 damage to any target.';
+    const read = compileCard({ ...DEAL, name: 'Test Refused', oracle_text: text } as never);
+    expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

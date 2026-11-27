@@ -35270,7 +35270,18 @@ function composeEffectsAsPrinted(
     if (possessive || parts.some((part) => part.returnsTheObject === true)) return null;
     const specs = targeted.flatMap((part) => part.targets ?? []);
     if (specs.slice(0, -1).some((spec) => spec.optional === true)) return null;
-    if (targeted.some((part) => (part.decisions ?? []).length > 0 || dividesAQuantity(part))) return null;
+    /*
+      Except the first part's question when "target player" can only mean its own target (D1336):
+      Aggressive Negotiations' "Target opponent reveals their hand. You choose a nonland card from it
+      and exile that card. Put a +1/+1 counter on up to one target creature you control." The plan
+      asks the first player among the targets, so the question is safe when the first part aims at
+      players alone and nothing after it could be one.
+    */
+    const PLAYERISH = new Set<TargetSpec['kind']>(['player', 'any', 'player-or-planeswalker']);
+    const ownPlayer = (part: ReadEffect, i: number): boolean => i === 0
+      && (part.targets ?? []).every((spec) => spec.kind === 'player')
+      && specs.slice((part.targets ?? []).length).every((spec) => !PLAYERISH.has(spec.kind));
+    if (targeted.some((part, i) => ((part.decisions ?? []).length > 0 && !ownPlayer(part, i)) || dividesAQuantity(part))) return null;
     let offset = 0;
     targeted.forEach((part, i) => {
       const from = offset;
