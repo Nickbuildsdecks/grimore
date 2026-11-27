@@ -68257,3 +68257,30 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6601 of 6601 pass.
 
 Coverage: 17,631 of 31,900 cards (+2 over D1369's 17,629), 40,515 of 59,888 lines (+3).
+
+## D1371 — Kroxa's discard
+
+Kroxa, Titan of Death's Hunger: "Whenever Kroxa enters or attacks, each opponent discards a card,
+then each opponent who didn't discard a nonland card this way loses 3 life." With D1370's escape
+rule this was Kroxa's last unread line.
+
+**The rule** (`discardOrLose`). One discard question for each opponent, then 3 life from each one
+whose discard was a land, or who had no card to discard. Each opponent chooses their own card, so a
+player holding a nonland card decides whether to keep it and pay the life.
+
+Read whole now: Kroxa.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole.
+- The opponent holds a Grizzly Bears and a Forest. Discarding the Bears loses no life; discarding
+  the Forest loses 3.
+- With an empty hand nothing is discarded and 3 life is lost.
+
+Faults injected by hand: 3, all caught.
+- The life always lost.
+- Any discard counted as a nonland card.
+- Nothing discarded.
+
+The scripts tests, compile tests and pins: 6604 of 6604 pass.
+
+Coverage: 17,632 of 31,900 cards (+1 over D1370's 17,631), 40,516 of 59,888 lines (+1).
