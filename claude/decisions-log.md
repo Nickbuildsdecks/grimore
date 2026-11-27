@@ -68423,3 +68423,34 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6614 of 6614 pass.
 
 Coverage: 17,658 of 31,900 cards (+6 over D1374's 17,652), 40,559 of 59,888 lines (+11).
+
+## D1376 — "Create a … token, then attach ~ to it"
+
+"When Ancestral Blade enters, create a 1/1 white Soldier creature token, then attach Ancestral Blade
+to it." Also Wolfrider's Saddle, Mask of Immolation, Dwarven Shortsword and the others, and the
+priced form: "When Elven Bow enters, you may pay {2}. If you do, create a 1/1 green Elf Warrior
+creature token, then attach Elven Bow to it" (Dwarven Hammer, Giant's Amulet, Draugr's Helm). 15
+legal lines.
+
+**The rule.** This is living weapon's arrival (D547) with the token printed on the card: the token
+is created under the Equipment's controller and the Equipment is attached to it with its bonus. A
+price comes as a yes-or-no with the price on the "Pay" answer (`payIfChosen`). That answer is not
+offered when the seat cannot pay, so then there is nothing to ask. One token only, and a token the
+token reader cannot build refuses the line.
+
+14 of the 15 lines read now. The last is a die-roll row (Goblin Morningstar).
+
+**Tests.** 3 engine tests:
+- Both fixtures read whole.
+- The Blade makes a Soldier, attached, a 2/2.
+- The Bow: paid, an Elf carries it and both Forests are tapped. Declined, nothing. With no mana,
+  no question is asked and nothing is made.
+
+Faults injected by hand: 3, all caught.
+- The token made whatever the answer.
+- Not attached.
+- The price never charged.
+
+The scripts tests, compile tests and pins: 6617 of 6617 pass.
+
+Coverage: 17,669 of 31,900 cards (+11 over D1375's 17,658), 40,572 of 59,888 lines (+13).
