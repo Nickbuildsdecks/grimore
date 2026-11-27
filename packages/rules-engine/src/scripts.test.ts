@@ -49651,6 +49651,47 @@ describe('Isochron Scepter: a copy of the imprinted card, cast for nothing (D134
   });
 });
 
+describe('mana as much as what was sacrificed: Priest of Yawgmoth and Sacrifice (D1342)', () => {
+  const PRIEST = { name: 'Test Priest', type_line: 'Creature — Human Cleric', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '2',
+    oracle_text: "{T}, Sacrifice an artifact: Add an amount of {B} equal to the sacrificed artifact's mana value." };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: '' };
+  const SAC = { name: 'Test Sacrifice', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    oracle_text: "As an additional cost to cast this spell, sacrifice a creature.\nAdd an amount of {B} equal to the sacrificed creature's mana value." };
+  const ROWS = [PRIEST, ROCK, SAC];
+  const deck = customDeck({ id: 'd1342', name: 'Priest', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 6 }, { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1342', 1: 'd1342' }, deckSpecs: { d1342: deck.deck },
+    battlefield: { 0: ['Test Priest', 'Test Rock', 'Hill Giant'] }, hands: { 0: ['Test Sacrifice'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [PRIEST, SAC]) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(PRIEST as never);
+    expect(read.ok && read.script?.abilities?.[0]?.producesPerSacrificed).toBe('manaValue');
+  });
+
+  it('the Priest makes three {B} for a three-mana artifact, and is never the auto-payer\'s', () => {
+    let s = table();
+    const priest = find(s, 0, 'battlefield', 'Test Priest');
+    const rock = find(s, 0, 'battlefield', 'Test Rock');
+    expect(manaSources(s, 0 as SeatIndex).some((e) => e.key === priest)).toBe(false);
+    const play = legalActions(s, 0).plays.find((p) => p.card === priest && p.kind === 'activate')!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: priest, abilityIndex: play.abilityIndex!, sacrifice: rock } as Action);
+    expect(poolOf(s, 0).B).toBe(3);
+    expect(s.instances[rock]!.zone).toBe('graveyard');
+  });
+
+  it('Sacrifice: four {B} for Hill Giant', () => {
+    let s = table();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sacrifice'), sacrifice: giant } as Action);
+    s = passBoth(s);
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    expect(poolOf(s, 0).B).toBe(4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

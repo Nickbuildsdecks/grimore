@@ -2974,10 +2974,16 @@ export interface SpendRestriction {
  * when the ability has a count. A count below zero makes nothing (CR 107.1b).
  */
 export function producedBy(
-  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes' | 'producesPerX'>, source: string, controller: SeatIndex,
+  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes' | 'producesPerX' | 'producesPerSacrificed'>, source: string, controller: SeatIndex,
   x = 0,
+  sacrificed?: { readonly power: number; readonly manaValue: number },
 ): readonly ManaType[] {
   const once = ability.produces ?? [];
+  // As much as the permanent the cost sacrificed was worth (D1342): Priest of Yawgmoth.
+  if (ability.producesPerSacrificed !== undefined) {
+    const n = sacrificed === undefined ? 0 : ability.producesPerSacrificed === 'power' ? sacrificed.power : sacrificed.manaValue;
+    return Array.from({ length: Math.max(0, n) }, () => once).flat();
+  }
   // Once per counter removed, and this many more (D1307).
   if (ability.producesPerX !== undefined) return Array.from({ length: Math.max(0, x) + ability.producesPerX }, () => once).flat();
   if (ability.producesTimes === undefined) return once;
@@ -2988,6 +2994,13 @@ export function producedBy(
 export interface AbilityDef {
   readonly cost: AbilityCost;
   readonly description: string;
+  /**
+   * "Add an amount of {B} equal to the sacrificed artifact's mana value" (D1342): Priest of
+   * Yawgmoth, Red Priest, Soldevi Adnate, Furgul, Illuminor Szeras. `produces` once for each point
+   * of the sacrificed permanent's power or mana value, as it last was. Never the auto-payer's: with
+   * no sacrifice to read it makes nothing, and a source that makes nothing is not offered.
+   */
+  readonly producesPerSacrificed?: 'power' | 'manaValue';
   /**
    * This ability is **cycling** (CR 702.29), which is more than its cost says (D567).
    *

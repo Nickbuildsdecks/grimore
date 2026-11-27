@@ -27952,6 +27952,18 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  // The spell Sacrifice (D1342): "Add an amount of {B} equal to the sacrificed creature's mana value."
+  const spellBySacrificed = /^add an amount of \{([WUBRGC])\} equal to the sacrificed creature['’]s (power|mana value)\.?$/i.exec(text);
+  if (spellBySacrificed !== null) {
+    const type = spellBySacrificed[1]!.toUpperCase() as ManaType;
+    const power = /power/i.test(spellBySacrificed[2]!);
+    return {
+      effect: (c) => {
+        const n = c.sacrificed === undefined ? 0 : power ? c.sacrificed.power : c.sacrificed.manaValue;
+        return n > 0 ? addToPool(c.state, c.controller, type, n) : c.state;
+      },
+    };
+  }
   /*
     "Return target spell or creature / permanent / nonland permanent to its owner's hand" (D1339):
     Venser, Shaper Savant; Unsubstantiate; Brutal Expulsion's mode; Press the Enemy's "… an opponent
@@ -36921,6 +36933,18 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       .map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
     if (produces.length === 0) return null;
     return { abilities: [{ ...timing, cost, description: text, produces, ...only }] };
+  }
+  // "Add an amount of {B} equal to the sacrificed artifact's mana value" (D1342): see
+  // `AbilityDef.producesPerSacrificed`. Not with a spending restriction, which only the auto-payer
+  // makes (D595) and this ability is never the auto-payer's.
+  const bySacrificed = /^add an amount of \{([WUBRGC])\} equal to the sacrificed (?:creature|artifact|permanent)['’]s (power|mana value)$/i.exec(manaClause);
+  if (bySacrificed !== null && cost.sacrifice !== undefined && (cost.sacrificeCount ?? 1) === 1 && only.spendOnly === undefined) {
+    return {
+      abilities: [{
+        ...timing, cost, description: text, produces: [bySacrificed[1]!.toUpperCase() as ManaType],
+        producesPerSacrificed: /power/i.test(bySacrificed[2]!) ? 'power' : 'manaValue',
+      }],
+    };
   }
 
   /*

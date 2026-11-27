@@ -2565,7 +2565,7 @@ function activate(
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what
     // makes tapping a land in response to something work at all.
     // A counted ability's mana is read now, before anything moves (D662): Gaea's Cradle.
-    const made = producedBy(state, ability, inst.id, action.by, xPaid ?? 0);
+    const made = producedBy(state, ability, inst.id, action.by, xPaid ?? 0, sacrificedStats ?? undefined);
     for (const type of made) next = addToPool(next, action.by, type, 1);
     // A Wild Growth on it, a Crypt Ghast beside it (D1088): read before the tap, as the mana is.
     if (ability.cost.tap) for (const type of tapManaExtras(state, inst.id)) next = addToPool(next, action.by, type, 1);

@@ -257,3 +257,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1338 pushed in 652dd0f. D1339 TargetSpec kind spell-or-permanent: scriptTypes, targeting.ts (isLegalTarget, legalTargets), scripts.ts return reader.
 - D1339 pushed in 44a9c97. D1340 Intuition and Gifts Ungiven (searchOpponentSplits, CardsDecisionSpec.distinctNames): scriptTypes, turnTypes pendingDecision, automation askOrFinish, autoActions decide, scripts.ts.
 - D1340 pushed in 1223851. D1341 Isochron Scepter and Spellbinder (castImprintedCopy): scripts.ts only.
+- D1341 pushed in 607c618. D1342 producesPerSacrificed and the spell Sacrifice: scriptTypes producedBy, autoActions activate, scripts.ts readers.
