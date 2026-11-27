@@ -50388,3 +50388,42 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6568 of 6568 pass.
 
 Coverage: 17,597 of 31,900 cards (+2 over D1358's 17,595), 40,472 of 59,888 lines (+2).
+
+## D1360 — Several chosen targets, and persist or undying handed out
+
+Two small readers.
+
+**"Choose any number of target creatures."** D1146 read "Choose target creature." as a sentence
+that names a target and does nothing else, for the sentences after it to borrow. The plural forms
+("Choose up to two target creatures", "Choose any number of target creatures you control") were
+unread. They read now, creatures only, and only where the whole phrase reads. "Controlled by the
+same player", "that share no creature types" and "with equal toughness" are conditions on the set
+that the target reader cannot express, so those cards are still refused. Nature's Panoply ("Put a
++1/+1 counter on each of them", D1355) reads whole.
+
+**"Target creature gains undying until end of turn."** Persist and undying are dies triggers, so
+granting one is D1062's quoted-grant path with the same trigger a printed persist or undying has
+(`comesBackWithACounter`), handed to the creature until end of turn. Undying Evil and Antler
+Skulkin read whole. Exactly one "until end of turn" is required, as in D1062. Rhys's trigger and
+Cauldron Haze's "each of those creatures" stay unread, because only a one-sentence spell or an
+activated ability carries the granted trigger.
+
+**Tests.** 4 engine tests:
+- Three fixtures read whole. "Choose two target creatures controlled by the same player" and a
+  grant with no duration are refused.
+- Both chosen Bears get the +1/+1 counter.
+- Undying: the Bears comes back with a +1/+1 counter and does not come back a second time.
+- Persist: back with a -1/-1 counter. The other Bears, which was not granted it, stays dead.
+
+Faults injected by hand: 4, all caught.
+- The plural reader removed.
+- Undying read as persist.
+- Nothing granted.
+- No duration check.
+
+One fault run was cut short by a pipe and left the third fault in place; the full run found it,
+and the file was restored from the backup before the gate.
+
+The scripts tests, compile tests and pins: 6572 of 6572 pass.
+
+Coverage: 17,600 of 31,900 cards (+3 over D1359's 17,597), 40,475 of 59,888 lines (+3).
