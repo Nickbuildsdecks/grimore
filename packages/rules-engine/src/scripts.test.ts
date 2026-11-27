@@ -51468,6 +51468,33 @@ describe('"You may pay {X}. When you do", and a card that calls itself he or she
   });
 });
 
+describe('A legendary card that calls itself by the name before its epithet (D1381)', () => {
+  const SMAUG = { name: 'Zorvax the Magnificent', type_line: 'Legendary Creature — Dragon', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: 'Whenever Zorvax attacks, it deals 1 damage to each opponent.' };
+  const DAIN = { name: 'Quellin of the Halls', type_line: 'Legendary Creature — Dwarf', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'When Quellin enters, you gain 2 life.' };
+  const WALL = { name: 'Brambus of Thorns', type_line: 'Creature — Wall', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '4',
+    oracle_text: 'When Brambus enters, you gain 2 life.' };
+
+  it('the short name reads on a legendary card, "the" and "of" alike', () => {
+    for (const r of [SMAUG, DAIN]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('and not on a card that is not legendary, whose first word is an ordinary noun', () => {
+    const read = compileCard(WALL as never);
+    expect(read.ok ? read.unread.length : -1).toBe(1);
+  });
+
+  it("the short name's trigger works: Quellin's arrival gains 2 life", () => {
+    const deck = customDeck({ id: 'd1381', name: 'Lord', entries: [{ name: DAIN.name, count: 2 }, { name: 'Mountain', count: 58 }], data: [DAIN] as never[] });
+    let s = advanceTo(arena({ decks: { 0: 'd1381', 1: 'd1381' }, deckSpecs: { d1381: deck.deck }, hands: { 0: [DAIN.name] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const before = life(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', DAIN.name) } as Action));
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(life(s, 0)).toBe(before + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

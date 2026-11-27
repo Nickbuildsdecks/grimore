@@ -47,7 +47,7 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  cardNameDecision, championTriggers, classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
+  cardNameDecision, championTriggers, classLevelAbility, embalm, enterChoiceDecision, epithetAliasOf, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withEpithetAlias, withXPayable,
   manaSpentScryTrigger, modalTriggerFor, modalAbilityFor, dieTableFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
@@ -586,7 +586,9 @@ export function compileCard(row: CardDataRow): Compilation {
     if (hit !== undefined) return hit;
   }
   // A bare X is the one the mana cost pays, for a spell and for a permanent's triggers (D1055).
-  const built = withXPayable(/\{X\}/i.test(row.mana_cost ?? ''), () => compileUncached(row));
+  // And the short name of a legendary card with an epithet (D1381): "Smaug", "Dáin".
+  const built = withXPayable(/\{X\}/i.test(row.mana_cost ?? ''), () => withEpithetAlias(
+    row.name ?? '', epithetAliasOf(row.name ?? '', row.type_line ?? ''), () => compileUncached(row)));
   if (key !== null) {
     if (COMPILED.size >= COMPILED_CAP) COMPILED.clear();
     COMPILED.set(key, built);

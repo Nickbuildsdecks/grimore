@@ -13121,8 +13121,33 @@ const ENTERS = 'enters(?: the battlefield)?';
  * printed text refers to whatever the previous clause was about, which is the card on some cards
  * and the target on others, so the readers that allow it say so one at a time.
  */
+/**
+ * The short name of the legendary card being compiled when it has an epithet rather than a comma
+ * (D1381): "Smaug" for *Smaug the Magnificent*, "Dáin" for *Dáin of the Ancient Halls*, "Gideon" for
+ * *Gideon of the Trials*. 43 legal cards use it in their own text.
+ *
+ * Legendary only, and only for the card being compiled, because the same shape names ordinary
+ * cards whose first word is a common noun: *Wall of Kelp*, *Case of the Lost Witness*, *Knight of
+ * the Mists*. Set by `compileCard` from the type line, which `selfRef` cannot see.
+ */
+let epithet: { readonly name: string; readonly alias: string } | null = null;
+
+/** The alias `epithet` holds for a card, or null when it has none (D1381). */
+export function epithetAliasOf(name: string, typeLine: string): string | null {
+  if (!/\bLegendary\b/.test(typeLine) || name.includes(', ') || name.includes('//')) return null;
+  const m = /^([^\s]+) (?:the|of the|of) \S/.exec(name);
+  return m === null ? null : m[1]!;
+}
+
+/** Runs `read` with `epithet` set, for `compileCard` (D1381). */
+export function withEpithetAlias<T>(name: string, alias: string | null, read: () => T): T {
+  const was = epithet;
+  epithet = alias === null ? null : { name, alias };
+  try { return read(); } finally { epithet = was; }
+}
+
 const selfRef = (name: string): string => {
-  const short = shortName(name);
+  const short = shortName(name) ?? (epithet !== null && epithet.name === name ? epithet.alias : null);
   /*
     And without the accents (D1369): Gríma, Saruman's Footman prints "Whenever Grima deals combat
     damage", Thrór's Map "Thror's Map". The same name, as two printings spell it.

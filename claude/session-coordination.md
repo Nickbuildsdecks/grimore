@@ -296,3 +296,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1377 pushed in e40afff. D1378 divided damage on triggered and activated abilities: turnTypes, autoActions, scripts.ts, bot.ts, the web choosing prompt (arena.ts, ArenaBar.tsx, PlayTable.tsx), refusal pins.
 - D1378 pushed in a6d2ca1. D1379 "you may pay {X}" (NumberDecisionSpec.payX): scriptTypes, automation, scripts.ts.
 - D1379 pushed in 9047d8c, checkpoint in e348963. D1380 reflexive pay {X} and self pronouns: turnTypes, automation, scripts.ts.
+- D1380 pushed in 58dfa9e. D1381 epithet short names on legendary cards: scripts.ts (selfRef, withEpithetAlias), compile.ts.
