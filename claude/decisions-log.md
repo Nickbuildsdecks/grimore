@@ -68867,3 +68867,31 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6650 of 6650 pass. Test typecheck clean.
 
 Coverage: 17,730 of 31,900 cards (+6 over D1384's 17,724), 40,679 of 59,888 lines (+7).
+
+## D1386 — "Where X is ~'s power" on a pump, and the grant printed first
+
+"{T}: Target creature gets +X/+X until end of turn, where X is Auriok Bladewarden's power." D522
+read the targeted pump sized off the board, and `boardCount` has read the source's own size since
+D1197 ("~'s power"). But the tail that finds "where X is" (`countTailOf`) didn't offer that measure,
+so the line went unread. It now takes the card's own name and "this creature": Auriok Bladewarden,
+Brambleguard Captain, Ashroot Animist.
+
+The same reader now takes the keyword grant printed **before** the size: "another target creature
+you control gains trample and gets +X/+X until end of turn" (Ashroot Animist). That is the same
+`PumpOptions` as "gets … and gains …". A sentence printing a grant on both sides is refused.
+
+11 more "where X is" pump lines read. Read whole now: Auriok Bladewarden, Brambleguard Captain,
+Ashroot Animist.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole.
+- The Warden's ability gives a Bear +3/+3, the Warden's own power.
+- The Animist's attack gives the other creature trample and +4/+4.
+
+Faults injected by hand: 2, both caught.
+- The self measure removed from the tail.
+- The grant printed first dropped.
+
+The scripts tests, compile tests and pins: 6653 of 6653 pass. Test typecheck clean.
+
+Coverage: 17,754 of 31,900 cards (+24 over D1385's 17,730), 40,706 of 59,888 lines (+27).
