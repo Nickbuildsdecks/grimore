@@ -32292,7 +32292,9 @@ function readEffect(
     Elephant creature token." The targets are the first sentence's alone; the second may not have
     any of its own.
   */
-  const thisWay = /^((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^;]+); (.+)$/i.exec(clause.trim());
+  const thisWay = /^((?:you may )?destroy (?:all|each|any number of target|up to \w+ target|target|\w+ target) [^;]+); (.+)$/i.exec(clause.trim())
+    // The exile (D1359) only before the token sentence its glue joins it to.
+    ?? /^(exile (?:any number of target|up to \w+ target|target|\w+ target) [^;]+); (for each (?:creature|permanent) exiled this way, its controller creates [^;]+)$/i.exec(clause.trim());
   if (thisWay !== null) {
     const first = readEffect(thisWay[1]!, name, where);
     const second = withDestroyedThisWay(() => readEffect(thisWay[2]!, name, where));
@@ -32313,6 +32315,8 @@ function readEffect(
         ...w,
         // A token put into a graveyard ceases to exist there, and was still put there (CR 111.7).
         toGraveyard: after.instances[id] === undefined || after.instances[id]?.zone === 'graveyard',
+        // And exiled (D1359), the same way.
+        toExile: after.instances[id] === undefined || after.instances[id]?.zone === 'exile',
       }));
       return spend({ ...c, state: after, destroyedThisWay: gone });
     };
@@ -32349,7 +32353,7 @@ function readEffect(
     above, where `destroyedThisWay` is set.
   */
   const theirTokens = destroyedThisWay
-    ? /^for each (creature|permanent|artifact|enchantment|land) (destroyed|put into a graveyard) this way, (?:its|that (?:creature|permanent)'s) controller creates (.+)$/i.exec(clause.trim())
+    ? /^for each (creature|permanent|artifact|enchantment|land) (destroyed|put into a graveyard|exiled) this way, (?:its|that (?:creature|permanent)'s) controller creates (.+)$/i.exec(clause.trim())
     : null;
   if (theirTokens !== null) {
     const made = tokenFrom(`create ${theirTokens[3]!}`);
@@ -32357,9 +32361,11 @@ function readEffect(
     if (made !== null && count !== undefined) {
       const kind = theirTokens[1]!.toLowerCase();
       const buried = theirTokens[2]!.toLowerCase().startsWith('put');
+      const exiled = theirTokens[2]!.toLowerCase() === 'exiled';
       return {
         effect: (c) => (c.destroyedThisWay ?? [])
-          .filter((gone) => (kind === 'permanent' || gone.types.includes(kind)) && (!buried || gone.toGraveyard))
+          .filter((gone) => (kind === 'permanent' || gone.types.includes(kind)) && (!buried || gone.toGraveyard)
+            && (!exiled || gone.toExile === true))
           .reduce((state, gone) => createToken(state, gone.controller, made.token, count), c.state),
       };
     }
@@ -32743,7 +32749,10 @@ function clausesOf(line: string): readonly string[] {
     // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
     .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
-    .replace(/((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^.;]+)\.\s+((?![^.;]*can't be regenerated)(?:(?!can't be regenerated)[^.;])*(?:destroyed|put into a graveyard) this way[^.;]*)/gi, '$1\u0007$2')
+    .replace(/((?:you may )?destroy (?:all|each|any number of target|up to \w+ target|target|\w+ target) [^.;]+)\.\s+((?![^.;]*can't be regenerated)(?:(?!can't be regenerated)[^.;])*(?:destroyed|put into a graveyard) this way[^.;]*)/gi, '$1\u0007$2')
+    // And its exile (D1359): Hour of Need, Curse of the Swine. Only the token sentence, which reads
+    // what left the battlefield; other sentences about cards exiled this way read as they did.
+    .replace(/(exile (?:any number of target|up to \w+ target|target|\w+ target) [^.;]+)\.\s+(For each (?:creature|permanent) exiled this way, its controller creates [^.;]+)/gi, '$1\u0007$2')
     /*
       Victimize (D710): "Choose two target creature cards in your graveyard. Sacrifice a creature.
       If you do, return the chosen cards to the battlefield tapped." One clause, the sacrifice

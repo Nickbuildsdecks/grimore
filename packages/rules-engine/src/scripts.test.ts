@@ -50471,6 +50471,44 @@ describe('X damage divided as you choose (D1358)', () => {
   });
 });
 
+describe('"For each creature destroyed or exiled this way, its controller creates …" after any number of targets (D1359)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: text });
+  const DESCENT = card('Test Descent', 'Destroy any number of target creatures. For each creature destroyed this way, its controller creates a 4/4 red Dragon creature token with flying.');
+  const HOUR = card('Test Hour', 'Exile any number of target creatures. For each creature exiled this way, its controller creates a 4/4 blue Sphinx creature token with flying.');
+  const WALL = { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: '0', toughness: '4', oracle_text: 'Indestructible' };
+  const ROWS = [DESCENT, HOUR, WALL];
+  const deck = customDeck({ id: 'd1359', name: 'Descent', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 10 }, { name: 'Mountain', count: 44 }], data: ROWS as never[] });
+  const table = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1359', 1: 'd1359' }, deckSpecs: { d1359: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: ['Grizzly Bears'], 1: ['Grizzly Bears', 'Test Wall'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const tokens = (s: GameState, seat: SeatIndex, word: string) => ids(s, seat, 'battlefield').filter((id) => nameOf(s, id).includes(word)).length;
+  const all = (s: GameState) => [...ids(s, 0, 'battlefield'), ...ids(s, 1, 'battlefield')]
+    .filter((id) => /Grizzly Bears|Test Wall/.test(nameOf(s, id))).map((id) => ({ kind: 'card' as const, id }));
+
+  it('reads both whole, and the exile glue only before its token sentence', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [DESCENT, HOUR]) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const other = compileCard(card('Test Other', 'Exile any number of target creatures. You gain 1 life for each creature exiled this way.') as never);
+    expect(other.ok && other.unread.length).toBe(1);
+  });
+
+  it('destroyed: a Dragon for each controller of a creature that died, none for the indestructible Wall', () => {
+    let s = table('Test Descent');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Descent'), targets: all(s) } as Action)), 20);
+    expect(tokens(s, 0, 'Dragon')).toBe(1);
+    expect(tokens(s, 1, 'Dragon')).toBe(1);
+    expect(ids(s, 1, 'battlefield').some((id) => nameOf(s, id) === 'Test Wall')).toBe(true);
+  });
+
+  it('exiled: a Sphinx for each, the indestructible Wall included', () => {
+    let s = table('Test Hour');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hour'), targets: all(s) } as Action)), 20);
+    expect(tokens(s, 0, 'Sphinx')).toBe(1);
+    expect(tokens(s, 1, 'Sphinx')).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

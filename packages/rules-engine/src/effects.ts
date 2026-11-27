@@ -195,6 +195,8 @@ export interface EffectContext {
     readonly controller: SeatIndex;
     /** Whether it reached a graveyard, for "put into a graveyard this way" (D704). */
     readonly toGraveyard: boolean;
+    /** Whether it was exiled, for "exiled this way" (D1359). */
+    readonly toExile?: boolean;
   }[];
   /**
    * The total power of the creatures tapped to pay this ability's cost, as they were (D637): a
