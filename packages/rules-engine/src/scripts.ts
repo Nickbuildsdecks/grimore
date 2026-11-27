@@ -12815,6 +12815,21 @@ function notPartOfTheResolution(line: string): string | null {
  */
 function spellStaticFromLine(line: string): Record<string, unknown> | null {
   const text = plain(line).trim();
+  /*
+    Strive (D1357), and the same sentence without the ability word: "This spell costs {2}{U} more to
+    cast for each target beyond the first". Fireball's `extraTargetCost` for the generic part and
+    `extraTargetColoured` for the symbols. Hybrid, Phyrexian and X symbols are not read.
+  */
+  const strive = /^(?:Strive — )?This spell costs ((?:\{(?:\d+|[WUBRGC])\})+) more to cast for each target beyond the first\.?$/i.exec(text);
+  if (strive !== null) {
+    const cost = parseManaCost(strive[1]!);
+    const coloured = (Object.entries(cost.colors) as [ManaType, number][])
+      .flatMap(([type, many]) => Array.from({ length: many }, () => type));
+    return {
+      ...(cost.generic > 0 ? { extraTargetCost: cost.generic } : { extraTargetCost: 0 }),
+      ...(coloured.length > 0 ? { extraTargetColoured: coloured } : {}),
+    };
+  }
   if (/^This spell can't be countered\.?$/i.test(text)) return { cantBeCountered: true };
   // D653: see `CardScript.freeWithCommander`.
   if (/^If you control a commander, you may cast this spell without paying its mana cost\.?$/i.test(text)) {

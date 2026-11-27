@@ -3948,7 +3948,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(resolve(blaze().script)(ctx)).toEqual(base);
     });
 
-    it('leaves Fireball’s own two lines unread: a cost that counts targets, and a division', () => {
+    it('reads Fireball’s cost that counts targets (D1357), and leaves its division unread', () => {
       /*
         The printed card, which the pool now carries (D579) and the hand-written script plays.
         Neither line is one this compiler reads — "costs {1} more to cast for each target beyond
@@ -3956,9 +3956,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         among any number of targets" is not the single-target sentence above. Reported, so a
         pasted Fireball-alike is partly read and says so rather than dealing X to one target.
       */
+      /*
+        Since D1357 the cost line reads, as Strive's does: `extraTargetCost: 1`, the field the
+        hand-written Fireball has carried since D579. The division is still unread, so the card is
+        still not read whole.
+      */
       const fireball = compiledScript('Fireball');
       expect(fireball.unread.map((u) => u.line)).toEqual([
-        'This spell costs {1} more to cast for each target beyond the first.',
         'Fireball deals X damage divided evenly, rounded down, among any number of targets.',
       ]);
     });
@@ -10490,8 +10494,10 @@ describe("a spell's non-resolution lines (D487)", () => {
       'a casting restriction: dropping it casts a card the rules forbid'],
     ['Cast this spell only during the declare attackers step.',
       'the same, on a timing restriction'],
-    ['This spell costs {1} more to cast for each target beyond the first.',
-      "Fireball's cost structure: dropping it makes the spell cheaper than printed"],
+    // Fireball's and Strive's own spelling reads since D1357; a hybrid symbol is not read, and
+    // dropping the line would make the spell cheaper than printed.
+    ['This spell costs {W/U} more to cast for each target beyond the first.',
+      "a cost per target the reader cannot say: dropping it makes the spell cheaper than printed"],
     ['When you cast this spell, any player may pay 5 life. If a player does, counter Flinging Thing.',
       "Dash Hopes' drawback, which no shape separates from Empyrial Storm's copy"],
   ])('still refuses the whole card beside "%s": %s', (other) => {

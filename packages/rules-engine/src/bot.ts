@@ -394,7 +394,10 @@ function chooseTargets(
     // and sending one target for it is a play the engine refuses. The bot was doing exactly that
     // the moment a card with `count: 2` existed.
     // `botTakes` where the count is only a ceiling: see `TargetSpec.botTakes`.
-    const want = spec.botTakes ?? Math.max(1, spec.count ?? 1);
+    // A spell that charges for each target beyond the first (Strive, D1357) takes one: the offer
+    // was priced at one target, and a second it could not pay for would be a cast refused.
+    const charged = (play.extraTargetCost ?? 0) > 0 || (play.extraTargetColoured ?? []).length > 0;
+    const want = spec.botTakes ?? (charged && spec.optional === true ? 1 : Math.max(1, spec.count ?? 1));
     const firstHere = chosen.length;
     for (let taken = 0; taken < want; taken++) {
       // "From a single graveyard" (D1216): after the first, only cards with its owner.

@@ -4784,6 +4784,12 @@ export interface CardScript {
    */
   readonly extraTargetCost?: number;
   /**
+   * Strive's coloured half (D1357): "This spell costs {2}{U} more to cast for each target beyond
+   * the first" is `extraTargetCost: 2` and this `['U']`, one symbol each, added for each target
+   * after the first where the spell is cast, like the generic half.
+   */
+  readonly extraTargetColoured?: readonly ManaType[];
+  /**
    * A Saga: it enters with a lore counter, gains one at the beginning of its controller's
    * precombat main phase, and is sacrificed once its last chapter has resolved (CR 714).
    *

@@ -113,6 +113,8 @@ export interface LegalPlay {
    * can pay on top of the rest of the cost, and every extra target spends one of it.
    */
   readonly extraTargetCost?: number;
+  /** And its coloured symbols (D1357, Strive): `CardScript.extraTargetColoured`. */
+  readonly extraTargetColoured?: readonly ManaType[];
   readonly abilityIndex?: number;
   /**
    * Which card **defines** this ability, for an ability a continuous effect handed this permanent
@@ -2869,6 +2871,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       manaCost: fuse ? costShown.replace(/ \/\/ /g, '') : costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
       targetSpecs: specs, candidates,
       ...(script?.extraTargetCost === undefined ? {} : { extraTargetCost: script.extraTargetCost }),
+      ...(script?.extraTargetColoured === undefined ? {} : { extraTargetColoured: script.extraTargetColoured }),
       ...(flashback ? { flashback: true } : {}),
       ...(foretold ? { foretold: true } : {}),
       ...(offered ? { offered: true } : {}),

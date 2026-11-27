@@ -8151,6 +8151,9 @@ describe('deck coverage', () => {
       // D3012: Leyline of Punishment, Sunspine Lynx; driven by "protection prevents a red sweep". No pool
       // deck plays one.
       'script damageUnpreventable',
+      // D1357: Strive's coloured half (Aerial Formation, Consign to Dust and eight more read whole); driven
+      // by "two targets cost {1}{U}{U}: refused off two Islands, cast off three". No pool deck plays one.
+      'script extraTargetColoured',
     ]);
 
     const declared = [
@@ -50366,6 +50369,57 @@ describe('"Any number of target …" (D1356)', () => {
     const total = (march.targets ?? []).reduce((sum, t) => sum + (s.cardDefs[s.instances[t.id]!.defKey]?.cmc ?? 0), 0);
     expect((march.targets ?? []).length).toBeGreaterThan(1);
     expect(total).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('Strive: a coloured charge for each target beyond the first (D1357)', () => {
+  const STRIVE = { name: 'Test Strive', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+    oracle_text: 'Strive — This spell costs {1}{U} more to cast for each target beyond the first.\nAny number of target creatures each get +1/+1 until end of turn.' };
+  const SEND = { name: 'Test Send', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+    oracle_text: "Strive \u2014 This spell costs {1}{U} more to cast for each target beyond the first.\nReturn any number of target creatures to their owners' hands." };
+  const deck = customDeck({ id: 'd1357', name: 'Strive', entries: [{ name: 'Test Strive', count: 4 }, { name: 'Test Send', count: 4 }, { name: 'Grizzly Bears', count: 12 }, { name: 'Island', count: 40 }], data: [STRIVE, SEND] as never[] });
+  const table = (islands: number, hand = 'Test Strive'): GameState => advanceTo(arena({
+    decks: { 0: 'd1357', 1: 'd1357' }, deckSpecs: { d1357: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: [...Array.from({ length: islands }, () => 'Island'), 'Grizzly Bears', 'Grizzly Bears'], 1: ['Grizzly Bears', 'Grizzly Bears'] },
+    turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bears = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+  const islands = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Island');
+
+  it('reads whole: {1} generic and one {U} for each target beyond the first', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(STRIVE as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script).toMatchObject({ extraTargetCost: 1, extraTargetColoured: ['U'] });
+  });
+
+  it('two targets cost {1}{U}{U}: refused off two Islands, cast off three', () => {
+    let s = table(2);
+    const two = bears(s).map((id) => ({ kind: 'card' as const, id }));
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strive'), targets: two } as Action)).toThrow();
+    s = table(3);
+    const both = bears(s).map((id) => ({ kind: 'card' as const, id }));
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strive'), targets: both } as Action)), 20);
+    expect(islands(s).every((id) => s.instances[id]!.tapped)).toBe(true);
+    expect(bears(s).every((id) => power(s, id) === 3)).toBe(true);
+  });
+
+  it('one target costs only the printed {U}', () => {
+    let s = table(3);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strive'), targets: [{ kind: 'card', id: bears(s)[0]! }] } as Action)), 20);
+    expect(islands(s).filter((id) => s.instances[id]!.tapped)).toHaveLength(1);
+  });
+
+  it('the bot aims a strive spell at one target, a cast it can pay for', () => {
+    const s = table(1, 'Test Send');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.name === 'Test Send');
+    expect(play).toMatchObject({ extraTargetCost: 1, extraTargetColoured: ['U'] });
+    let t = s;
+    let act = botAction(t, 0) as { type: string; targets?: unknown[] } | null;
+    for (let i = 0; i < 4 && act !== null && act.type !== 'auto:cast'; i++) { t = apply(t, act as Action); act = botAction(t, 0) as { type: string; targets?: unknown[] } | null; }
+    expect(act?.type).toBe('auto:cast');
+    expect(act!.targets).toHaveLength(1);
+    expect(() => apply(t, act as Action)).not.toThrow();
   });
 });
 

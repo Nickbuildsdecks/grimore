@@ -985,7 +985,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     commander would come out cheaper than an untaxed one is dear.
   */
   // With the targets already chosen (CR 601.2c before 601.2f), so "if it targets …" is answered (D611).
-  const change = costChangeFor(state, action.by, def, action.card, action.targets ?? []);
+  const boardChange = costChangeFor(state, action.by, def, action.card, action.targets ?? []);
+  /*
+    Strive's coloured half (D1357): one of each symbol for each target beyond the first, added to
+    the coloured mana the board adds, so it goes through the same `withCostChange` as the Leeches'.
+  */
+  const striveColoured = (script?.extraTargetColoured ?? []).length === 0 || chosen.length <= 1 ? []
+    : Array.from({ length: chosen.length - 1 }, () => script!.extraTargetColoured!).flat();
+  const change = striveColoured.length === 0 ? boardChange
+    : { ...boardChange, coloured: [...(boardChange.coloured ?? []), ...striveColoured] };
 
   /*
     Convoke, which widens what may pay rather than changing what it costs (CR 702.51).
