@@ -39514,16 +39514,18 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
  */
 function boardCondition(text: string): NonNullable<PumpOptions['while']> | null {
   // "Nontoken" on either side of the colour: "a nontoken white permanent", "a white nontoken creature".
-  const m = /^(you control|an opponent controls) (another|an?|(\S+) or more) (nontoken )?(?:(white|blue|black|red|green) )?(nontoken )?(.+?)$/i.exec(text);
+  // A second colour (D1406): "a red or white permanent", either one.
+  const m = /^(you control|an opponent controls) (another|an?|(\S+) or more) (nontoken )?(?:(white|blue|black|red|green)(?: or (white|blue|black|red|green))? )?(nontoken )?(.+?)$/i.exec(text);
   if (m === null) return null;
-  const nontoken = m[4] !== undefined || m[6] !== undefined;
+  const nontoken = m[4] !== undefined || m[7] !== undefined;
   const whose = /^you/i.test(m[1]!) ? 'you' as const : 'an-opponent' as const;
   const other = /^another$/i.test(m[2]!);
   if (other && whose !== 'you') return null;
   const atLeast = m[3] === undefined ? 1 : countFrom(m[3]);
   if (atLeast === null || atLeast < 1) return null;
   const colour = m[5] === undefined ? undefined : SPELL_COLOUR_WORDS[m[5].toLowerCase()];
-  const what = m[7]!.trim();
+  const secondColour = m[6] === undefined ? undefined : SPELL_COLOUR_WORDS[m[6].toLowerCase()];
+  const what = m[8]!.trim();
   const TYPES = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker'];
   let types: string[] = [];
   let subtype: string | undefined;
@@ -39556,7 +39558,7 @@ function boardCondition(text: string): NonNullable<PumpOptions['while']> | null 
     ...(other ? { other: true as const } : {}),
     ...(types.length > 0 ? { types } : {}),
     ...(subtype === undefined ? {} : { subtype }),
-    ...(colour === undefined ? {} : { colours: [colour] }),
+    ...(colour === undefined ? {} : { colours: secondColour === undefined ? [colour] : [colour, secondColour] }),
     ...(nontoken ? { nontoken: true as const } : {}),
   };
 }
@@ -39580,6 +39582,8 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
     if (atLeast !== null && atLeast > 0) return { kind: 'controller-drew', atLeast };
   }
   if (/^you're the monarch$/i.test(text)) return { kind: 'controller-monarch' };
+  // D1406: off `lifeGainedThisTurn`, as the trigger's "if you gained life this turn" is.
+  if (/^you(?:'ve)? gained life this turn$/i.test(text)) return { kind: 'controller-gained-life' };
   if (/^you have more cards in hand than each opponent$/i.test(text)) return { kind: 'controller-most-cards-in-hand' };
   if (new RegExp(`^${self} entered (?:the battlefield )?this turn$`, 'i').test(text)) return { kind: 'source-entered-this-turn' };
   const creatureCards = /^there are (\S+) or more creature cards in your graveyard$/i.exec(text);

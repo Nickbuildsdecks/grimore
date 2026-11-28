@@ -52673,6 +52673,54 @@ describe('a card that may be cast from its own graveyard: Gravecrawler (D1405)',
   });
 });
 
+describe('two colours, and life gained this turn, as a static condition (D1406)', () => {
+  const BRAWLER = { name: 'Test Brawler', type_line: 'Creature — Orc', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'As long as you control a red or white permanent, Test Brawler gets +1/+0 and has first strike.' };
+  const CONCOCTER = { name: 'Test Concocter', type_line: 'Creature — Human', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '2',
+    oracle_text: 'Test Concocter gets +2/+0 as long as you gained life this turn.' };
+  const VAMPIRE = { name: 'Test Oathsworn', type_line: 'Creature — Vampire', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'You may cast Test Oathsworn from your graveyard if you gained life this turn.' };
+  const LIFE = { name: 'Test Salve', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'You gain 2 life.' };
+  const SQUIRE = { name: 'Test Squire', type_line: 'Creature — Human', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [BRAWLER, CONCOCTER, VAMPIRE, LIFE, SQUIRE];
+  const deck = customDeck({ id: 'd1406', name: 'Brawler', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Raging Goblin', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const board = (battlefield: string[], extra: { hands?: string[]; graveyard?: string[] } = {}): GameState => advanceTo(arena({
+    decks: { 0: 'd1406', 1: 'd1406' }, deckSpecs: { d1406: deck.deck }, battlefield: { 0: ['Swamp', 'Swamp', ...battlefield] },
+    hands: { 0: extra.hands ?? [] }, graveyard: { 0: extra.graveyard ?? [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ch = (s: GameState, name: string) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Brawler is 3/2 with first strike beside a red creature, and 2/2 beside a green one', () => {
+    const red = ch(board(['Test Brawler', 'Raging Goblin']), 'Test Brawler');
+    expect(red.power).toBe(3);
+    expect(red.keywords.has('first strike')).toBe(true);
+    expect(ch(board(['Test Brawler', 'Grizzly Bears']), 'Test Brawler').power).toBe(2);
+    // And beside a white one: either colour will do.
+    expect(ch(board(['Test Brawler', 'Test Squire']), 'Test Brawler').power).toBe(3);
+  });
+
+  it('the Concocter gets +2/+0 once its controller gains life this turn', () => {
+    let s = board(['Test Concocter'], { hands: ['Test Salve'] });
+    expect(ch(s, 'Test Concocter').power).toBe(1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') } as Action)), 20);
+    expect(ch(s, 'Test Concocter').power).toBe(3);
+  });
+
+  it('the Oathsworn is offered from the graveyard only after life was gained this turn', () => {
+    let s = board([], { hands: ['Test Salve'], graveyard: ['Test Oathsworn'] });
+    const vampire = find(s, 0, 'graveyard', 'Test Oathsworn');
+    const offered = (st: GameState) => legalActions(st, 0).plays.some((p) => p.kind === 'cast' && p.card === vampire);
+    expect(offered(s)).toBe(false);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') } as Action)), 20);
+    expect(offered(s)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

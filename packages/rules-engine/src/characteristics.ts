@@ -2220,6 +2220,8 @@ export interface ContinuousEffect {
       cards in hand than each opponent", "~ entered this turn".
     */
     | { readonly kind: 'controller-drew'; readonly atLeast: number }
+    // D1406: "as long as you gained life this turn", off `lifeGainedThisTurn`.
+    | { readonly kind: 'controller-gained-life' }
     | { readonly kind: 'controller-monarch' }
     | { readonly kind: 'controller-most-cards-in-hand' }
     | { readonly kind: 'source-entered-this-turn' }
@@ -2684,6 +2686,7 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
       : holds(effect.controller);
   }
   if (cond.kind === 'controller-drew') return (state.cardsDrawnThisTurn[String(effect.controller)] ?? 0) >= cond.atLeast;
+  if (cond.kind === 'controller-gained-life') return (state.lifeGainedThisTurn?.[String(effect.controller)] ?? 0) > 0;
   if (cond.kind === 'controller-monarch') return state.monarch === effect.controller;
   if (cond.kind === 'controller-most-cards-in-hand') {
     const mine = (state.zones[zoneKey(effect.controller, 'hand')] ?? []).length;
