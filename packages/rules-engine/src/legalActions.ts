@@ -3223,6 +3223,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         activation in the zone it was activated from.
       */
       const wants = ability.cost.discardSelf === true || ability.cost.returnsUnblockedAttacker === true
+        || ability.cost.exileSelfFromHand === true
         ? 'hand'
         : ability.cost.fromGraveyard === true ? 'graveyard' : 'battlefield';
       if (wants !== zone && !(zone === 'command' && ability.cost.alsoFromCommandZone === true)) continue;

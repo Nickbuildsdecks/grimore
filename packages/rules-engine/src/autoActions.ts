@@ -2110,7 +2110,9 @@ function activate(
     // Ninjutsu is the second ability used from the hand, and the first that leaves the card there:
     // the cost returns somebody else's permanent and the effect puts this card onto the
     // battlefield. See `AbilityCost.returnsUnblockedAttacker`.
-    || ability?.cost.returnsUnblockedAttacker === true;
+    || ability?.cost.returnsUnblockedAttacker === true
+    // And "Exile ~ from your hand" (D1404), the Spirit Guides.
+    || ability?.cost.exileSelfFromHand === true;
   const fromGraveyard = ability?.cost.fromGraveyard === true;
   const wantedZone = fromHand ? 'hand' : fromGraveyard ? 'graveyard' : 'battlefield';
   // Commander ninjutsu (D1346): from the command zone as well, while it is that seat's commander there.
@@ -2564,6 +2566,7 @@ function activate(
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
   // the graveyard by something else before the draw has even happened.
   if (ability.cost.discardSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+  if (ability.cost.exileSelfFromHand === true) next = relocate(next, requireInstance(next, inst.id), 'exile', inst.owner, 'bottom');
   // And if that discard was cycling, say so (D567): the `discarded` list cannot tell a cycled card
   // from one thrown away by a Mind Rot, and "whenever you cycle a card" has to. See `cycled`.
   if (ability.cost.discardSelf && ability.cycling === true) {

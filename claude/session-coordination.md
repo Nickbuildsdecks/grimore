@@ -319,3 +319,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1400 pushed in 890bd64. D1401 discard up to N then draw that many (discardAnyThenThatMany), draw that many plus N: scripts.ts.
 - D1401 pushed in 171f419. D1402 search filter 'card with <keyword>' (libraryFilter): scripts.ts.
 - D1402 pushed in 775e4fc. D1403 '~ or another <thing>' without 'you control' (orAnotherTrigger), untap up to seven lands, target player exiles from their graveyard: scripts.ts.
+- D1403 pushed in e26d858. D1404 Exile ~ from your hand as a cost (AbilityCost.exileSelfFromHand): scriptTypes, scripts.ts, legalActions, autoActions, pin in compile.test.ts.

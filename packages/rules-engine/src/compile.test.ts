@@ -8765,7 +8765,9 @@ describe('an ability cost that is not mana, a tap or life', () => {
       'Remove a +1/+1 counter from a creature you control: Draw a card.'],
     ['two removals in one cost, which the field cannot hold',
       'Remove a charge counter from Probe Thing, Remove a +1/+1 counter from Probe Thing: Draw a card.'],
-    ['exiling from the hand, which is a third zone', 'Exile Probe Thing from your hand: Draw a card.'],
+    // Exiling the card itself from the hand is read since D1404 (the Spirit Guides); another card from
+    // the hand, chosen as the cost is paid, still has no field.
+    ['exiling another card from the hand, which has no field', 'Exile a card from your hand: Draw a card.'],
     ['a typed sacrifice beside a second sacrifice',
       'Sacrifice a Goblin, Sacrifice an artifact: Draw a card.'],
     // And in the other order, which is the typed reader's own guard rather than the older one's:

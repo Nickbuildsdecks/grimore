@@ -37758,6 +37758,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let puts: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let exilesInstead = false;
+  let exilesSelfFromHand = false;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
   let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
   let discardKind: NonNullable<AbilityCost['discardKind']> | null = null;
@@ -37815,6 +37816,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     */
     if (new RegExp(`^Sacrifice ${self}$`, 'i').test(component)) { sacrificesSelf = true; continue; }
     if (new RegExp(`^Discard ${self}$`, 'i').test(component)) { discardsSelf = true; continue; }
+    // "Exile ~ from your hand" (D1404): see `AbilityCost.exileSelfFromHand`.
+    if (new RegExp(`^Exile ${self} from your hand$`, 'i').test(component)) { exilesSelfFromHand = true; continue; }
     /*
       **"Discard a card"** (D580), which is `AbilityCost.discardACard` — the field D579 added for
       Sunscourge Champion's eternalize, charged by `activate` and offered by `legalActions` only to a
@@ -38135,7 +38138,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const anything = taps > 0 || untaps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
     || exilesSelf || energy > 0 || removes !== null || puts !== null || tapsOthers !== null || exilesCards !== null
-    || discardsAtRandom || returnsSelf || returnsOthers !== null;
+    || discardsAtRandom || returnsSelf || returnsOthers !== null || exilesSelfFromHand;
   // `{T}` and `{Q}` together is no printing, and each is one symbol at most.
   if (taps > 1 || untaps > 1 || (taps > 0 && untaps > 0) || !anything) return null;
   /*
@@ -38163,6 +38166,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(discardsHand ? { discardHand: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
     ...(exilesInstead ? { exileInsteadOfSacrifice: true as const } : {}),
+    ...(exilesSelfFromHand ? { exileSelfFromHand: true as const } : {}),
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificedColours === null ? {} : { sacrificeColours: sacrificedColours }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),

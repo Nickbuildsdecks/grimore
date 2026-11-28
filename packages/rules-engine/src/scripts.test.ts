@@ -52589,6 +52589,38 @@ describe("Rotlung Reanimator's anyone's Cleric, seven lands untapped, and Relic 
   });
 });
 
+describe('Exile ~ from your hand as a cost: the Spirit Guides (D1404)', () => {
+  const GUIDE = { name: 'Test Guide', type_line: 'Creature — Ape', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Exile Test Guide from your hand: Add {R}.' };
+  const deck = customDeck({ id: 'd1404', name: 'Guide', entries: [{ name: 'Test Guide', count: 4 }, { name: 'Mountain', count: 56 }], data: [GUIDE] as never[] });
+  const table = (where: 'hands' | 'battlefield'): GameState => advanceTo(arena({
+    decks: { 0: 'd1404', 1: 'd1404' }, deckSpecs: { d1404: deck.deck }, [where]: { 0: ['Test Guide'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, as a mana ability whose cost exiles the card from the hand', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(GUIDE as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.abilities?.[0]).toMatchObject({ cost: { exileSelfFromHand: true }, produces: ['R'] });
+  });
+
+  it('from the hand: offered, and it exiles the Guide for {R}', () => {
+    let s = table('hands');
+    const guide = find(s, 0, 'hand', 'Test Guide');
+    expect(legalActions(s, 0).plays.some((p) => p.card === guide && p.kind === 'activate')).toBe(true);
+    s = apply(s, { type: 'auto:activate', by: 0, card: guide, abilityIndex: 0 } as Action);
+    expect(poolOf(s, 0).R).toBe(1);
+    expect(s.instances[guide]!.zone).toBe('exile');
+  });
+
+  it('on the battlefield it is a 2/2 with nothing to activate', () => {
+    const s = table('battlefield');
+    const guide = find(s, 0, 'battlefield', 'Test Guide');
+    expect(legalActions(s, 0).plays.some((p) => p.card === guide && p.kind === 'activate')).toBe(false);
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: guide, abilityIndex: 0 } as Action)).toThrow();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

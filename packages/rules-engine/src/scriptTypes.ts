@@ -2792,6 +2792,12 @@ export interface AbilityCost {
    */
   readonly discardSelf?: boolean;
   /**
+   * "Exile ~ from your hand:" (D1404, Simian and Elvish Spirit Guide): the card itself, exiled from
+   * the hand as the cost is paid. Used from the hand, as `discardSelf` is, and not a discard: no
+   * "whenever you discard" sees it and it goes to exile, not the graveyard.
+   */
+  readonly exileSelfFromHand?: true;
+  /**
    * "Discard a card:" — a card out of the hand as part of the cost, chosen by whoever is paying
    * (D579). Sunscourge Champion's eternalize is "{2}{W}{W}, Discard a card".
    *
