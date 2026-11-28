@@ -69451,3 +69451,50 @@ Faults injected by hand: 11, of which 10 caught.
 The scripts tests, compile tests and pins: 6707 of 6707 pass. Test typecheck clean.
 
 Coverage: 17,823 of 31,900 cards (+3 over D1399's 17,820), 41,094 of 59,888 lines (+5).
+
+## D1401 — Discard up to N, then draw that many: Fable of the Mirror-Breaker
+
+"Discard up to two cards, then draw that many cards" (Kinetic Augur, Cathartic Pyre, Greasewrench
+Goblin), "discard any number of cards, then draw that many cards" (Illuminate History), and "…
+that many cards plus one" (Colossus of the Blood Age). Fable of the Mirror-Breaker's chapter II is
+"You may discard up two cards. If you do, draw that many cards", as the data prints it. None of
+these read.
+
+**The reader.** `discardAnyThenThatMany` is D1332's sacrifice reader with a hand for a battlefield.
+- The cards are the controller's choice as the effect resolves: from none up to the number printed,
+  and "land cards" narrows them to lands.
+- They're discarded, so madness and "whenever you discard" see them.
+- "That many" is how many were discarded, run as the event amount.
+- "If you do," after "you may discard" is dropped, since a count of none already draws nothing.
+- What follows may not ask a question of its own.
+- The bot discards nothing, as it sacrifices nothing in D1332.
+- "Up two" is read as "up to", as the data reader already takes Scryfall's "if your control a basic
+  land" for "you".
+
+**"Draw that many cards plus one"** (or two, or three) is read beside D903's "draw that many cards".
+
+Read whole now: Fable of the Mirror-Breaker, Kinetic Augur, Cathartic Pyre, Colossus of the Blood
+Age, Illuminate History, Greasewrench Goblin and Obsessive Astronomer. Jaya Ballard, Daretti,
+Cavalier of Flame and Celes read this line, but each has another line still unread. Into the
+Night's line is still unread, because it opens with "It becomes night."
+
+**Tests.** 6 engine tests:
+- Four fixtures read whole.
+- Two discarded draw two, and the two are in the graveyard.
+- Discarding none draws none, and three, more than the card allows, is refused.
+- "Any number, plus one": discarding one draws two.
+- "Up two" asks for up to two once its "you may" is taken.
+- "Land cards" offers only the Mountains.
+
+Faults injected by hand: 7, all caught.
+- That many read as none: caught.
+- The number printed ignored: caught.
+- The land filter dropped: caught.
+- The plus dropped: caught.
+- "Up two" not taken: caught.
+- "If you do," not dropped: caught.
+- The cards not discarded: caught.
+
+The scripts tests, compile tests and pins: 6713 of 6713 pass. Test typecheck clean.
+
+Coverage: 17,832 of 31,900 cards (+9 over D1400's 17,823), 41,112 of 59,888 lines (+18).
