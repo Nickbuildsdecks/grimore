@@ -37653,6 +37653,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let removesX: string | null = null;
   let puts: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
+  let exilesInstead = false;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
   let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
   let discardKind: NonNullable<AbilityCost['discardKind']> | null = null;
@@ -37957,6 +37958,16 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       sacrifices = chosen;
       continue;
     }
+    // "Exile a creature you control" (D1398): a sacrifice's choice, made to exile. See
+    // `AbilityCost.exileInsteadOfSacrifice`.
+    const exiledCost = /^Exile (a creature|another creature|an artifact) you control$/i.exec(component);
+    if (exiledCost !== null) {
+      if (sacrifices !== null) return null;
+      const which = exiledCost[1]!.toLowerCase();
+      sacrifices = which === 'a creature' ? 'creature' : which === 'another creature' ? 'another-creature' : 'artifact';
+      exilesInstead = true;
+      continue;
+    }
     const sacrificed = /^Sacrifice (a creature|another creature|an artifact)$/i.exec(component);
     if (sacrificed !== null) {
       // One sacrifice per cost: nothing prints two, and two would need a count the field has not
@@ -38047,6 +38058,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(discardCount > 1 ? { discardCount } : {}),
     ...(discardsHand ? { discardHand: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
+    ...(exilesInstead ? { exileInsteadOfSacrifice: true as const } : {}),
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificedColours === null ? {} : { sacrificeColours: sacrificedColours }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
@@ -38185,6 +38197,22 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
         ...timing, cost, description: text, produces: [bySacrificed[1]!.toUpperCase() as ManaType],
         producesPerSacrificed: /power/i.test(bySacrificed[2]!) ? 'power' : 'manaValue',
       }],
+    };
+  }
+  /*
+    "Add X mana of any one color, where X is 1 plus the exiled creature's mana value" (D1398, Food
+    Chain): one row per colour, as a choice of colours is below, each making X of it. With its
+    spending restriction, which a pressed ability now floats marked (D1397).
+  */
+  const anyOneBySacrificed = /^add X mana of any one colou?r, where X is (?:(one|two|1|2) plus )?the (?:exiled|sacrificed) (?:creature|artifact|permanent)['’]s (power|mana value)$/i.exec(manaClause);
+  if (anyOneBySacrificed !== null && cost.sacrifice !== undefined && (cost.sacrificeCount ?? 1) === 1) {
+    const plus = anyOneBySacrificed[1] === undefined ? 0 : /one|1/i.test(anyOneBySacrificed[1]) ? 1 : 2;
+    return {
+      abilities: (['W', 'U', 'B', 'R', 'G'] as const).map((symbol) => ({
+        ...timing, cost, description: text, produces: [symbol as ManaType], ...only,
+        producesPerSacrificed: /power/i.test(anyOneBySacrificed[2]!) ? 'power' as const : 'manaValue' as const,
+        ...(plus === 0 ? {} : { producesPerSacrificedPlus: plus }),
+      })),
     };
   }
 

@@ -2722,6 +2722,13 @@ export interface AbilityCost {
    */
   readonly sacrificeCount?: number;
   /**
+   * The permanent `sacrifice` names is **exiled** rather than sacrificed (D1398): Food Chain's
+   * "Exile a creature you control:", City of Shadows. Chosen exactly as a sacrifice is, from the
+   * same options, but it does not die: no death trigger sees it and nothing that stops a sacrifice
+   * stops it. `producesPerSacrificed` reads it as it left, as for a sacrifice.
+   */
+  readonly exileInsteadOfSacrifice?: true;
+  /**
    * Narrows `sacrifice` to permanents with **one of** these subtypes: "Sacrifice another Vampire
    * or Zombie" (D578).
    *
@@ -3034,14 +3041,15 @@ export interface SpendRestriction {
  * when the ability has a count. A count below zero makes nothing (CR 107.1b).
  */
 export function producedBy(
-  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes' | 'producesPerX' | 'producesPerSacrificed'>, source: string, controller: SeatIndex,
+  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes' | 'producesPerX' | 'producesPerSacrificed' | 'producesPerSacrificedPlus'>, source: string, controller: SeatIndex,
   x = 0,
   sacrificed?: { readonly power: number; readonly manaValue: number },
 ): readonly ManaType[] {
   const once = ability.produces ?? [];
   // As much as the permanent the cost sacrificed was worth (D1342): Priest of Yawgmoth.
   if (ability.producesPerSacrificed !== undefined) {
-    const n = sacrificed === undefined ? 0 : ability.producesPerSacrificed === 'power' ? sacrificed.power : sacrificed.manaValue;
+    const n = sacrificed === undefined ? 0
+      : (ability.producesPerSacrificed === 'power' ? sacrificed.power : sacrificed.manaValue) + (ability.producesPerSacrificedPlus ?? 0);
     return Array.from({ length: Math.max(0, n) }, () => once).flat();
   }
   // Once per counter removed, and this many more (D1307).
@@ -3061,6 +3069,8 @@ export interface AbilityDef {
    * no sacrifice to read it makes nothing, and a source that makes nothing is not offered.
    */
   readonly producesPerSacrificed?: 'power' | 'manaValue';
+  /** And this many more (D1398): Food Chain's "X is 1 plus the exiled creature's mana value". */
+  readonly producesPerSacrificedPlus?: number;
   /**
    * This ability is **cycling** (CR 702.29), which is more than its cost says (D567).
    *

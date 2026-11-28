@@ -2522,7 +2522,10 @@ function activate(
     // ability resolves, because the cost was paid before it was ever on the stack. `relocate`
     // records it and `settle` announces it, which also gets the ordering right: the death trigger
     // goes on the stack above the ability and resolves before it (CR 603.3b).
-    next = sacrifice(next, [victim.id]);
+    // Or it is exiled (D1398, `AbilityCost.exileInsteadOfSacrifice`), and does not die.
+    next = ability.cost.exileInsteadOfSacrifice === true
+      ? relocate(next, victim, 'exile', victim.owner, 'bottom')
+      : sacrifice(next, [victim.id]);
     sacrificedName = name;
   }
   /*
@@ -2664,7 +2667,7 @@ function activate(
     message: returned !== null
       ? `${seatName(state, action.by)} returns ${returnedName} to hand and activates ${ch.name}`
       : sacrificed !== null || sacrificedMany.length > 0
-      ? `${seatName(state, action.by)} sacrifices ${sacrificedName} and activates ${ch.name}`
+      ? `${seatName(state, action.by)} ${ability.cost.exileInsteadOfSacrifice === true ? 'exiles' : 'sacrifices'} ${sacrificedName} and activates ${ch.name}`
       : crewed.length > 0
         // Said as a count, because the creatures turning sideways are the cost a player is paying
         // and the log is where they read what just happened to their board.

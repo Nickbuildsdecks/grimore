@@ -52152,6 +52152,74 @@ describe('Restricted mana that floats, marked with what it may pay for (D1397)',
   });
 });
 
+describe('Exile a creature you control as a cost, and mana as much as it was worth plus one: Food Chain (D1398)', () => {
+  const CHAIN = { name: 'Test Chain', type_line: 'Enchantment', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal',
+    oracle_text: "Exile a creature you control: Add X mana of any one color, where X is 1 plus the exiled creature's mana value. Spend this mana only to cast creature spells." };
+  const WITNESS = { name: 'Test Witness', type_line: 'Creature — Human', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Whenever another creature you control dies, you gain 2 life.' };
+  const GIANT = { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{4}{G}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6', oracle_text: '' };
+  const GROWTH = { name: 'Test Growth', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'You gain 3 life.' };
+  const ROWS = [CHAIN, WITNESS, GIANT, GROWTH];
+  const deck = customDeck({ id: 'd1398', name: 'Chain', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 4 }, { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1398', 1: 'd1398' }, deckSpecs: { d1398: deck.deck }, hands: { 0: ['Test Giant', 'Test Growth'] },
+    battlefield: { 0: ['Test Chain', 'Test Witness', 'Hill Giant', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const exiling = (s: GameState, colour: string): GameState => {
+    const chain = find(s, 0, 'battlefield', 'Test Chain');
+    const read = compileCard(CHAIN as never);
+    const index = (read.ok ? read.script?.abilities ?? [] : []).findIndex((a) => (a.produces ?? []).join('') === colour);
+    expect(index).toBeGreaterThanOrEqual(0);
+    return apply(s, { type: 'auto:activate', by: 0, card: chain, abilityIndex: index, sacrifice: find(s, 0, 'battlefield', 'Hill Giant') } as Action);
+  };
+
+  it('reads whole, as one row per colour that exiles rather than sacrifices', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(CHAIN as never);
+    const abilities = read.ok ? read.script?.abilities ?? [] : [];
+    expect(abilities.map((a) => (a.produces ?? []).join(''))).toEqual(['W', 'U', 'B', 'R', 'G']);
+    for (const a of abilities) {
+      expect(a.cost).toMatchObject({ sacrifice: 'creature', exileInsteadOfSacrifice: true });
+      expect(a).toMatchObject({ producesPerSacrificed: 'manaValue', producesPerSacrificedPlus: 1 });
+    }
+    expect(compileCard({ ...CHAIN, name: 'Test City', type_line: 'Land', oracle_text: '{T}, Exile a creature you control: Put a storage counter on Test City.' } as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Hill Giant goes to exile, not the graveyard, and no death trigger sees it', () => {
+    let s = table();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    const before = life(s, 0);
+    s = drain(exiling(s, 'G'), 10);
+    expect(s.instances[giant]!.zone).toBe('exile');
+    expect(life(s, 0)).toBe(before);
+    expect(ids(s, 0, 'graveyard')).toEqual([]);
+  });
+
+  it('five of the chosen colour, one more than its mana value, floating marked', () => {
+    const s = exiling(table(), 'U');
+    expect((s.boundMana?.['0'] ?? []).map((u) => u.type)).toEqual(['U', 'U', 'U', 'U', 'U']);
+    expect(poolOf(s, 0).U ?? 0).toBe(0);
+  });
+
+  it('green pays for a six-drop creature with the Forest', () => {
+    let s = exiling(table(), 'G');
+    const big = find(s, 0, 'hand', 'Test Giant');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: big } as Action)), 20);
+    expect(s.instances[big]!.zone).toBe('battlefield');
+    expect(s.boundMana?.['0'] ?? []).toEqual([]);
+  });
+
+  it('an instant is paid by the Forest, and the marked five stay', () => {
+    let s = exiling(table(), 'G');
+    const growth = find(s, 0, 'hand', 'Test Growth');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: growth } as Action)), 20);
+    expect(s.instances[growth]!.zone).toBe('graveyard');
+    expect((s.boundMana?.['0'] ?? []).length).toBe(5);
+    expect(s.instances[find(s, 0, 'battlefield', 'Forest')]!.tapped).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
