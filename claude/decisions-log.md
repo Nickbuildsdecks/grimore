@@ -70211,3 +70211,64 @@ Faults injected by hand: 2, both caught, each restored from a backup.
 The scripts tests, compile tests and pins: 6788 of 6788 pass. Test typecheck clean.
 
 Coverage: 17,963 of 31,900 cards (+2 over D1418's 17,961), 41,285 of 59,888 lines (+3).
+
+## D1420 — Earthbend: Badgermole, Toph, the Blind Bandit, Rockalanche, Ba Sing Se
+
+"When this creature enters, earthbend 2." 28 legal cards print earthbend, with the same reminder
+text on every one: "Target land you control becomes a 0/0 creature with haste that's still a land.
+Put N +1/+1 counters on it. When it dies or is exiled, return it to the battlefield tapped."
+Nothing read it before this change.
+
+**The action.** `earthbend` in effects.ts does three things:
+- It animates the land as awaken does (D932): a permanent effect whose source is the land itself,
+  so the effect ends when the land leaves.
+- It puts the counters on.
+- It schedules the return.
+
+The reader takes "earthbend N" and "earthbend X, where X is …", with X counted as the ability
+resolves. It aims at a land of your own, so the bot picks among its own lands.
+
+**The return.** This is D1222's death watch, widened in two ways, plus a new builtin:
+- `DelayedTrigger.lasting` makes the watch last for the rest of the game rather than the turn.
+- `orExiled` also fires it on an exile from the battlefield. The `to-exile` event now checks the
+  watches, and an exile fires only the watches that say "or is exiled", so an ordinary "when that
+  creature dies this turn" still ignores an exile (tested).
+- The new builtin `return-tapped` puts the card back tapped under its owner's control, from the
+  graveyard or exile. A token has ceased to exist, and a card that has moved on stays where it is.
+
+`fireDeathWatches` now marks a builtin on the stack object the way `fireDelayed` does. The table's
+label for the watch reads "When it dies or is exiled".
+
+Read whole now: Ba Sing Se, Badgermole, Badgermole Cub, Dai Li Agents, Dai Li Indoctrination,
+Earth Kingdom General, Earth Village Ruffians, Earthbending Lesson, Haru, Hidden Talent, Rebellious
+Captives, Rockalanche, Sandbenders' Storm, The Boulder, Ready to Rumble, The Cave of Two Lovers and
+Toph, the Blind Bandit.
+
+Still unread:
+- "Whenever you earthbend" (Avatar Aang).
+- Earthbending inside a delayed trigger (Fatal Fissure).
+- Earth Rumble's reflexive fight.
+- Beifong's Bounty Hunters' "that creature's power".
+- The Legend of Kyoshi's "That land becomes an Island".
+
+**Tests.** 7 engine tests:
+- The fixtures read whole, aimed at a friendly land.
+- A Forest becomes a 4/4 creature with haste and is still a Forest.
+- Destroyed, it comes back tapped, a land again with no counters.
+- Exiled, it comes back tapped.
+- The watch lasts past its turn and fires once: back as a new object, a second death leaves it in
+  the graveyard.
+- An ordinary death watch does not fire on an exile.
+- X counts the Forests you control.
+
+Faults injected by hand: 6, all caught, each run alone and restored from a snapshot.
+- The stale-watch rule ignoring `lasting`.
+- The firing ignoring `lasting`.
+- The exile gate removed.
+- The exile check removed.
+- The return untapped.
+- The builtin never marked.
+
+The scripts, compile, pin and automation tests: 6905 of 6905 pass. Test typecheck clean.
+
+Coverage: 17,978 of 31,900 cards (+15 over D1419's 17,963), 41,310 of 59,888 lines (+25).
