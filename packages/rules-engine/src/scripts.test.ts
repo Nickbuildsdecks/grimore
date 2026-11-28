@@ -53192,6 +53192,78 @@ describe('distribute +1/+1 counters among targets: Blessings of Nature, Verdurou
   });
 });
 
+describe('a mana ability paid with energy or a counter, pressed by the player (D1417)', () => {
+  const SERVANT = { name: 'Servant of the Conduit', type_line: 'Creature — Elf Druid', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'When Servant of the Conduit enters, you get {E}{E} (two energy counters).\n{T}, Pay {E}: Add one mana of any color.' };
+  const CORE = { name: "Mirrodin's Core", type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: "{T}: Add {C}.\n{T}: Put a charge counter on Mirrodin's Core.\n{T}, Remove a charge counter from Mirrodin's Core: Add one mana of any color." };
+  const deck = customDeck({ id: 'd1417', name: 'Conduit', entries: [{ name: 'Servant of the Conduit', count: 4 }, { name: "Mirrodin's Core", count: 4 }, { name: 'Forest', count: 52 }], data: [SERVANT, CORE] as never[] });
+  const board = (mine: readonly string[], energy = 0): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1417', 1: 'd1417' }, deckSpecs: { d1417: deck.deck },
+      battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, seats: s.seats.map((seat, i) => (i === 0 ? { ...seat, counters: { ...seat.counters, energy } } : seat)) } as GameState;
+  };
+  const energyOf = (s: GameState): number => s.seats[0]!.counters['energy'] ?? 0;
+
+  it('reads both whole, one row per colour', () => {
+    expect(deck.unknown).toEqual([]);
+    const servant = compileCard(SERVANT as never);
+    expect(servant).toMatchObject({ ok: true, unread: [] });
+    expect(servant.ok && servant.script?.abilities?.map((a) => [a.produces?.join(''), a.cost.energy])).toEqual([['W', 1], ['U', 1], ['B', 1], ['R', 1], ['G', 1]]);
+    const core = compileCard(CORE as never);
+    expect(core).toMatchObject({ ok: true, unread: [] });
+    expect(core.ok && core.script?.abilities?.filter((a) => a.cost.removeCounter !== undefined).map((a) => a.produces?.join(''))).toEqual(['W', 'U', 'B', 'R', 'G']);
+    // Still not "Sacrifice X Goats" or an exert, which are not this reader's.
+    const exert = compileCard({ ...SERVANT, name: 'Test Exerter', oracle_text: '{T}, Exert Test Exerter: Add two mana of any one color.' } as never);
+    expect(exert.ok && exert.unread.length).toBe(1);
+  });
+
+  it('the Servant spends one energy for a colour, and never for the auto-payer', () => {
+    let s = board(['Servant of the Conduit'], 2);
+    const servant = find(s, 0, 'battlefield', 'Servant of the Conduit');
+    // The auto-payer would tap it and never spend the energy, so it is not one of its sources.
+    expect(manaSources(s, 0 as SeatIndex).some((e) => e.key === servant)).toBe(false);
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === servant && p.kind === 'activate');
+    expect(rows.length).toBe(5);
+    expect(rows.every((p) => p.isManaAbility)).toBe(true);
+    const blue = rows.find((p) => /Add \{U\}/.test(p.description))!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: servant, abilityIndex: blue.abilityIndex! } as Action);
+    expect(s.stackOrder.length).toBe(0);
+    expect(poolOf(s, 0).U).toBe(1);
+    expect(energyOf(s)).toBe(1);
+    expect(s.instances[servant]!.tapped).toBe(true);
+  });
+
+  it('the Servant with no energy offers nothing and is refused', () => {
+    const s = board(['Servant of the Conduit'], 0);
+    const servant = find(s, 0, 'battlefield', 'Servant of the Conduit');
+    expect(legalActions(s, 0).plays.filter((p) => p.card === servant && p.kind === 'activate')).toEqual([]);
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: servant, abilityIndex: 0 } as Action)).toThrow(/energy/);
+  });
+
+  it("Mirrodin's Core takes a charge counter off for a colour, and the auto-payer uses only its {C}", () => {
+    let s = board(["Mirrodin's Core"]);
+    const core = find(s, 0, 'battlefield', "Mirrodin's Core");
+    s = addCounters(s, core, 'charge', 1);
+    expect(manaSources(s, 0 as SeatIndex).find((e) => e.key === core)?.produces).toEqual(['C']);
+    const red = legalActions(s, 0).plays.find((p) => p.card === core && p.kind === 'activate' && /Add \{R\}/.test(p.description))!;
+    expect(red).toMatchObject({ isManaAbility: true });
+    s = apply(s, { type: 'auto:activate', by: 0, card: core, abilityIndex: red.abilityIndex! } as Action);
+    expect(poolOf(s, 0).R).toBe(1);
+    expect(s.instances[core]!.counters['charge'] ?? 0).toBe(0);
+    expect(s.instances[core]!.tapped).toBe(true);
+  });
+
+  it("Mirrodin's Core with no counter offers no colour", () => {
+    const s = board(["Mirrodin's Core"]);
+    const core = find(s, 0, 'battlefield', "Mirrodin's Core");
+    const colours = legalActions(s, 0).plays.filter((p) => p.card === core && p.kind === 'activate' && /Add \{[WUBRG]\}/.test(p.description));
+    expect(colours).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

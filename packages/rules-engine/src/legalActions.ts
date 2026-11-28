@@ -1438,7 +1438,8 @@ export function aftermathHalf(def: CardDef | undefined): number | null {
  * floats marked (`GameState.boundMana`).
  */
 function pressedForMana(ability: AbilityDef): boolean {
-  const FREE = new Set(['tap', 'sacrificeSelf', 'life', 'energy']);
+  // Not energy (D1417): `manaSources` never spends it, so an energy row is pressed.
+  const FREE = new Set(['tap', 'sacrificeSelf', 'life']);
   return ability.cost.mana !== undefined || Object.keys(ability.cost).some((key) => !FREE.has(key)
     && (ability.cost as Record<string, unknown>)[key] !== undefined && (ability.cost as Record<string, unknown>)[key] !== false);
 }
@@ -1583,6 +1584,12 @@ export function manaSources(
       if (ability.cost.tapUntapped !== undefined) continue;
       // Nor one whose X of counters is the player's to announce (D1307): a storage land.
       if (ability.cost.removeXCounters !== undefined) continue;
+      /*
+        Nor one that takes a counter off (D1417): Mirrodin's Core's "{T}, Remove a charge counter from
+        Mirrodin's Core: Add one mana of any color" taps, so it passes the line above, and `tapSources`
+        only taps: the counter would stay on. The player presses it.
+      */
+      if (ability.cost.removeCounter !== undefined) continue;
       // Nor one that discards the hand (D1331): Lion's Eye Diamond is the player's to press.
       if (ability.cost.discardHand === true) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
@@ -1602,6 +1609,13 @@ export function manaSources(
       */
       const energyCost = ability.cost.energy ?? 0;
       if (energyCost > 0 && energyOf(state, seat) < energyCost) continue;
+      /*
+        And none at all with energy in it (D1417): `tapSources` taps, sacrifices and charges life, and
+        has never spent energy. The Hub was safe only because its free {C} row always won (below);
+        Servant of the Conduit, whose only rows cost energy, would have tapped for free. A row that
+        costs energy is the player's to press, which is also the judgement the Hub's note makes.
+      */
+      if (energyCost > 0) continue;
       // A counted ability (D662) offers what it would make now, and nothing when that is zero.
       const made = producedBy(state, ability, id, seat);
       if (made.length === 0) continue;

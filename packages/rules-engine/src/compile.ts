@@ -1452,13 +1452,22 @@ function compileSingle(row: CardDataRow): Compilation {
         until their controller could keep them so (D1309, `auto:keepTapped`).
       */
       const storage = /^[^:]*\bRemove (?:X|any number of) [^:,]+ counters from [^:,]+:/i.test(line.trim());
-      const sacrificing = urza || storage || /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
+      /*
+        And a fixed cost the mana parser does not take (D1417): energy, "{T}, Pay {E}: Add one mana of
+        any color" (Servant of the Conduit, Solar Transformer), and one counter taken off, "{T}, Remove
+        a charge counter from ~: Add one mana of any color" (Mirrodin's Core, Tendo Ice Bridge). The
+        general reader reads both costs, and `manaSources` keeps such a row from the auto-payer,
+        which pays neither: the player presses it.
+      */
+      const paidFor = /^\{T\},\s*(?:Pay (?:\{E\})+|Remove an? [^:,]+ counter from [^:,]+):/i.test(line.trim());
+      const sacrificing = urza || storage || paidFor || /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
         ? lineScriptFor(line, def.name) : null;
       const makesMana = sacrificing !== null && Object.keys(sacrificing).every((key) => key === 'abilities')
         && (sacrificing.abilities ?? []).length > 0
         && (sacrificing.abilities ?? []).every((ability) => (ability.produces ?? []).length > 0
           && (ability.cost.sacrifice !== undefined || (urza && ability.producesTimes !== undefined)
-            || (storage && ability.cost.removeXCounters !== undefined && ability.producesPerX !== undefined)));
+            || (storage && ability.cost.removeXCounters !== undefined && ability.producesPerX !== undefined)
+            || (paidFor && (ability.cost.energy !== undefined || ability.cost.removeCounter !== undefined))));
       if (!makesMana) { unread.push({ line, why: 'no-reader' }); continue; }
       if (merge(built, sacrificing!) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
       compiled.push(line);
