@@ -768,7 +768,16 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   const rest = (match[3] ?? '').trim();
   // The tail is a pain land's damage or a spending restriction (D595); anything else refuses.
   // And the ban form (D740), Powerstone's: "This mana can't be spent to cast a nonartifact spell."
-  const restriction = /^Spend this mana only (.+)$/i.exec(rest) ?? /^This mana (can't be spent to cast .+)$/i.exec(rest);
+  /*
+    A restriction and then a condition (D1400): Shrine of the Forsaken Gods' "Spend this mana only to
+    cast colorless spells. Activate only if you control seven or more lands." Each is read as it
+    would be alone, and a condition that isn't read refuses the line.
+  */
+  const both = /^(Spend this mana only .+?)\.\s*(Activate only if [^.]+)\.?$/i.exec(rest);
+  const trailingIf = both === null ? null : manaCondition(both[2]!, name);
+  if (both !== null && trailingIf === null) return null;
+  const restrictedText = both === null ? rest : both[1]!;
+  const restriction = /^Spend this mana only (.+)$/i.exec(restrictedText) ?? /^This mana (can't be spent to cast .+)$/i.exec(restrictedText);
   const spendOnly = restriction === null ? undefined
     : /^can't/i.test(restriction[1]!) ? spendBan(restriction[1]!) : spendRestriction(restriction[1]!);
   if (spendOnly === null) return null;
@@ -779,7 +788,8 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   const gainsMatch = rest !== '' && restriction === null && damage === undefined && !freezes
     ? /^you gain (\d+) life\.?$/i.exec(rest) : null;
   const gains = gainsMatch === null ? undefined : Number(gainsMatch[1]);
-  const onlyIf = rest !== '' && restriction === null && damage === undefined && !freezes && gains === undefined ? manaCondition(rest, name) : null;
+  const onlyIf = trailingIf
+    ?? (rest !== '' && restriction === null && damage === undefined && !freezes && gains === undefined ? manaCondition(rest, name) : null);
   if (rest !== '' && damage === undefined && spendOnly === undefined && !freezes && gains === undefined && onlyIf === null) return null;
 
   let cost: ManaAbilityCost = { tap: true };

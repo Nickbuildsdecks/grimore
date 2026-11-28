@@ -52293,6 +52293,152 @@ describe('colour words in a spending restriction: Eldrazi Temple (D1399)', () =>
   });
 });
 
+describe('a restriction and then a condition on one mana line: Shrine of the Forsaken Gods (D1400)', () => {
+  const SHRINE = { name: 'Test Shrine Land', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{T}: Add {C}.\n{T}: Add {C}{C}. Spend this mana only to cast colorless spells. Activate only if you control seven or more lands.' };
+  const COLOSSUS = { name: 'Test Colossus', type_line: 'Artifact Creature — Golem', mana_cost: '{8}', cmc: 8, colors: [], layout: 'normal', power: '8', toughness: '8', oracle_text: '' };
+  const GOLEM = { name: 'Test Seven Golem', type_line: 'Artifact Creature — Golem', mana_cost: '{7}', cmc: 7, colors: [], layout: 'normal', power: '7', toughness: '7', oracle_text: '' };
+  const ROWS = [SHRINE, COLOSSUS, GOLEM];
+  const deck = customDeck({ id: 'd1400a', name: 'Shrine', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 56 }], data: ROWS as never[] });
+  const table = (forests: number): GameState => advanceTo(arena({
+    decks: { 0: 'd1400a', 1: 'd1400a' }, deckSpecs: { d1400a: deck.deck }, hands: { 0: ['Test Colossus', 'Test Seven Golem'] },
+    battlefield: { 0: ['Test Shrine Land', ...Array.from({ length: forests }, () => 'Forest')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castable = (s: GameState, name = 'Test Colossus'): boolean => {
+    const id = find(s, 0, 'hand', name);
+    return legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === id);
+  };
+
+  it('reads whole, with both the restriction and the condition', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(SHRINE as never);
+    const two = (read.ok ? read.script?.abilities ?? [] : []).find((a) => (a.produces ?? []).length === 2);
+    expect(two?.spendOnly?.words).toBe('to cast colorless spells');
+    expect(typeof two?.activateOnlyIf).toBe('function');
+    expect(compileCard({ ...SHRINE, oracle_text: '{T}: Add {C}{C}. Spend this mana only to cast colorless spells. Activate only if an opponent is poisoned.' } as never)).toMatchObject({ ok: true, unread: [expect.anything()] });
+  });
+
+  it('with seven lands, the Shrine and six Forests cast an eight-mana colorless creature', () => {
+    let s = table(6);
+    expect(castable(s)).toBe(true);
+    const id = find(s, 0, 'hand', 'Test Colossus');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 20);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+  });
+
+  it('with six lands the {C}{C} is not there: the Shrine and five Forests make six, not the seven its row would', () => {
+    const s = table(5);
+    expect(castable(s, 'Test Seven Golem')).toBe(false);
+  });
+});
+
+describe("A Saga that gains abilities, and a search by printed mana cost: Urza's Saga (D1400)", () => {
+  const LORE = { name: 'Test Lore', type_line: 'Enchantment — Saga', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Test Lore gains \"{T}: Add {C}.\"\nII — Test Lore gains \"{2}, {T}: Create a 0/0 colorless Construct artifact creature token with 'This token gets +1/+1 for each artifact you control.'\"\nIII — Search your library for an artifact card with mana cost {0} or {1}, put it onto the battlefield, then shuffle." };
+  const TINKER = { name: 'Test Tinker', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: 'Search your library for an artifact card with mana cost {0} or {1}, put it onto the battlefield, then shuffle.' };
+  const art = (name: string, cost: string, cmc: number) => ({ name, type_line: 'Artifact', mana_cost: cost, cmc, colors: [], layout: 'normal', oracle_text: '' });
+  const BAUBLE = art('Test Bauble', '{0}', 0);
+  const RING = art('Test Ring', '{1}', 1);
+  const STONE = art('Test Stone', '{X}', 0);
+  const POT = art('Test Pot', '{2}', 2);
+  const ROWS = [LORE, TINKER, BAUBLE, RING, STONE, POT];
+  const deck = customDeck({ id: 'd1400b', name: 'Lore', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  const start = (battlefield: string[] = ['Plains', 'Plains', 'Plains']): GameState => advanceTo(arena({
+    decks: { 0: 'd1400b', 1: 'd1400b' }, deckSpecs: { d1400b: deck.deck }, hands: { 0: ['Test Lore', 'Test Tinker'] },
+    battlefield: { 0: battlefield }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const read = compileCard(LORE as never);
+  const abilities = read.ok ? read.script?.abilities ?? [] : [];
+  const manaIndex = abilities.findIndex((a) => (a.produces ?? []).join('') === 'C');
+  const constructIndex = abilities.findIndex((a) => (a.produces ?? []).length === 0);
+  const myNextMain = (s: GameState): GameState => drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 20);
+  const castLore = (): { s: GameState; lore: string } => {
+    let s = start();
+    const lore = find(s, 0, 'hand', 'Test Lore');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: lore } as Action)), 20);
+    return { s, lore };
+  };
+
+  it('reads whole, the Saga and the search', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(manaIndex).toBeGreaterThanOrEqual(0);
+    expect(constructIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  it('chapter I resolved, the Saga taps for {C}; a copy no chapter has resolved on has nothing to tap for', () => {
+    const { s, lore } = castLore();
+    expect(s.instances[lore]!.gainedChapters).toEqual([1]);
+    const after = apply(s, { type: 'auto:activate', by: 0, card: lore, abilityIndex: manaIndex } as Action);
+    expect(poolOf(after, 0).C).toBe(1);
+    const bare = start(['Test Lore']);
+    const placed = find(bare, 0, 'battlefield', 'Test Lore');
+    expect(legalActions(bare, 0).plays.some((p) => p.card === placed && p.kind === 'activate')).toBe(false);
+    expect(() => apply(bare, { type: 'auto:activate', by: 0, card: placed, abilityIndex: manaIndex } as Action)).toThrow();
+  });
+
+  it('chapter II on the next turn: {2}, {T} makes a Construct, 1/1 with itself the one artifact', () => {
+    let { s, lore } = castLore();
+    expect(legalActions(s, 0).plays.some((p) => p.card === lore && p.kind === 'activate' && p.abilityIndex === constructIndex)).toBe(false);
+    s = myNextMain(s);
+    expect(s.instances[lore]!.gainedChapters).toEqual([1, 2]);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: lore, abilityIndex: constructIndex } as Action)), 20);
+    const construct = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Construct');
+    expect(construct).toBeDefined();
+    expect(characteristicsOf(s, s.instances[construct!]!)).toMatchObject({ power: 1, toughness: 1 });
+  });
+
+  it('a 0/0 kept alive by its own static is cast and stays, 1/1 as the only artifact', () => {
+    const ZERO = { name: 'Test Zero', type_line: 'Artifact Creature — Golem', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '0', oracle_text: 'Test Zero gets +1/+1 for each artifact you control.' };
+    const zeroes = customDeck({ id: 'd1400z', name: 'Zero', entries: [{ name: 'Test Zero', count: 2 }, { name: 'Plains', count: 58 }], data: [ZERO] as never[] });
+    let s = advanceTo(arena({ decks: { 0: 'd1400z', 1: 'd1400z' }, deckSpecs: { d1400z: zeroes.deck }, hands: { 0: ['Test Zero'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const zero = find(s, 0, 'hand', 'Test Zero');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: zero } as Action)), 20);
+    expect(s.instances[zero]!.zone).toBe('battlefield');
+    expect(characteristicsOf(s, s.instances[zero]!)).toMatchObject({ power: 1, toughness: 1 });
+  });
+
+  it('put onto the battlefield, a permanent that chooses a type has its chosen static and its plain one', () => {
+    const BANNER = { name: 'Test Banner', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: 'As Test Banner enters, choose a creature type.\nOther creatures you control of the chosen type get +1/+1.\nCreatures you control have vigilance.' };
+    const banners = customDeck({ id: 'd1400c', name: 'Banner', entries: [{ name: 'Test Banner', count: 2 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 54 }], data: [BANNER] as never[] });
+    let s = advanceTo(arena({ decks: { 0: 'd1400c', 1: 'd1400c' }, deckSpecs: { d1400c: banners.deck }, hands: { 0: ['Test Banner'] }, battlefield: { 0: ['Grizzly Bears'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', 'Test Banner'), toZone: 'battlefield' }));
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Banner')]!.chosen).toEqual({ type: 'Bear' });
+    const bears = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!);
+    expect(bears.power).toBe(3);
+    expect(bears.keywords.has('vigilance')).toBe(true);
+  });
+
+  it('a face-down creature arrives with none of its statics', () => {
+    const LORD = { name: 'Test Morph Lord', type_line: 'Creature — Human', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Other creatures you control get +1/+1.\nMorph {2}' };
+    const lords = customDeck({ id: 'd1400m', name: 'Lord', entries: [{ name: 'Test Morph Lord', count: 2 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 54 }], data: [LORD] as never[] });
+    let s = advanceTo(arena({ decks: { 0: 'd1400m', 1: 'd1400m' }, deckSpecs: { d1400m: lords.deck }, hands: { 0: ['Test Morph Lord'] }, battlefield: { 0: ['Grizzly Bears', 'Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const lord = find(s, 0, 'hand', 'Test Morph Lord');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: lord, faceDown: true } as Action)), 20);
+    expect(s.instances[lord]!.zone).toBe('battlefield');
+    expect(s.instances[lord]!.faceDown).toBe(true);
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!).power).toBe(2);
+  });
+
+  it('what it gained goes with it: returned to the hand, the card carries none of it', () => {
+    let { s, lore } = castLore();
+    s = myNextMain(s);
+    expect(s.instances[lore]!.gainedChapters).toEqual([1, 2]);
+    s = relocate(s, s.instances[lore]!, 'hand', 0, 'top');
+    expect(s.instances[lore]!.gainedChapters).toBeUndefined();
+  });
+
+  it('the search offers the {0} and {1} artifacts, not the {X} one nor the {2} one', () => {
+    let s = start();
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tinker') } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    const offered = new Set((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)));
+    expect([...offered].sort()).toEqual(['Test Bauble', 'Test Ring']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

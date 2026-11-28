@@ -2540,6 +2540,20 @@ function libraryFilter(
     const body = cardFilterBody(xClause[1]!.trim(), name);
     return body === null ? null : { phrase: whole, filter: body.filter, xBound: true };
   }
+  // "With mana cost {0} or {1}" (D1400, Urza's Saga): the printed mana cost exactly, so a card whose
+  // cost is {X} is not one, though its mana value in the library is 0.
+  const costed = /^(.*?) with mana cost ((?:\{[^}]+\})+)(?: or ((?:\{[^}]+\})+))?$/i.exec(whole);
+  if (costed !== null) {
+    const body = cardFilterBody(costed[1]!.trim(), name);
+    if (body === null) return null;
+    const wanted = [costed[2]!, ...(costed[3] === undefined ? [] : [costed[3]])].map((cost) => cost.toUpperCase());
+    const inner = body.filter;
+    return {
+      phrase: whole,
+      filter: (state, id, seat) => (inner === null || inner === undefined || inner(state, id, seat))
+        && wanted.includes((state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost ?? '').toUpperCase()),
+    };
+  }
   /*
     And "with power 2 or less" / "with toughness 4 or greater" (D1044): Kinship-style digs and
     searches. Power and toughness through `characteristicsOf`, so a card whose printed value is a
@@ -42037,6 +42051,52 @@ function returnedTransformed(clause: string, name: string): ReadEffect | null {
 }
 
 const ROMAN_CHAPTERS: Readonly<Record<string, number>> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 };
+/**
+ * "I — Urza's Saga gains "{T}: Add {C}."" (D1400): a chapter that gives the Saga an ability with no
+ * end. The quoted ability is read as a line of the card's own, with its inner single quotes as the
+ * double quotes a printed line has, and is live only once the chapter has resolved on this object
+ * (`CardInstance.gainedChapters`): activated abilities through `activateOnlyIf`, triggers through
+ * `condition`, as a Class's levels are scoped (D638). The chapter's trigger marks the Saga, if it is
+ * still on the battlefield as it resolves. One chapter number only; anything else refuses.
+ */
+function sagaGains(text: string, numbers: readonly number[], name: string): Partial<CardScript> | null {
+  const gains = new RegExp(`^(?:${selfRef(name)}) gains "([^"]+)"\\.?$`, 'i').exec(text.trim());
+  if (gains === null || numbers.length !== 1) return null;
+  const n = numbers[0]!;
+  const quoted = gains[1]!.replace(/(^|\s)'([^']*[.!?])'/g, '$1"$2"');
+  const inner = lineScriptFor(quoted, name);
+  if (inner === null || Object.keys(inner).some((key) => key !== 'abilities' && key !== 'triggers')) return null;
+  if ((inner.abilities ?? []).length + (inner.triggers ?? []).length === 0) return null;
+  const has = (state: GameState, id: string): boolean => {
+    const inst = state.instances[id];
+    return inst !== undefined && inst.zone === 'battlefield' && (inst.gainedChapters ?? []).includes(n);
+  };
+  return {
+    saga: true,
+    triggers: [
+      {
+        on: { kind: 'chapter', n },
+        description: text.replace(/\.$/, ''),
+        effect: (c) => {
+          const inst = c.state.instances[c.source];
+          if (inst === undefined || inst.zone !== 'battlefield' || (inst.gainedChapters ?? []).includes(n)) return c.state;
+          return withInstance(c.state, c.source, { gainedChapters: [...(inst.gainedChapters ?? []), n] });
+        },
+      } as TriggerDef,
+      ...(inner.triggers ?? []).map((t) => {
+        const prior = t.condition;
+        return { ...t, condition: (c: Parameters<NonNullable<TriggerDef['condition']>>[0]) => has(c.state, c.source) && (prior === undefined || prior(c)) } as TriggerDef;
+      }),
+    ],
+    ...((inner.abilities ?? []).length === 0 ? {} : {
+      abilities: inner.abilities!.map((a) => {
+        const prior = a.activateOnlyIf;
+        return { ...a, activateOnlyIf: (state: GameState, source: string, controller: SeatIndex) => has(state, source) && (prior === undefined || prior(state, source, controller)) };
+      }),
+    }),
+  };
+}
+
 function sagaChapterLine(line: string, name: string): Partial<CardScript> | null {
   const chapter = /^((?:VI|IV|V|I{1,3})(?:,\s*(?:VI|IV|V|I{1,3}))*)\s*—\s*(.+)$/.exec(plain(line).trim());
   if (chapter === null) return null;
@@ -42050,6 +42110,8 @@ function sagaChapterLine(line: string, name: string): Partial<CardScript> | null
       triggers: numbers.map((n) => ({ on: { kind: 'chapter' as const, n: n! }, description: chapter[2]!.replace(/\.$/, ''), effect: transformed.effect })),
     };
   }
+  const gained = sagaGains(chapter[2]!, numbers as number[], name);
+  if (gained !== null) return gained;
   const read = triggerFromLine(`When ${name} enters, ${chapter[2]!}`, name);
   if (read === null || Object.keys(read).some((key) => key !== 'triggers')) return null;
   const triggers = read.triggers ?? [];

@@ -4582,10 +4582,34 @@ function arrivalReplacements(state: GameState, done: Set<string>): GameState {
   return next;
 }
 
+/**
+ * The arrivals' own statics, before the first state-based check (D1400, CR 611.3a): a static is
+ * true from the moment its permanent is there, so a 0/0 Construct token with "This token gets
+ * +1/+1 for each artifact you control" is a 1/1 when state-based actions first look. The loop below
+ * installs them as it raises each arrival, after a check that saw the 0/0 and put it into the
+ * graveyard. The same script the loop uses, none for a face-down permanent; one that chooses a
+ * type, colour or name as it enters waits for the loop, which answers first. The loop's guard
+ * then finds the effects here and does not install them twice.
+ */
+function arrivalStatics(state: GameState): GameState {
+  let next = state;
+  for (const id of state.entered) {
+    const arrival = next.instances[id];
+    if (arrival?.zone !== 'battlefield' || isFaceDownPermanent(arrival)) continue;
+    if (next.effects.some((effect) => effect.source === id)) continue;
+    const script = scriptForCard(next.cardDefs[arrival.defKey]);
+    if ((script?.statics ?? []).length === 0) continue;
+    const chooses = script?.entersChoice === 'creature-type' || script?.entersChoice === 'color' || script?.entersChoice === 'card-name';
+    if (chooses && arrival.chosen === undefined) continue;
+    next = applyStatics(next, id, arrival.zoneSeat, script);
+  }
+  return next;
+}
+
 function settle(state: GameState, before: GameState): GameState {
   const arrivedWith = new Set<string>();
   // And day or night, the first time a bound permanent is on the battlefield (D593).
-  let next = drainOwedDraws(stateBasedActions(establishDayNight(arrivalReplacements(state, arrivedWith))));
+  let next = drainOwedDraws(stateBasedActions(arrivalStatics(establishDayNight(arrivalReplacements(state, arrivedWith)))));
   // Deaths and arrivals, in a loop: a creature dying can trigger something that kills another or
   // makes a token, and every one of those has to reach its own trigger. `relocate` and
   // `createToken` record them wherever they happen — lethal damage, a destroy spell, a sacrifice,

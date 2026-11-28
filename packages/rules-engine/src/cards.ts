@@ -221,6 +221,12 @@ export interface CardInstance {
    */
   readonly classLevel?: number;
   /**
+   * The Saga chapters whose "This Saga gains …" has resolved on this object (D1400, Urza's Saga). The
+   * gained ability is printed on the card and live only once its chapter is here: an effect with no
+   * end, which ends when the permanent leaves (CR 611.2c, CR 400.7). Cleared on the way out.
+   */
+  readonly gainedChapters?: readonly number[];
+  /**
    * A Room's doors (D1298, CR 709.5): which are unlocked, by face index. Set as a Room arrives from
    * a cast door, which unlocks that door; absent means every door is locked, which is how a Room
    * arrives any other way. Cleared when the card changes zone, because the new object starts again
