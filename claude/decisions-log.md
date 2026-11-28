@@ -70026,3 +70026,40 @@ Faults injected by hand: 4, of which 3 caught.
 The scripts tests, compile tests and pins: 6765 of 6765 pass. Test typecheck clean.
 
 Coverage: 17,914 of 31,900 cards (+11 over D1414's 17,903), 41,213 of 59,888 lines (+18).
+
+## D1416 — Distribute +1/+1 counters among targets: Blessings of Nature, Verdurous Gearhulk
+
+"Distribute four +1/+1 counters among any number of target creatures." 37 legal lines print the
+distribution, 27 of them on cards otherwise one line short. D749 and D1378 divided damage among
+targets, and nothing divided counters.
+
+**The reading.** "Distribute N +1/+1 counters among (any number of / one or two / …) target
+creature(s) (you control)" is read beside D749's divided damage:
+- The same divided target spec: each target gets at least one, so the count is at most N.
+- The spec is friendly.
+- The effect puts each target's share on it (`dividedAmong`, `addCounters`).
+- A division that doesn't add up to N is refused, as damage's is.
+
+**The bot.** `dividedAimings` divides a friendly spec among the bot's own creatures only: all on the
+first, or one each as wide as it goes. D1378's pick then takes the first of those. Without this,
+the bot divided counters with damage's logic and aimed them at its opponents' creatures.
+
+Read whole now: Blessings of Nature, Verdurous Gearhulk, Abzan Charm, Ajani, Mentor of Heroes,
+Armament Corps, Armament Dragon, Defend the Celestus, Elven Rite, Glint Weaver, Jugan, the Rising
+Star, Revival of the Ancestors, The Earth Crystal and Wurmskin Forger: 13 of the 37.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole, as a divided friendly target of four.
+- Three on one Bears and one on the other.
+- A division that doesn't add up is refused.
+- The bot's entry trigger puts all four on its own creatures and none on the opponent's.
+
+Faults injected by hand: 3, of which 2 caught.
+- The bot's friendly branch removed: caught.
+- One counter per target: caught.
+- The explicit `friendly` removed: **not caught**. `targetSpecFrom(…, true)` already sets it, so
+  the field is redundant.
+
+The scripts tests, compile tests and pins: 6769 of 6769 pass. Test typecheck clean.
+
+Coverage: 17,928 of 31,900 cards (+14 over D1415's 17,914), 41,235 of 59,888 lines (+22).
