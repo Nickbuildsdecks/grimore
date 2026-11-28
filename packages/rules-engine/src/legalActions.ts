@@ -1346,6 +1346,37 @@ export function attackTaxFor(
 
 /** The permanents on the battlefield with a `tapManaExtra` (D1088), found once per state. */
 const TAP_WATCHERS = new WeakMap<GameState, readonly CardInstance[]>();
+const TAP_MULTIPLIERS = new WeakMap<GameState, readonly CardInstance[]>();
+
+/**
+ * How many times over a tap of this permanent makes its mana (D1426): the product of its
+ * controller's Mana Reflections and Nyxbloom Ancients. 1 when there are none.
+ */
+export function tapManaMultiplier(state: GameState, tapped: string): number {
+  let multipliers = TAP_MULTIPLIERS.get(state);
+  if (multipliers === undefined) {
+    const out: CardInstance[] = [];
+    for (let seat = 0; seat < state.seats.length; seat++) {
+      for (const id of listAt(state, zoneKey(seat as SeatIndex, 'battlefield'))) {
+        const inst = state.instances[id];
+        if (inst === undefined || isFaceDownPermanent(inst)) continue;
+        if (scriptForCard(state.cardDefs[inst.defKey])?.tapManaMultiply === undefined) continue;
+        out.push(inst);
+      }
+    }
+    TAP_MULTIPLIERS.set(state, out);
+    multipliers = out;
+  }
+  if (multipliers.length === 0) return 1;
+  const target = state.instances[tapped];
+  if (target === undefined || target.zone !== 'battlefield') return 1;
+  let times = 1;
+  for (const watcher of multipliers) {
+    if (watcher.zoneSeat !== target.zoneSeat || allAbilitiesLost(state, watcher)) continue;
+    times *= scriptForCard(state.cardDefs[watcher.defKey])!.tapManaMultiply!;
+  }
+  return times;
+}
 
 function tapWatchers(state: GameState): readonly CardInstance[] {
   const known = TAP_WATCHERS.get(state);
@@ -1710,12 +1741,14 @@ export function manaSources(
     const extra = usable.every((u) => u.taps) ? tapManaExtras(state, id) : [];
     // And a Mana Flare's (D1106): one more of what the tap made.
     const echo = usable.every((u) => u.taps) ? tapManaEchoes(state, id) : 0;
+    // And a Mana Reflection's doubling (D1426): the whole of what the tap makes, before the echo.
+    const times = usable.every((u) => u.taps) ? tapManaMultiplier(state, id) : 1;
     // One source per permanent, because tapping it is what pays — and several tap abilities on
     // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
     // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
     if (usable.length === 1) {
       bucket.push({
-        key: id, produces: [...usable[0]!.produces, ...Array.from({ length: usable[0]!.produces.length > 0 ? echo : 0 }, () => usable[0]!.produces[0]!), ...extra], abilityIndex: usable[0]!.index,
+        key: id, produces: [...Array.from({ length: times }, () => usable[0]!.produces).flat(), ...Array.from({ length: usable[0]!.produces.length > 0 ? echo : 0 }, () => usable[0]!.produces[0]!), ...extra], abilityIndex: usable[0]!.index,
         ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
         ...(usable[0]!.restricted === true ? { restricted: true as const } : {}),
         ...(cost > 0 ? { life: cost } : {}),
@@ -1739,7 +1772,8 @@ export function manaSources(
       ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
       choose: true,
       ...(extra.length > 0 ? { extra } : {}),
-      ...(echo > 0 ? { echo } : {}),
+      // The doubling as more of the colour picked (D1426): the run's length again, per extra time.
+      ...(echo + (times - 1) * (runs ? run : 1) > 0 ? { echo: echo + (times - 1) * (runs ? run : 1) } : {}),
       ...(cost > 0 ? { life: cost } : {}),
       ...(eats ? { sacrifices: true } : {}),
       ...snowy,
@@ -1834,7 +1868,9 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       }
       if (ability.cost.tap) tapsForMana = true;
     }
-    for (const [type, n] of tapMost) pool = addMana(pool, type, n);
+    // Doubled by a Mana Reflection (D1426).
+    const times = tapsForMana ? tapManaMultiplier(state, id) : 1;
+    for (const [type, n] of tapMost) pool = addMana(pool, type, n * times);
     // A Wild Growth's mana, once for the one tap (D1088).
     if (tapsForMana) for (const type of tapManaExtras(state, id)) pool = addMana(pool, type, 1);
     // A Mana Flare's (D1106).

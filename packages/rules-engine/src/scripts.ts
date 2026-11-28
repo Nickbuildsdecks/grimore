@@ -42965,6 +42965,9 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     "Whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced"
     (D1257, Kinnan, Bonder Prodigy): D1106's echo for your nonland permanents.
   */
+  // "If you tap a permanent for mana, it produces twice as much of that mana instead" (D1426).
+  const multiplied = /^if you tap a permanent for mana, it produces (twice|three times) as much of that mana instead\.?$/i.exec(plain(line).trim());
+  if (multiplied !== null) return { tapManaMultiply: /^twice$/i.test(multiplied[1]!) ? 2 : 3 };
   if (/^whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced\.?$/i.test(plain(line).trim())) {
     return { tapManaExtra: { watches: { yours: 'nonland permanent' }, adds: 'produced' } };
   }

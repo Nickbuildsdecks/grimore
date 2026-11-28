@@ -3465,6 +3465,13 @@ export interface CardScript {
    * the tap. `tapManaExtras` is the one reader, and every path that taps for mana asks it: the
    * auto-tapper's sources, an ability the player presses, and the dimmed pips.
    */
+  /**
+   * "If you tap a permanent for mana, it produces twice as much of that mana instead" (D1426, Mana
+   * Reflection; three times, Nyxbloom Ancient): a replacement on every mana ability with {T} on a
+   * permanent its controller controls. Several multiply together. Read by `tapManaMultiplier`,
+   * before a Mana Flare's echo, which is a triggered ability and is not multiplied.
+   */
+  readonly tapManaMultiply?: number;
   readonly tapManaExtra?: {
     /** The permanent this is attached to, or a permanent of its controller's of the kind named. */
     readonly watches: 'enchanted' | { readonly yours: 'land' | 'creature' | 'land creature' | 'nonland permanent' | { readonly subtype: string } }

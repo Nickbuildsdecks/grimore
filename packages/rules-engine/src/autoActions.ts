@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, landCostPlan, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, tapManaMultiplier, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, landCostPlan, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   aftermathHalf, withCostChange, yardPermission, yardSlotFor, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -2628,8 +2628,10 @@ function activate(
     // A counted ability's mana is read now, before anything moves (D662): Gaea's Cradle.
     const made = producedBy(state, ability, inst.id, action.by, xPaid ?? 0, sacrificedStats ?? undefined);
     const only = ability.spendOnly;
+    // Doubled or tripled by a Mana Reflection or a Nyxbloom Ancient (D1426), on a {T} ability.
+    const times = ability.cost.tap ? tapManaMultiplier(state, inst.id) : 1;
     for (const type of made) {
-      next = only === undefined ? addToPool(next, action.by, type, 1) : addBoundMana(next, action.by, type, 1, only.words);
+      next = only === undefined ? addToPool(next, action.by, type, times) : addBoundMana(next, action.by, type, times, only.words);
     }
     // A Wild Growth on it, a Crypt Ghast beside it (D1088): read before the tap, as the mana is.
     if (ability.cost.tap) for (const type of tapManaExtras(state, inst.id)) next = addToPool(next, action.by, type, 1);

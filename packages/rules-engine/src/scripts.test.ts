@@ -8133,6 +8133,8 @@ describe('deck coverage', () => {
       // D1408: Hungering Yeti, Illusion Spinners; no pool deck plays one. Driven at runtime by "cast
       // as though it had flash while a condition holds: Hungering Yeti (D1408)".
       'script flashWhile',
+      // D1426: Mana Reflection and Nyxbloom Ancient, which no built-in deck runs.
+      'script tapManaMultiply',
       // D1412: Silent Arbiter, Crawlspace, Dueling Grounds; no pool deck plays one. Driven at runtime by
       // "no more than N creatures can attack or block each combat: Silent Arbiter, Crawlspace (D1412)".
       'script attackLimit',
@@ -53824,6 +53826,59 @@ describe('four more conditions: hand, deaths, an empty board and an empty gravey
     expect(power(s, 'Test Empty')).toBe(2);
     s = drain(destroy(s, find(s, 0, 'battlefield', 'Test Few')), 10);
     expect(power(s, 'Test Empty')).toBe(1);
+  });
+});
+
+describe('Mana Reflection and Nyxbloom Ancient: a tap makes twice or three times its mana (D1426)', () => {
+  const REFLECTION = { name: 'Test Reflection', type_line: 'Enchantment', mana_cost: '{4}{G}{G}', cmc: 6, colors: ['G'], layout: 'normal',
+    oracle_text: 'If you tap a permanent for mana, it produces twice as much of that mana instead.' };
+  const NYXBLOOM = { name: 'Test Nyxbloom', type_line: 'Enchantment Creature — Elemental', mana_cost: '{4}{G}{G}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '5', toughness: '5',
+    oracle_text: 'Trample\nIf you tap a permanent for mana, it produces three times as much of that mana instead.' };
+  const DUAL = { name: 'Test Dual', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {G} or {W}.' };
+  const WW = { name: 'Test Prayer', type_line: 'Instant', mana_cost: '{W}{W}', cmc: 2, colors: ['W'], layout: 'normal', oracle_text: 'You gain 1 life.' };
+  const BEAST = { name: 'Test Beast', type_line: 'Creature — Beast', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '4', toughness: '4', oracle_text: '' };
+  const ROWS = [REFLECTION, NYXBLOOM, DUAL, WW, BEAST];
+  const deck = customDeck({ id: 'd1426', name: 'Reflection', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Sol Ring', count: 1 }, { name: 'Forest', count: 49 }], data: ROWS as never[] });
+  const board = (mine: readonly string[], theirs: readonly string[] = [], hand: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1426', 1: 'd1426' }, deckSpecs: { d1426: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(REFLECTION as never)).toMatchObject({ ok: true, unread: [], script: { tapManaMultiply: 2 } });
+    expect(compileCard(NYXBLOOM as never)).toMatchObject({ ok: true, unread: [], script: { tapManaMultiply: 3 } });
+  });
+
+  it('two Forests pay for a four-mana creature, and a Forest counts as {G}{G}', () => {
+    let s = board(['Test Reflection', 'Forest', 'Forest'], [], ['Test Beast']);
+    expect(potentialMana(s, 0).G).toBe(4);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Beast') } as Action)), 20);
+    expect(find(s, 0, 'battlefield', 'Test Beast')).toBeDefined();
+  });
+
+  it('a Sol Ring tapped by hand makes four, and an opponent\'s Reflection does nothing for me', () => {
+    let s = board(['Test Reflection', 'Sol Ring']);
+    const ring = find(s, 0, 'battlefield', 'Sol Ring');
+    const row = legalActions(s, 0).plays.find((p) => p.card === ring && p.kind === 'activate')!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: ring, abilityIndex: row.abilityIndex! } as Action);
+    expect(poolOf(s, 0).C).toBe(4);
+    const theirs = board(['Sol Ring'], ['Test Reflection']);
+    const ring2 = find(theirs, 0, 'battlefield', 'Sol Ring');
+    const row2 = legalActions(theirs, 0).plays.find((p) => p.card === ring2 && p.kind === 'activate')!;
+    expect(poolOf(apply(theirs, { type: 'auto:activate', by: 0, card: ring2, abilityIndex: row2.abilityIndex! } as Action), 0).C).toBe(2);
+  });
+
+  it('two Reflections make four of each, and a Nyxbloom three', () => {
+    expect(potentialMana(board(['Test Reflection', 'Test Reflection', 'Forest']), 0).G).toBe(4);
+    expect(potentialMana(board(['Test Nyxbloom', 'Forest']), 0).G).toBe(3);
+  });
+
+  it('a dual land doubles the colour it is tapped for: one pays {W}{W}', () => {
+    let s = board(['Test Reflection', 'Test Dual'], [], ['Test Prayer']);
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Prayer') && p.kind === 'cast')).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Prayer') } as Action)), 20);
+    expect(life(s, 0)).toBe(21);
   });
 });
 
