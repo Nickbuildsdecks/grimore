@@ -70508,3 +70508,39 @@ Faults injected by hand: 3, all caught, each restored from a backup.
 The scripts, compile, pin, automation and playout tests: 7051 of 7051 pass. Test typecheck clean.
 
 Coverage: 18,031 of 31,900 cards (+7 over D1424's 18,024), 41,382 of 59,888 lines (+7).
+
+## D1426 — Mana Reflection and Nyxbloom Ancient: a tap makes twice or three times its mana
+
+"If you tap a permanent for mana, it produces twice as much of that mana instead." Mana Reflection
+and Nyxbloom Ancient ("three times") are on the third staples list. Nothing read them before this
+change.
+
+**The replacement.** The new `CardScript.tapManaMultiply` is the factor. `tapManaMultiplier` is the
+product over the tapped permanent's controller's own multipliers, so two Reflections make four.
+It applies only to an ability with {T}, and is read in each of the three places a tap makes mana:
+- **Pressed by the player** (`activate`): every mana the ability makes, that many times.
+- **The auto-payer's sources** (`manaSources`): a fixed source's whole output repeated. A
+  colour choice gets the picked colour that many times over, a run's whole length included.
+- **The potential pips** (`potentialMana`): each type's count multiplied.
+
+A Mana Flare's echo is a triggered ability. It's added after the doubling and is not doubled.
+
+**Tests.** 6 engine tests:
+- Both cards read whole with their factor.
+- Under a Reflection, two Forests show four {G} and pay for a {3}{G} creature.
+- A Sol Ring pressed by hand makes four {C}. Under an opponent's Reflection it makes two.
+- Two Reflections make four from a Forest, and a Nyxbloom three.
+- A {G}-or-{W} dual pays {W}{W} alone.
+
+Plus a mechanic-coverage exemption, since no built-in deck runs either card.
+
+Faults injected by hand: 5, all caught, each restored from a snapshot.
+- The sources not multiplied.
+- The potential not multiplied.
+- The pressed ability not multiplied.
+- Any controller's multiplier counted.
+- The choice's colour not multiplied.
+
+The scripts, compile, pin, automation, playout and mana tests: 7112 of 7112 pass. Test typecheck clean.
+
+Coverage: 18,033 of 31,900 cards (+2 over D1425's 18,031), 41,384 of 59,888 lines (+2).
