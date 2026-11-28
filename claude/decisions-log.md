@@ -70331,3 +70331,47 @@ Faults injected by hand: 6, all caught, each run alone and restored from a snaps
 The scripts, compile, pin, automation and playout tests: 7031 of 7031 pass. Test typecheck clean.
 
 Coverage: 17,987 of 31,900 cards (+9 over D1420's 17,978), 41,321 of 59,888 lines (+11).
+
+## D1422 — Airbend: Aang, the Last Airbender, Airbending Lesson, Glider Staff
+
+"When Aang enters, airbend up to one other target nonland permanent." The reminder text: "Exile
+it. While it's exiled, its owner may cast it for {2} rather than its mana cost." 11 legal cards
+print airbend. Nothing read it before this change.
+
+**The action.** Each permanent targeted is exiled, and its owner gets D583's permission to cast it
+from exile:
+- no deadline (`while-exiled`), so it ends when the card leaves exile;
+- a cast only, never a land drop;
+- a new field, `playFromExile.cost`, which is the whole of what the spell costs in mana under the
+  permission.
+
+`legalActions` offers the cast at that cost, and `castSpell` pays it, in the alternative-cost chain
+beside the free exile casts. The permission is the owner's, so the player who airbent it cannot
+cast it. A token exiled ceases to exist.
+
+Read whole now: Aang, the Last Airbender, Airbender Ascension, Airbender's Reversal, Airbending
+Lesson and Glider Staff.
+
+Still unread:
+- A spell as a target ("airbend up to one other target creature or spell", Aang, Swift Savior).
+  Refused rather than read, since exiling a spell is not this reader's.
+- "Any number of other target nonland permanents" (Appa, Steadfast Guardian).
+- "Airbend all other creatures" (Avatar's Wrath).
+- "Whenever you airbend".
+
+**Tests.** 4 engine tests:
+- The fixtures read whole, and a spell as a target stays unread.
+- A 7-drop airbent is in exile with its owner's permission and offered to no one else. On its
+  owner's turn it is offered at {2} and cast off two Forests.
+- With one land its owner cannot pay the {2}.
+- A token airbent is gone.
+
+Faults injected by hand: 4, all caught, each run alone and restored from a snapshot.
+- The offer at the printed cost.
+- The payment at the printed cost.
+- The permission given to the caster instead of the owner.
+- No permission at all.
+
+The scripts, compile, pin, automation and playout tests: 7035 of 7035 pass. Test typecheck clean.
+
+Coverage: 17,992 of 31,900 cards (+5 over D1421's 17,987), 41,330 of 59,888 lines (+9).
