@@ -69980,3 +69980,49 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6761 of 6761 pass. Test typecheck clean.
 
 Coverage: 17,903 of 31,900 cards (+1 over D1413's 17,902), 41,195 of 59,888 lines (+1).
+
+## D1415 — "Up to one target" as an optional target
+
+"Up to one target" is printed on 279 legal lines whose card is otherwise one line short, and only
+the readers written for a particular shape (fights, suspect, goad, a card from a graveyard,
+D1375's per opponent) took it. Two changes.
+
+**A fallback in the clause reader.** `readEffect` now asks `readEffectCore`, which is what it was,
+and if that refuses a clause with exactly one "up to one target", it reads the clause again with
+"target" in its place.
+- When that plain reading has exactly one target, the target is made optional (CR 115.7: "up to
+  one" may be none), and the clause does nothing if it wasn't chosen.
+- Only one target, so the target made optional is the one the words named.
+- Any reader that already reads the "up to one" form answers first.
+
+**The exile-until-it-leaves shape** (D575's whole-card reader) now takes "exile up to one target …
+until ~ leaves the battlefield", with the target optional: All-Fates Stalker, Touch the Spirit
+Realm. Liminal Hold and Prayer of Binding print a second sentence that shape doesn't read.
+
+Measured on the 233 one-line-short cards whose unread line prints "up to one target": 1 read whole
+before this (Endurance, D1414), 4 with the exile-shape change alone, and 11 with both. The ten new
+ones are All-Fates Stalker, Touch the Spirit Realm, Earth Kingdom Jailer, Conjurer's Bauble, Campus
+Renovation, Repel Intruders, Queen's Bay Paladin, Swiftgear Drake, Salvation Engine and General Leo
+Cristophe. Most of those 233 lines still fail on something else in them.
+
+**Tests.** 4 engine tests:
+- Four fixtures read whole, and the sorcery's and the Stalker's targets are optional.
+- Cast with no target, Conjurer's Bauble's line still draws. With a target, the graveyard card goes
+  to the bottom of the library too.
+- An entry trigger with nothing to aim at resolves and does nothing.
+- The Stalker exiles the Bears until it leaves, and they come back when it does.
+
+The first fixtures used wordings that existing readers already read ("destroy up to one target
+artifact"), so the fault checks showed nothing. They were replaced with lines only the fallback
+reads, checked by the measure above.
+
+Faults injected by hand: 4, of which 3 caught.
+- The fallback removed: caught.
+- The target not made optional: caught.
+- The exile shape's target not optional: caught.
+- The no-target guard removed: **not caught**. The underlying effects already do nothing without a
+  target, so the guard is a second check.
+
+The scripts tests, compile tests and pins: 6765 of 6765 pass. Test typecheck clean.
+
+Coverage: 17,914 of 31,900 cards (+11 over D1414's 17,903), 41,213 of 59,888 lines (+18).
