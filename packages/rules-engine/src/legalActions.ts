@@ -2461,17 +2461,29 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     for (const alternative of alternatives) {
       const altChange = costChangeFor(state, seat, def, id);
       const altCost = withCostChange(parseManaCost(alternative.cost), altChange);
-      const altTargets = playableTargets(state, alternative.specs, seat, id);
-      if (altCost.unsupported !== undefined || !altTargets.ok
-        || !canAfford(poolOf(state, seat), altCost, sources)) continue;
+      if (altCost.unsupported !== undefined || !canAfford(poolOf(state, seat), altCost, sources)) continue;
+      /*
+        A modal spell is offered once per combination of modes here too (D1394), as its printed cast
+        is below. Sweep seed 105085 threw "choose a mode for Thunderbolt": Bolas's Citadel offered
+        the top card's cast with no mode, and the engine refused the play it had offered.
+      */
+      const modeRows: readonly (readonly number[] | null)[] = modeCombinations(script, state, seat);
+      for (const modes of modeRows.length === 0 ? [null] : modeRows) {
+      const chosenModes = modes === null ? null : modesOf(script, modes);
+      const altSpecs = chosenModes === null ? alternative.specs
+        : [...modeTargetSpecs(chosenModes), ...(alternative.flag === 'awakened' ? [AWAKEN_LAND] : [])] as readonly TargetSpec[];
+      const altTargets = playableTargets(state, altSpecs, seat, id);
+      if (!altTargets.ok) continue;
       out.push({
         kind: 'cast', card: id, name: ch.name, [alternative.flag]: true,
-        description: `Cast ${ch.name} for its ${alternative.note}`,
+        description: `Cast ${ch.name} for its ${alternative.note}`
+          + (chosenModes === null ? '' : ` — ${chosenModes.map((m) => m.description).join('; and ')}`),
         manaCost: alternative.cost,
         ...(altChange.generic === 0
           ? {}
           : { costChange: altChange.generic, costNote: altChange.notes[0] ?? '' }),
-        targetSpecs: alternative.specs, candidates: altTargets.candidates,
+        ...(modes === null ? {} : { modes: [...modes] }),
+        targetSpecs: altSpecs, candidates: altTargets.candidates,
         isManaAbility: false, sacrificeOptions: [],
         ...(alternative.flag === 'pitchCast' && script?.pitch !== undefined
           ? {
@@ -2486,6 +2498,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           }
           : {}),
       });
+      }
     }
 
     // A top card the only permission for is Bolas's Citadel's has no printed cast (D731).

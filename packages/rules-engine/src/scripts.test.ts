@@ -52007,6 +52007,28 @@ describe('A Saga that returns transformed (D1393)', () => {
   });
 });
 
+describe('A modal spell cast for an alternative cost is offered once per mode (D1394)', () => {
+  const BOLT = { name: 'Test Thunder', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal',
+    oracle_text: 'Choose one —\n• Test Thunder deals 3 damage to target player or planeswalker.\n• Test Thunder deals 4 damage to target creature with flying.' };
+  const CITADEL = { name: "Bolas's Citadel", type_line: 'Legendary Artifact', mana_cost: '{3}{B}{B}{B}', cmc: 6, colors: ['B'], layout: 'normal',
+    oracle_text: 'You may look at the top card of your library any time.\nYou may play lands and cast spells from the top of your library. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost.\n{T}, Sacrifice ten nonland permanents: Each opponent loses 10 life.' };
+  const deck = customDeck({ id: 'd1394', name: 'Citadel', entries: [{ name: 'Test Thunder', count: 4 }, { name: "Bolas's Citadel", count: 1 }, { name: 'Swamp', count: 55 }], data: [BOLT, CITADEL] as never[] });
+
+  it('from the top of the library with the Citadel: one play per mode, and the cast works', () => {
+    let s = advanceTo(arena({ decks: { 0: 'd1394', 1: 'd1394' }, deckSpecs: { d1394: deck.deck }, battlefield: { 0: ["Bolas's Citadel"] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const bolt = find(s, 0, 'library', 'Test Thunder');
+    s = putOnTopOfLibrary(s, bolt);
+    const plays = legalActions(s, 0).plays.filter((p) => p.card === bolt && p.payLifeFromTop === true);
+    expect(plays.length).toBeGreaterThan(0);
+    for (const p of plays) expect(p.modes).toBeDefined();
+    const toFace = plays.find((p) => p.candidates[0]?.some((t) => t.kind === 'player' && t.seat === 1))!;
+    s = apply(s, { type: 'auto:cast', by: 0, card: bolt, payLifeFromTop: true, modes: toFace.modes, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    s = drain(passBoth(s), 20);
+    expect(life(s, 1)).toBe(17);
+    expect(life(s, 0)).toBe(18);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
