@@ -52597,3 +52597,48 @@ Faults injected by hand: 3, of which 2 caught.
 The scripts tests, compile tests and pins: 6769 of 6769 pass. Test typecheck clean.
 
 Coverage: 17,928 of 31,900 cards (+14 over D1415's 17,914), 41,235 of 59,888 lines (+22).
+
+## D1417 — Mana abilities paid with energy or a counter: Servant of the Conduit, Mirrodin's Core
+
+"{T}, Pay {E}: Add one mana of any color." and "{T}, Remove a charge counter from ~: Add one mana
+of any color." Mana lines go to the narrow mana parser in `fromCardData`. That parser takes neither
+cost, and compile.ts sent only sacrifices, the Urza lands and storage lands on to the general
+reader. The general reader already reads both costs.
+
+**The reading.** compile.ts now sends a `{T}, Pay {E}…:` or `{T}, Remove a/an <kind> counter from
+…:` mana line to the general reader. It keeps the result only when every ability makes mana and
+carries the energy or counter cost.
+
+**The auto-payer.** `tapSources` taps, sacrifices and charges life. It has never spent energy or
+taken a counter off. Before this change:
+- Aether Hub's energy rows were safe only because its free {C} row always won.
+- Servant of the Conduit, whose only rows cost energy, would have been tapped for free mana if
+  it had read.
+- A tapping row that removes a counter passed `manaSources`' filter, and the counter would have
+  stayed on.
+
+`manaSources` now skips any row with an energy cost or a `removeCounter`. The player presses such
+a row through `legalActions`, which already checks and pays both. `pressedForMana` no longer
+counts energy as free, so restricted energy mana would float marked. No card tests that last part.
+
+Read whole now: Aether Hub, Channeler Initiate, Mirrodin's Core, Servant of the Conduit, Solar
+Transformer, Spell Satchel and Tendo Ice Bridge. Still unread in this shape:
+- Component Pouch: two mana of different colors.
+- Conversion Apparatus: any combination.
+- Gemstone Mine: a sacrifice rider.
+- Throne of Makindi: kicked-spell restriction.
+
+**Tests.** 5 engine tests:
+- Both fixtures read whole, one row per colour; an exert cost stays unread.
+- The Servant spends one energy for blue, and is not an auto-payer source.
+- With no energy, the Servant offers nothing and is refused.
+- The Core takes its charge counter off for red, and the auto-payer sees only its {C}.
+- With no counter, the Core offers no colour.
+
+Faults injected by hand: 2, both caught.
+- The `removeCounter` skip removed: the Core's auto-payer test fails.
+- The energy skip removed: the Servant's auto-payer test fails.
+
+The scripts tests, compile tests and pins: 6774 of 6774 pass. Test typecheck clean.
+
+Coverage: 17,935 of 31,900 cards (+7 over D1416's 17,928), 41,248 of 59,888 lines (+13).
