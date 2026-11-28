@@ -53775,6 +53775,58 @@ describe('what entered under your control this turn, as a condition (D1424)', ()
   });
 });
 
+describe('four more conditions: hand, deaths, an empty board and an empty graveyard (D1425)', () => {
+  const mk = (name: string, cond: string) => ({ name, type_line: 'Creature — Spirit', mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: `${name} gets +1/+1 as long as ${cond}.` });
+  const HAND = mk('Test Few', 'you have fewer than three cards in hand');
+  const DIED = mk('Test Mourner', 'two or more creatures died this turn');
+  const ALONE = mk('Test Alone', 'no opponent controls a creature');
+  const EMPTY = mk('Test Empty', 'there are no cards in your graveyard');
+  const ROWS = [HAND, DIED, ALONE, EMPTY];
+  const deck = customDeck({ id: 'd1425', name: 'Conditions', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const board = (opts: { hand?: readonly string[]; theirs?: readonly string[] } = {}): GameState => advanceTo(arena({
+    decks: { 0: 'd1425', 1: 'd1425' }, deckSpecs: { d1425: deck.deck }, hands: { 0: [...(opts.hand ?? [])] },
+    battlefield: { 0: ROWS.map((r) => r.name), 1: [...(opts.theirs ?? [])] },
+    turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const power = (s: GameState, name: string): number => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!).power;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('fewer than three cards in hand: two yes, three no (the draw step adds one)', () => {
+    const two = board({ hand: ['Swamp'] });
+    expect(ids(two, 0, 'hand').length).toBe(2);
+    expect(power(two, 'Test Few')).toBe(2);
+    const three = board({ hand: ['Swamp', 'Swamp'] });
+    expect(ids(three, 0, 'hand').length).toBe(3);
+    expect(power(three, 'Test Few')).toBe(1);
+  });
+
+  it('two creatures died this turn, any player\'s', () => {
+    let s = board({ theirs: ['Grizzly Bears', 'Grizzly Bears'] });
+    const [a, b] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    s = drain(destroy(s, a!), 10);
+    expect(power(s, 'Test Mourner')).toBe(1);
+    s = drain(destroy(s, b!), 10);
+    expect(power(s, 'Test Mourner')).toBe(2);
+  });
+
+  it('no opponent controls a creature, until one does', () => {
+    expect(power(board(), 'Test Alone')).toBe(2);
+    expect(power(board({ theirs: ['Grizzly Bears'] }), 'Test Alone')).toBe(1);
+  });
+
+  it('no cards in your graveyard, until there is one', () => {
+    let s = board({ theirs: ['Grizzly Bears'] });
+    expect(power(s, 'Test Empty')).toBe(2);
+    s = drain(destroy(s, find(s, 0, 'battlefield', 'Test Few')), 10);
+    expect(power(s, 'Test Empty')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

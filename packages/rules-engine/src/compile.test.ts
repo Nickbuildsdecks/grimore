@@ -18192,6 +18192,9 @@ describe('the second condition vocabulary, and the ability word in front of it (
       'if you have 10 or less life, you gain 1 life'],
     ['When Mardu Hordechief enters, if you control a creature with power 4 or greater, draw a card.',
       'if you control a creature with power 4 or greater, draw a card'],
+    // More than one death (D1425), off the deaths the engine now counts: refused here until then.
+    ['When Mardu Hordechief enters, if two or more creatures died this turn, draw a card.',
+      'if two or more creatures died this turn, draw a card'],
   ])('reads %s', (line, description) => {
     const got = creature(line);
     expect(got.unread.map((u) => u.line)).toEqual([]);
@@ -18210,8 +18213,6 @@ describe('the second condition vocabulary, and the ability word in front of it (
       'When Mardu Hordechief enters, if you scried this turn, draw a card.'],
     ['a narrower death than "a creature"',
       'When Mardu Hordechief enters, if a nontoken creature died this turn, draw a card.'],
-    ['more than one death',
-      'When Mardu Hordechief enters, if two or more creatures died this turn, draw a card.'],
     ['a size it does not print',
       'When Mardu Hordechief enters, if you control a creature with power X or greater, draw a card.'],
     ['a life total it does not print',

@@ -340,3 +340,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1421 pushed in ca6a7f2. D1422 airbend (playFromExile.cost; offer and payment in the alternative-cost chain; airbendEffect). Sweep 110001 (D1417): 100/100, 58.9 turns.
 - D1422 pushed in 4ddde1e. D1423 addendum (addendumPairFor beside the kicker pair; condition read at resolution).
 - D1423 pushed in e7c62c1. D1424 most-common-colour condition and GameState.enteredThisTurn with controller-entered condition.
+- D1424 pushed in 33d0c64. D1425 four conditions (fewer than N in hand, creatures-died, no opponent controls, empty graveyard); the D564 pin's death count moved to its read rows. Sweep 111001 (D1421): 100/100, 61.3 turns.

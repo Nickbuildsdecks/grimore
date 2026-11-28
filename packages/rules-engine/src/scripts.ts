@@ -39900,6 +39900,19 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
     const atLeast = n(counted[1]!);
     if (atLeast !== null && atLeast > 0) return { kind: 'source-has-counter', counter: counted[2]!.toLowerCase(), atLeast };
   }
+  // "There are no cards in your graveyard" (D1425): not one.
+  if (/^there are no cards in your graveyard$/i.test(text)) return { kind: 'not', of: { kind: 'controller-graveyard', atLeast: 1 } };
+  // "Two or more creatures died this turn" (D1425), anyone's.
+  const died = /^(\S+) or more creatures died this turn$/i.exec(text);
+  if (died !== null) {
+    const atLeast = n(died[1]!);
+    if (atLeast !== null && atLeast > 0) return { kind: 'creatures-died', atLeast };
+  }
+  // "No opponent controls a creature" (D1425): the opponent's half of "an opponent controls", negated.
+  const noneOfTheirs = /^no opponent controls an? (creature|artifact|enchantment|land|planeswalker)$/i.exec(text);
+  if (noneOfTheirs !== null) {
+    return { kind: 'not', of: { kind: 'board-has', whose: 'an-opponent', atLeast: 1, types: [noneOfTheirs[1]!.toLowerCase()] } };
+  }
   const threshold = /^there are (\S+) or more (permanent )?cards in your graveyard$/i.exec(text);
   if (threshold !== null) {
     const atLeast = n(threshold[1]!);
@@ -39951,6 +39964,12 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   if (hand !== null) {
     const atLeast = n(hand[1]!);
     return atLeast === null ? null : { kind: 'controller-hand', atLeast };
+  }
+  // "You have fewer than three cards in hand" (D1425): one fewer, at most.
+  const fewerThan = /^you have fewer than (\S+) cards in hand$/i.exec(text);
+  if (fewerThan !== null) {
+    const below = n(fewerThan[1]!);
+    return below === null || below < 1 ? null : { kind: 'controller-hand', atMost: below - 1 };
   }
   // "You have one or fewer cards in hand" (D815): Hazoret the Fervent.
   const fewer = /^you have (\S+) or fewer cards in hand$/i.exec(text);

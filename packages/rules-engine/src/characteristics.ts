@@ -2226,6 +2226,8 @@ export interface ContinuousEffect {
       reads printed types (see `conditionMet`): asking live colours here would ask this very effect.
     */
     | { readonly kind: 'most-common-colour'; readonly colour: Color }
+    // D1425: "as long as two or more creatures died this turn", off `creaturesDiedThisTurn`.
+    | { readonly kind: 'creatures-died'; readonly atLeast: number }
     // D1406: "as long as you gained life this turn", off `lifeGainedThisTurn`.
     | { readonly kind: 'controller-gained-life' }
     // D1424: "two or more nonland permanents entered the battlefield under your control this turn".
@@ -2694,6 +2696,7 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
       : holds(effect.controller);
   }
   if (cond.kind === 'controller-drew') return (state.cardsDrawnThisTurn[String(effect.controller)] ?? 0) >= cond.atLeast;
+  if (cond.kind === 'creatures-died') return (state.creaturesDiedThisTurn ?? 0) >= cond.atLeast;
   if (cond.kind === 'most-common-colour') {
     const counts: Record<string, number> = {};
     for (const seat of state.seats) {
