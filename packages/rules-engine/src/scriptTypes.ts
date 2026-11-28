@@ -4725,6 +4725,18 @@ export interface CardScript {
    */
   readonly castAsThoughFlash?: 'sacrifice-at-cleanup';
   /**
+   * "No more than one creature can attack each combat" (D1412, Silent Arbiter, Dueling Grounds),
+   * "No more than two creatures can attack you each combat" (Crawlspace), "No more than one creature
+   * can block each combat". A restriction on the declaration (CR 508.1c, 509.1b), counted across the
+   * table: every attacker for the first, the attacks on this permanent's controller (not on their
+   * planeswalkers) for the second, and every blocker any defender declares this combat for the
+   * third. Requirements give way to it (CR 508.1d): a creature that must attack need not when it
+   * would break the limit. See `attackLimitIssue` and `blockLimitIssue`.
+   */
+  readonly attackLimit?: number;
+  readonly attackYouLimit?: number;
+  readonly blockLimit?: number;
+  /**
    * "As long as you control a green or blue permanent, you may cast Hungering Yeti as though it had
    * flash" (D1408), Illusion Spinners' "if you control a Faerie", Serpent of the Pass. The card may
    * be cast at any time its controller could cast an instant while `flashWhile` holds (a static's

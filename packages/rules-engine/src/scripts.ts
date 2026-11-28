@@ -42314,6 +42314,14 @@ function lineScriptForPrinted(line: string, name: string): Partial<CardScript> |
 }
 
 function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
+  // "No more than one creature can attack (you) each combat" (D1412): see `CardScript.attackLimit`.
+  const combatCap = /^No more than (one|two|three) creatures? can (attack|block)( you)? each combat$/i.exec(plain(line).trim().replace(/\.$/, ''));
+  if (combatCap !== null) {
+    const n = countFrom(combatCap[1]!);
+    if (n === null || (combatCap[2]!.toLowerCase() === 'block' && combatCap[3] !== undefined)) return null;
+    if (combatCap[2]!.toLowerCase() === 'block') return { blockLimit: n };
+    return combatCap[3] === undefined ? { attackLimit: n } : { attackYouLimit: n };
+  }
   /*
     "Whenever a creature you control of the chosen type enters or attacks, draw a card" (D1410,
     Kindred Discovery), Bloodline Pretender's "another … enters", Molten Echoes' "a nontoken …",

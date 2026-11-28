@@ -8132,6 +8132,11 @@ describe('deck coverage', () => {
       // D1408: Hungering Yeti, Illusion Spinners; no pool deck plays one. Driven at runtime by "cast
       // as though it had flash while a condition holds: Hungering Yeti (D1408)".
       'script flashWhile',
+      // D1412: Silent Arbiter, Crawlspace, Dueling Grounds; no pool deck plays one. Driven at runtime by
+      // "no more than N creatures can attack or block each combat: Silent Arbiter, Crawlspace (D1412)".
+      'script attackLimit',
+      'script attackYouLimit',
+      'script blockLimit',
       // D1251: Snuff Out and the Bringers; no pool deck plays one. Driven at runtime by "A printed
       // alternative of mana or life: Snuff Out, the Bringers (D1251)".
       'script altCost',
@@ -52925,6 +52930,78 @@ describe('enchanted and equipped creatures you control: Greater Auramancy (D1411
     s = equipTo(s, find(s, 0, 'battlefield', 'Test Blade'), first!, 0, {});
     expect(characteristicsOf(s, s.instances[first!]!).power).toBe(3);
     expect(characteristicsOf(s, s.instances[second!]!).power).toBe(2);
+  });
+});
+
+describe('no more than N creatures can attack or block each combat: Silent Arbiter, Crawlspace (D1412)', () => {
+  const ARBITER = { name: 'Test Arbiter', type_line: 'Artifact Creature — Construct', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', power: '1', toughness: '5',
+    oracle_text: 'No more than one creature can attack each combat.\nNo more than one creature can block each combat.' };
+  const CRAWL = { name: 'Test Crawlspace', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal',
+    oracle_text: 'No more than two creatures can attack you each combat.' };
+  const BRUTE = { name: 'Test Brute', type_line: 'Creature — Ogre', mana_cost: '{2}', cmc: 2, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Test Brute attacks each combat if able.' };
+  const LURE = { name: 'Test Lure', type_line: 'Creature — Beast', mana_cost: '{2}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'All creatures able to block Test Lure do so.' };
+  const ROWS = [ARBITER, CRAWL, BRUTE, LURE];
+  const deck = customDeck({ id: 'd1412', name: 'Arbiter', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Forest', count: 46 }], data: ROWS as never[] });
+  const combat = (mine: string[], theirs: string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1412', 1: 'd1412' }, deckSpecs: { d1412: deck.deck }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'declare-attackers');
+  const named = (s: GameState, seat: SeatIndex, name: string) => ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === name);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with the Arbiter out, two attackers are refused and one is taken', () => {
+    const s = combat(['Grizzly Bears', 'Grizzly Bears'], ['Test Arbiter']);
+    const [a, b] = named(s, 0, 'Grizzly Bears');
+    expect(() => apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a!, defender: 1 }, { attacker: b!, defender: 1 }] } as Action)).toThrow(/no more than 1 creature can attack/);
+    const one = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a!, defender: 1 }] } as Action);
+    expect(one.combat.attacks.length).toBe(1);
+  });
+
+  it('two that must attack: one attacking is legal, since the limit comes first (CR 508.1d)', () => {
+    const s = combat(['Test Brute', 'Test Brute'], ['Test Arbiter']);
+    const [a] = named(s, 0, 'Test Brute');
+    expect(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a!, defender: 1 }] } as Action).combat.attacks.length).toBe(1);
+  });
+
+  it('and two blockers on the one attacker are refused, one is taken', () => {
+    let s = combat(['Grizzly Bears'], ['Test Arbiter', 'Grizzly Bears']);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: named(s, 0, 'Grizzly Bears')[0]!, defender: 1 }] } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    const attacker = named(s, 0, 'Grizzly Bears')[0]!;
+    const both = [named(s, 1, 'Test Arbiter')[0]!, named(s, 1, 'Grizzly Bears')[0]!];
+    expect(() => apply(s, { type: 'auto:block', by: 1, blocks: both.map((blocker) => ({ blocker, attacker })) } as Action)).toThrow(/no more than 1 creature can block/);
+    expect(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: both[0]!, attacker }] } as Action).combat.attacks[0]!.blockers.length).toBe(1);
+  });
+
+  it('the Crawlspace: three at its controller are refused, two are taken', () => {
+    const s = combat(['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears'], ['Test Crawlspace']);
+    const bears = named(s, 0, 'Grizzly Bears');
+    expect(() => apply(s, { type: 'auto:attack', by: 0, attackers: bears.map((attacker) => ({ attacker, defender: 1 })) } as Action)).toThrow(/no more than 2 creatures can attack/);
+    expect(apply(s, { type: 'auto:attack', by: 0, attackers: bears.slice(0, 2).map((attacker) => ({ attacker, defender: 1 })) } as Action).combat.attacks.length).toBe(2);
+  });
+
+  it('a Lure attacking: one blocker is enough, since the limit comes first (CR 509.1c)', () => {
+    let s = combat(['Test Lure'], ['Test Arbiter', 'Grizzly Bears']);
+    const lure = named(s, 0, 'Test Lure')[0]!;
+    s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: lure, defender: 1 }] } as Action), 'declare-blockers');
+    const one = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: named(s, 1, 'Grizzly Bears')[0]!, attacker: lure }] } as Action);
+    expect(one.combat.attacks[0]!.blockers.length).toBe(1);
+  });
+
+  it('the bot attacks with no more than the Arbiter allows, searching or not', () => {
+    const s = combat(['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears'], ['Test Arbiter']);
+    const quick = botAction(s, 0, { lookahead: false })!;
+    expect((quick as { attackers: readonly unknown[] }).attackers.length).toBeLessThanOrEqual(1);
+    expect(() => apply(s, quick)).not.toThrow();
+    const action = botAction(s, 0)!;
+    expect(action.type).toBe('auto:attack');
+    expect((action as { attackers: readonly unknown[] }).attackers.length).toBeLessThanOrEqual(1);
+    expect(() => apply(s, action)).not.toThrow();
   });
 });
 

@@ -41,7 +41,7 @@ import {
 import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
 import { costColors, reducedCostText, canPay, parseManaCost, type ManaCost } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
-import { aloneIssue, blockRequirementIssue } from './combat.js';
+import { aloneIssue, attackLimitIssue, blockLimitIssue, blockRequirementIssue } from './combat.js';
 /*
   `scriptForCard` and not `scriptFor`: a card nobody wrote a script for still has whatever the
   oracle-text compiler could read off its printed text, and these four readers decide whether a cast,
@@ -2979,7 +2979,12 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
   // "Can't attack alone" (D1128, CR 506.5): a lone attacker that says so is not a legal declaration.
   const lone = aloneIssue(state, action.attackers.map((entry) => entry.attacker), 'attack');
   if (lone !== null) throw new EngineError('RULE_NOT_APPLICABLE', lone);
+  // Silent Arbiter, Crawlspace (D1412): a limit on how many attack.
+  const capped = attackLimitIssue(state, action.attackers);
+  if (capped !== null) throw new EngineError('RULE_NOT_APPLICABLE', capped);
   const owed = forcedAttackers(state, action.by).filter((id) => !seen.has(id)
+    // Not owed when attacking would break a limit (CR 508.1d).
+    && legalDefenders(state, id, action.by).some((defender) => attackLimitIssue(state, [...action.attackers, { attacker: id, defender }]) === null)
     && legalDefenders(state, id, action.by).some((defender) => attackTaxFor(state, [{ defender }]) === 0)
     // And one that could only have attacked alone was not able to (D1128).
     && !(seen.size === 0 && aloneIssue(state, [id], 'attack') !== null));
@@ -3260,8 +3265,13 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
   // "Can't block alone" (D1128, CR 509.1b): a lone blocker that says so is not a legal declaration.
   const loneBlock = aloneIssue(state, action.blocks.map((entry) => entry.blocker), 'block');
   if (loneBlock !== null) throw new EngineError('RULE_NOT_APPLICABLE', loneBlock);
-  // The blocking requirements (CR 509.1c, D913): Lure, provoke, "must be blocked if able".
-  const required = blockRequirementIssue(state, action.by, action.blocks);
+  // A limit on how many block (D1412), counted with the other defenders' blockers this combat.
+  const blockCap = blockLimitIssue(state, action.by, action.blocks.map((entry) => entry.blocker));
+  if (blockCap !== null) throw new EngineError('RULE_NOT_APPLICABLE', blockCap);
+  // The blocking requirements (CR 509.1c, D913): Lure, provoke, "must be blocked if able". They
+  // give way to a block limit already reached (CR 509.1c): one more blocker would break it.
+  const atLimit = blockLimitIssue(state, action.by, [...action.blocks.map((entry) => entry.blocker), '\u0000another']) !== null;
+  const required = atLimit ? null : blockRequirementIssue(state, action.by, action.blocks);
   if (required !== null) throw new EngineError('RULE_NOT_APPLICABLE', required.reason);
 
   let next: GameState = {

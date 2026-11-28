@@ -573,7 +573,73 @@ export function meetBlockRequirements(
 
 /** A bot's blocks with a lone "can't block alone" creature taken out (D1128). */
 export function withoutLoneBlock(state: GameState, blocks: readonly BlockEntry[]): BlockEntry[] {
-  return aloneIssue(state, blocks.map((b) => b.blocker), 'block') === null ? [...blocks] : [];
+  const capped = withinBlockLimit(state, blocks);
+  return aloneIssue(state, capped.map((b) => b.blocker), 'block') === null ? capped : [];
+}
+
+/** The attack and block limits on the battlefield (D1412), the strictest of each. */
+function combatLimits(state: GameState): {
+  readonly attack?: number; readonly block?: number; readonly you: readonly { readonly seat: SeatIndex; readonly n: number }[];
+} {
+  let attack: number | undefined;
+  let block: number | undefined;
+  const you: { seat: SeatIndex; n: number }[] = [];
+  for (const seat of state.seats) {
+    for (const id of listAt(state, zoneKey(seat.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+      const script = scriptOfCard(state.cardDefs[inst.defKey]);
+      if (script?.attackLimit !== undefined) attack = Math.min(attack ?? script.attackLimit, script.attackLimit);
+      if (script?.blockLimit !== undefined) block = Math.min(block ?? script.blockLimit, script.blockLimit);
+      if (script?.attackYouLimit !== undefined) you.push({ seat: inst.zoneSeat, n: script.attackYouLimit });
+    }
+  }
+  return { ...(attack === undefined ? {} : { attack }), ...(block === undefined ? {} : { block }), you };
+}
+
+/** Why this attack declaration breaks an attack limit (D1412), or null. */
+export function attackLimitIssue(
+  state: GameState, entries: readonly { readonly attacker: string; readonly defender: SeatIndex; readonly planeswalker?: string }[],
+): string | null {
+  const limits = combatLimits(state);
+  const count = new Set(entries.map((entry) => entry.attacker)).size;
+  if (limits.attack !== undefined && count > limits.attack) {
+    return `no more than ${limits.attack} creature${limits.attack === 1 ? '' : 's'} can attack each combat`;
+  }
+  for (const cap of limits.you) {
+    const atThem = entries.filter((entry) => entry.defender === cap.seat && entry.planeswalker === undefined).length;
+    if (atThem > cap.n) return `no more than ${cap.n} creature${cap.n === 1 ? '' : 's'} can attack that player each combat`;
+  }
+  return null;
+}
+
+/** Why these blockers, with those other defenders already declared this combat, break a block limit (D1412), or null. */
+export function blockLimitIssue(state: GameState, seat: SeatIndex, blockers: readonly string[]): string | null {
+  const limits = combatLimits(state);
+  if (limits.block === undefined) return null;
+  const already = state.combat.attacks.filter((a) => a.defender !== seat).flatMap((a) => a.blockers);
+  const count = new Set([...already, ...blockers]).size;
+  return count > limits.block ? `no more than ${limits.block} creature${limits.block === 1 ? '' : 's'} can block each combat` : null;
+}
+
+/** An attack plan cut down to the attack limits (D1412), keeping the entries in order. */
+export function withinAttackLimit<T extends { readonly attacker: string; readonly defender: SeatIndex; readonly planeswalker?: string }>(
+  state: GameState, plan: readonly T[],
+): T[] {
+  const kept: T[] = [];
+  for (const entry of plan) if (attackLimitIssue(state, [...kept, entry]) === null) kept.push(entry);
+  return kept;
+}
+
+/** A block declaration cut down to the block limit (D1412), keeping the entries in order. */
+function withinBlockLimit(state: GameState, blocks: readonly BlockEntry[]): BlockEntry[] {
+  const seat = blocks[0] === undefined ? undefined : state.instances[blocks[0].blocker]?.zoneSeat;
+  if (seat === undefined) return [...blocks];
+  const kept: BlockEntry[] = [];
+  for (const entry of blocks) {
+    if (blockLimitIssue(state, seat, [...kept.map((b) => b.blocker), entry.blocker]) === null) kept.push(entry);
+  }
+  return kept;
 }
 
 /**

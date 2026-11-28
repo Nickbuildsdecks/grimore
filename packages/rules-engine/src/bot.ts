@@ -30,7 +30,7 @@ import {
 } from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
-  legalDefenders, meetBlockRequirements, aloneIssue, withoutLoneBlock,
+  legalDefenders, meetBlockRequirements, aloneIssue, withoutLoneBlock, withinAttackLimit,
 } from './combat.js';
 import { MYRIAD, SEAT_CHOICE, UNEARTHED, creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
@@ -3634,7 +3634,8 @@ function legalDeclaration(state: GameState, seat: SeatIndex, plan: AttackPlan): 
     if (defender !== null) fixed.push({ attacker, defender });
   }
   // A lone "can't attack alone" creature does not attack (D1128).
-  const kept = affordableAttack(state, seat, fixed);
+  // And no more than a limit lets attack (D1412).
+  const kept = withinAttackLimit(state, affordableAttack(state, seat, fixed));
   return aloneIssue(state, kept.map((entry) => entry.attacker), 'attack') === null ? kept : [];
 }
 

@@ -327,3 +327,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1408 pushed in dd064cd. D1409 'whenever ~ attacks while' read as intervening if (interveningIfFromLine): scripts.ts.
 - D1409 pushed in 8aa46ac, checkpoint 91cc0ae. D1410 triggers on a creature of the chosen type (lineScriptForWhole chosenKind): scripts.ts.
 - D1410 pushed in 9d5c2ae. D1411 'enchanted'/'equipped' creature kind words: characteristics (hasAttached, CreatureKindWord), scripts.ts (KIND_WORDS).
+- D1411 pushed in baf2eb8. D1412 attack and block limits (CardScript.attackLimit/attackYouLimit/blockLimit): scriptTypes, combat (attackLimitIssue, blockLimitIssue, withinAttackLimit), autoActions, bot, scripts.ts, exemptions in scripts.test.ts.
