@@ -70544,3 +70544,35 @@ Faults injected by hand: 5, all caught, each restored from a snapshot.
 The scripts, compile, pin, automation, playout and mana tests: 7112 of 7112 pass. Test typecheck clean.
 
 Coverage: 18,033 of 31,900 cards (+2 over D1425's 18,031), 41,384 of 59,888 lines (+2).
+
+## D1427 — A search for two kinds of card: Krosan Verge, Corpse Harvester
+
+"Search your library for a Forest card and a Plains card, put them onto the battlefield tapped,
+then shuffle." Krosan Verge is on the third staples list. Four legal cards print a search for "a
+<kind> card and a <kind> card".
+
+**The reading.** It's read as Myriad Landscape's search is (D709):
+- One library question for each kind, each as the single search would ask it ("search your
+  library for a Forest card, put it …"), so the filters are the plain search's own.
+- The plain search's effect ("up to two cards, put them …") then takes both cards.
+- A card of both kinds, such as a Savannah found as the Forest and again as the Plains, is one
+  card and moves once.
+
+Every "them" in the rest of the sentence is read as "it" for the single questions, so "reveal
+them, put them into your hand" (Corpse Harvester) reads too.
+
+Read whole now: Krosan Verge and Corpse Harvester. Yasharn and Aang's Journey still have other
+lines unread.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole.
+- Krosan Verge offers only Forests, then only Plains, and puts both onto the battlefield tapped.
+- A Corpse Harvester-like sorcery brings a Zombie and a Swamp to hand.
+
+Faults injected by hand: 2, both caught, each restored from a backup.
+- The second question using the first's filter.
+- Only the first card found.
+
+The scripts, compile, pin, automation, playout and mana tests: 7115 of 7115 pass. Test typecheck clean.
+
+Coverage: 18,035 of 31,900 cards (+2 over D1426's 18,033), 41,387 of 59,888 lines (+3).
