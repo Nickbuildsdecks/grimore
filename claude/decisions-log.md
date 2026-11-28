@@ -69612,3 +69612,43 @@ Faults injected by hand: 5, of which 4 caught.
 The scripts tests, compile tests and pins: 6724 of 6724 pass. Test typecheck clean.
 
 Coverage: 17,849 of 31,900 cards (+2 over D1403's 17,847), 41,129 of 59,888 lines (+2).
+
+## D1405 — A card that may be cast from its own graveyard: Gravecrawler
+
+"You may cast Gravecrawler from your graveyard as long as you control a Zombie." D1287's permission
+belongs to a permanent (Karador, Lurrus) and is used once each turn on its controller's own turn.
+Here the card is its own permission.
+
+**The field.** `CardScript.castsSelfFromGraveyard`, with an optional `while`:
+- It's read from "You may cast ~ (or this card) from your graveyard", with "as long as …" or "if …"
+  after it read by `staticCondition`, the reader a static's condition uses.
+- A condition that reader can't read leaves the line unread.
+- `yardPermission` answers it first, with the card as its own permit. The card is cast from its
+  owner's graveyard for its printed cost at its normal timing, as often as it gets there, and
+  only while the condition holds (asked with the card as source and its owner as controller).
+
+Read whole now: Gravecrawler and Skaab Ruinator. Marang River Prowler ("a black or green
+permanent"), Oathsworn Vampire ("if you gained life this turn") and Ebondeath need conditions
+`staticCondition` doesn't read yet. Their Number Is Legion, a sorcery, prints the plain line and
+it is still unread there; why is not yet looked into.
+
+"Has a card behind every mechanic it declares" exempts the field, as it does D1287's, naming this
+entry's runtime test as evidence. No built-in deck plays one.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole, and an unread condition leaves the line unread.
+- With a Zombie on the battlefield the Crawler is cast from the graveyard, and with none it isn't
+  offered.
+- With no condition, the Ghoul comes back, dies, and is offered again the same turn.
+- A card in an opponent's graveyard isn't offered, and casting it is refused.
+
+Faults injected by hand: 4, of which 3 caught.
+- The card's own permission not asked: caught.
+- The condition not asked: caught.
+- An unread condition read as none: caught.
+- The owner check removed: **not caught**. The offer lists only the seat's own graveyard, and the
+  cast is refused elsewhere, so the check is kept as a second guard.
+
+The scripts tests, compile tests and pins: 6728 of 6728 pass. Test typecheck clean.
+
+Coverage: 17,851 of 31,900 cards (+2 over D1404's 17,849), 41,132 of 59,888 lines (+3).
