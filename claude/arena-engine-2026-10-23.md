@@ -52108,3 +52108,41 @@ whole suite failed the compiled-vs-written pin before the guard existed.
 The scripts tests, compile tests and pins: 6721 of 6721 pass. Test typecheck clean.
 
 Coverage: 17,847 of 31,900 cards (+12 over D1402's 17,835), 41,127 of 59,888 lines (+12).
+
+## D1404 — Exile ~ from your hand as a cost: the Spirit Guides
+
+"Exile Simian Spirit Guide from your hand: Add {R}." The card is used from the hand, as cycling is,
+but the cost exiles it rather than discarding it. Simian and Elvish Spirit Guide are on the third
+staples list.
+
+**The cost.** `AbilityCost.exileSelfFromHand`:
+- The cost reader reads "Exile ~ from your hand".
+- The ability is offered and activated from the hand, as `discardSelf` is.
+- Paying it moves the card to exile, before the mana is made. It isn't a discard, so nothing that
+  watches discards sees it.
+- On the battlefield the card has nothing to activate.
+- The cost reader's guard against costs that charge nothing now counts it. That guard was what
+  refused the line.
+
+A compile.ts route for the line was tried and removed, because the line reads without it (a fault
+check showed nothing depended on it). D446's pin in compile.test.ts listed "Exile Probe Thing from
+your hand" as refused. It now pins "Exile a card from your hand", another card from the hand, which
+still has no field.
+
+Read whole now: Simian Spirit Guide and Elvish Spirit Guide.
+
+**Tests.** 3 engine tests:
+- The fixture reads whole, as a mana ability whose cost exiles it from the hand.
+- From the hand it's offered, and activating it exiles the card for {R}.
+- On the battlefield it isn't offered and is refused.
+
+Faults injected by hand: 5, of which 4 caught.
+- Not offered from the hand: caught.
+- Not activated from the hand: caught.
+- Not exiled: caught.
+- The guard not counting it: caught.
+- The compile.ts route: **not caught**, and removed (above).
+
+The scripts tests, compile tests and pins: 6724 of 6724 pass. Test typecheck clean.
+
+Coverage: 17,849 of 31,900 cards (+2 over D1403's 17,847), 41,129 of 59,888 lines (+2).
