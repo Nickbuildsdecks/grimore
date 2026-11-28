@@ -11063,15 +11063,19 @@ describe('deck-construction keywords are compiled and silent (D670)', () => {
   });
 });
 
-describe('a costed mana ability with a spending restriction stays unread (D669)', () => {
-  it('reads Castle Garenbrig\'s line as unread, because the payer could never use it', () => {
+describe('a costed mana ability with a spending restriction (D669, read since D1397)', () => {
+  // Unread until D1397: the payer could never use it, and its mana could not float marked.
+  it('reads Castle Garenbrig\'s line, as a pressed ability whose mana floats marked', () => {
     const read = compileCard({
       name: 'Garden Keep', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
       oracle_text: '{T}: Add {G}.\n{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells or activate abilities of creatures.',
     });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual(['{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells or activate abilities of creatures.']);
+    expect(read.unread).toEqual([]);
+    const costed = (read.script?.abilities ?? []).find((a) => a.cost.mana !== undefined);
+    expect(costed?.produces).toEqual(['G', 'G', 'G', 'G', 'G', 'G']);
+    expect(costed?.spendOnly).toBeDefined();
   });
 });
 

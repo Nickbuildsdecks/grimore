@@ -1120,6 +1120,23 @@ export function reasonCannotPlay(view: GameView, cardId: string): string | null 
 }
 
 /** Mana in a pool, in WUBRG then colourless order, skipping what is not there. */
+/**
+ * Restricted mana in the pool (D1397), grouped by what it may pay for: "only to cast creature
+ * spells" and its pips. Shown beside the free pool, because a player has to see that it is there
+ * and that it will not pay for just anything.
+ */
+export function boundPips(
+  units: readonly { readonly type: string; readonly words: string }[] | undefined,
+): { words: string; pips: { type: string; count: number }[] }[] {
+  const groups = new Map<string, Record<string, number>>()
+  for (const unit of units ?? []) {
+    const counts = groups.get(unit.words) ?? {}
+    counts[unit.type] = (counts[unit.type] ?? 0) + 1
+    groups.set(unit.words, counts)
+  }
+  return [...groups].map(([words, counts]) => ({ words, pips: manaPips(counts) }))
+}
+
 export function manaPips(pool: Record<string, number> | undefined): { type: string; count: number }[] {
   const order = ["W", "U", "B", "R", "G", "C"]
   return order

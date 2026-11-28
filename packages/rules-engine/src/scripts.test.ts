@@ -52091,6 +52091,67 @@ describe('Read ahead (D1396)', () => {
   });
 });
 
+describe('Restricted mana that floats, marked with what it may pay for (D1397)', () => {
+  const CASTLE = { name: 'Test Castle', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{T}: Add {G}.\n{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells or activate abilities of creatures.' };
+  const GIANT = { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{4}{G}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6', oracle_text: '' };
+  const GROWTH = { name: 'Test Growth', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'You gain 3 life.' };
+  const ROWS = [CASTLE, GIANT, GROWTH];
+  const deck = customDeck({ id: 'd1397', name: 'Castle', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 2 }, { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const pressed = (): { s: GameState; castle: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1397', 1: 'd1397' }, deckSpecs: { d1397: deck.deck }, hands: { 0: ['Test Giant', 'Test Growth', 'Grizzly Bears'] },
+      battlefield: { 0: ['Test Castle', 'Forest', 'Forest', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const castle = find(s, 0, 'battlefield', 'Test Castle');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === castle && /six/.test(p.description));
+    expect(play).toBeDefined();
+    s = apply(s, { type: 'auto:activate', by: 0, card: castle, abilityIndex: play!.abilityIndex ?? 0 } as Action);
+    return { s, castle };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('pressed, the six {G} float marked, not in the free pool', () => {
+    const { s } = pressed();
+    expect((s.boundMana?.['0'] ?? []).map((u) => u.type)).toEqual(['G', 'G', 'G', 'G', 'G', 'G']);
+    expect(poolOf(s, 0).G ?? 0).toBe(0);
+  });
+
+  it('they pay for a creature spell, and are spent', () => {
+    let s = pressed().s;
+    const giant = find(s, 0, 'hand', 'Test Giant');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === giant)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: giant } as Action)), 20);
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+    expect(s.boundMana?.['0'] ?? []).toEqual([]);
+  });
+
+  it('a cheaper creature spends only what it costs, and the rest stays marked', () => {
+    let s = pressed().s;
+    const bear = find(s, 0, 'hand', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear } as Action)), 20);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect((s.boundMana?.['0'] ?? []).length).toBe(4);
+    expect(poolOf(s, 0).G ?? 0).toBe(0);
+  });
+
+  it('they do not pay for an instant, which is not offered and is refused', () => {
+    const s = pressed().s;
+    const growth = find(s, 0, 'hand', 'Test Growth');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === growth)).toBe(false);
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: growth } as Action)).toThrow();
+  });
+
+  it('and they empty with the pool as the step ends', () => {
+    const s = advanceTo(pressed().s, 'begin-combat');
+    expect(s.boundMana?.['0'] ?? []).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -85771,7 +85832,10 @@ describe('restricted mana: "Spend this mana only to …" (D595)', () => {
     expect(castable(s, 'Lightning Bolt')).toBe(false);
     const ziggurat = find(s, 0, 'battlefield', 'Ancient Ziggurat');
     expect(legalActions(s, 0).plays.some((p) => p.card === ziggurat)).toBe(false);
-    expect(() => apply(s, { type: 'auto:activate', by: 0, card: ziggurat, abilityIndex: 0 })).toThrow(/only be spent/);
+    // Pressed anyway (D1397), its mana floats marked with what it may pay for rather than freely.
+    const pressedZiggurat = apply(s, { type: 'auto:activate', by: 0, card: ziggurat, abilityIndex: 0 });
+    expect(pressedZiggurat.boundMana?.['0']?.length).toBe(1);
+    expect(Object.values(pressedZiggurat.pools['0'] ?? {}).reduce((n, v) => n + (v ?? 0), 0)).toBe(0);
     s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') });
     expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Ancient Ziggurat')
       .every((id) => s.instances[id]!.tapped)).toBe(true);

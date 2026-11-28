@@ -204,6 +204,8 @@ export interface AutomationView {
    */
   readonly later: readonly { readonly description: string; readonly stepLabel: string }[];
   readonly pools: Readonly<Record<string, ManaPool>>;
+  /** Restricted mana in each pool (D1397), with what it may pay for. Public, as the pools are. */
+  readonly boundMana: Readonly<Record<string, readonly { readonly type: string; readonly words: string }[]>>;
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
   readonly awaiting: {
@@ -711,6 +713,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
       stepLabel: entry.onDeath === true ? 'When it dies this turn' : STEP_LABELS[entry.step],
     })),
     pools: state.pools,
+    boundMana: state.boundMana ?? {},
     combat: state.combat,
     awaiting,
     dredgeStanding: viewer === null ? 'ask' : (state.dredgeStops[String(viewer)] ?? 'ask'),

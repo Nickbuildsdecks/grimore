@@ -18,7 +18,7 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, choiceDivided, decisionLabel, dividedAmount, feedWords, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
+  attackRead, boundPips, choiceDivided, decisionLabel, dividedAmount, feedWords, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
   playsForCard, primaryMove, specAt, specsRequired, specsWanted, targetKey, targetName,
   targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
@@ -103,6 +103,8 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
   const asked = pactAsked(view)
   const offers = pactOffers(view)
   const pool = manaPips(auto.pools[String(view.seat)] as Record<string, number> | undefined)
+  // Restricted mana (D1397): what it may pay for, beside the free pool.
+  const bound = boundPips(auto.boundMana?.[String(view.seat)])
   const potential = manaPips(you.potential as unknown as Record<string, number>)
 
   return (
@@ -896,7 +898,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
       */}
       <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
         <span data-testid="mana-pool" className="flex items-center gap-1">
-          {pool.length === 0 ? (
+          {pool.length === 0 && bound.length === 0 ? (
             <span className="text-[10px] uppercase tracking-wide text-[var(--g-text-muted)]">no mana</span>
           ) : (
             pool.map((pip) => (
@@ -910,6 +912,25 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
               </span>
             ))
           )}
+          {bound.map((group) => (
+            <span
+              key={group.words}
+              data-testid="mana-bound"
+              title={`Spend only ${group.words}`}
+              className="ml-1 flex items-center gap-1 rounded-full border border-white/30 px-1"
+            >
+              {group.pips.map((pip) => (
+                <span
+                  key={pip.type}
+                  className="flex size-5 items-center justify-center rounded-full text-[10px] font-bold text-black"
+                  style={{ background: MANA_BG[pip.type] }}
+                >
+                  {pip.count}
+                </span>
+              ))}
+              <span className="text-[9px] text-[var(--g-text-muted)]">only {group.words.replace(/^to /, '')}</span>
+            </span>
+          ))}
           {/*
             What is still untapped, shown dimmer. `legalActions` judges what a player can afford
             against this rather than against the floating pool, so showing only the pool would make

@@ -11,7 +11,7 @@ import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-en
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
   cardBadges, damageTakenFrom, decisionLabel, feedOptions, feedWords, libraryTopWords, pactAsked, pactBadge, pactOffers, sparedYouBy,
-  manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
+  boundPips, manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
   type ArenaMode, type Decision,
@@ -92,6 +92,20 @@ describe("choosing a play", () => {
     mode = arenaReducer(mode, { kind: "undoTarget" }).mode
     expect(mode).toEqual({ kind: "targeting", play: two, chosen: [] })
     expect(arenaReducer(mode, { kind: "undoTarget" }).mode).toEqual(IDLE)
+  })
+
+  describe("restricted mana in the pool (D1397)", () => {
+    it("groups the marked mana by what it may pay for, as pips", () => {
+      expect(boundPips([
+        { type: "G", words: "to cast creature spells" },
+        { type: "G", words: "to cast creature spells" },
+        { type: "C", words: "to activate abilities" },
+      ])).toEqual([
+        { words: "to cast creature spells", pips: [{ type: "G", count: 2 }] },
+        { words: "to activate abilities", pips: [{ type: "C", count: 1 }] },
+      ])
+      expect(boundPips(undefined)).toEqual([])
+    })
   })
 
   describe("a trigger that divides a quantity among its targets (D1378)", () => {
@@ -1453,6 +1467,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
     step: "precombat-main", stepLabel: "Main phase 1", autoPass: true, priority: 0, passed: [], stack: [],
     later: [],
     pools: {},
+    boundMana: {},
     combat: {
       attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [],
       damageOrdered: false,

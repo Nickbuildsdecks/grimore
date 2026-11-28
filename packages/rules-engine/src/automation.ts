@@ -38,7 +38,7 @@ import {
 } from './combat.js';
 import {
   BLITZED,
-  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID, READ_AHEAD_CHAPTERS,
+  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID, READ_AHEAD_CHAPTERS, BOUND_MANA_KEY,
   SQUADDED,
   createToken,
   DASHED, EVOKED, EXILED_ON_LEAVING, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
@@ -79,7 +79,7 @@ import {
 import {
   COMBAT_STEPS, EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
   type ActivationTiming,
-  type AttackedTarget, type DecisionAnswer, type SacrificedStats, type StackObject, type Step, type Target,
+  type AttackedTarget, type DecisionAnswer, type SacrificedStats, type StackObject, type Step, type Target, type BoundMana,
 } from './turnTypes.js';
 
 export const MAX_HAND_SIZE = 7;
@@ -846,7 +846,8 @@ const emptyPools = (state: GameState): GameState => {
     if (Object.keys(turnStays).length > 0) turnLeft[seat] = turnStays as ManaPool;
     if (Object.keys(combatStays).length > 0) combatLeft[seat] = combatStays as ManaPool;
   }
-  return { ...state, pools, keptMana: turnLeft, keptManaCombat: combatLeft };
+  // Restricted mana (D1397) is never kept: it empties with the pool it is part of.
+  return { ...state, pools, keptMana: turnLeft, keptManaCombat: combatLeft, boundMana: {} };
 };
 
 /**
@@ -5570,7 +5571,14 @@ function settlePayment(state: GameState): GameState {
  */
 function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[]): GameState {
   let next = state;
+  // Restricted mana from the pool (D1397): spent rather than tapped, and taken out of `boundMana`.
+  const bound = new Set<number>();
   for (const pick of picks) {
+    if (pick.key.startsWith(BOUND_MANA_KEY)) {
+      bound.add(Number(pick.key.slice(BOUND_MANA_KEY.length)));
+      for (const type of pick.types) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));
+      continue;
+    }
     /*
       A consumed source is **sacrificed** rather than tapped, which is its printed cost: a Treasure
       says "{T}, Sacrifice this artifact: add one mana of any color", and the sacrifice is the half
@@ -5586,6 +5594,10 @@ function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[
     if (pick.life !== undefined) next = loseLife(next, seat, pick.life);
     // What the solver decided this one made — for a dual, the single colour it was tapped for.
     for (const type of pick.types) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));
+  }
+  if (bound.size > 0) {
+    const key = String(seat);
+    next = { ...next, boundMana: { ...(next.boundMana ?? {}), [key]: (next.boundMana?.[key] ?? []).filter((_, i) => !bound.has(i)) } };
   }
   return next;
 }
@@ -5716,7 +5728,25 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent, spentByType, picks };
+  /*
+    And restricted mana from the pool the payment took out but did not need (D1397): back into
+    `boundMana` with its own words, never into the free pool.
+  */
+  const returned: BoundMana[] = [];
+  const pickedBound = picks.filter((pick) => pick.key.startsWith(BOUND_MANA_KEY))
+    .map((pick) => state.boundMana?.[String(seat)]?.[Number(pick.key.slice(BOUND_MANA_KEY.length))])
+    .filter((unit): unit is BoundMana => unit !== undefined);
+  for (const unit of pickedBound) {
+    if ((left[unit.type] ?? 0) - (floating[unit.type] ?? 0) <= 0) continue;
+    left = { ...left, [unit.type]: (left[unit.type] ?? 0) - 1 };
+    returned.push(unit);
+  }
+  let paid = setPool(next, seat, left);
+  if (returned.length > 0) {
+    const key = String(seat);
+    paid = { ...paid, boundMana: { ...(paid.boundMana ?? {}), [key]: [...(paid.boundMana?.[key] ?? []), ...returned] } };
+  }
+  return { state: paid, tapped, coloursSpent, colorsSpent, manaSpent, spentByType, picks };
 }
 
 /** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */

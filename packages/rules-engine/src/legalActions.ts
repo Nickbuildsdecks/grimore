@@ -22,7 +22,8 @@ import { emergeOptions, conspireOptions, casualtyOptions,
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { canPayLife, energyOf, evidencePlan, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
+import { BOUND_MANA_KEY, canPayLife, energyOf, evidencePlan, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
+import { spendRestriction } from './spending.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost, reducedCostText,
   type Color, type ManaCost, type ManaPool, type ManaType,
@@ -1419,6 +1420,17 @@ export function aftermathHalf(def: CardDef | undefined): number | null {
   return at < 0 ? null : at;
 }
 
+/**
+ * Whether a restricted mana ability is one the auto-payer never uses (D1397): a mana cost, or a cost
+ * other than tapping, sacrificing itself, life or energy. Such an ability is a button, and its mana
+ * floats marked (`GameState.boundMana`).
+ */
+function pressedForMana(ability: AbilityDef): boolean {
+  const FREE = new Set(['tap', 'sacrificeSelf', 'life', 'energy']);
+  return ability.cost.mana !== undefined || Object.keys(ability.cost).some((key) => !FREE.has(key)
+    && (ability.cost as Record<string, unknown>)[key] !== undefined && (ability.cost as Record<string, unknown>)[key] !== false);
+}
+
 export function manaSources(
   state: GameState, seat: SeatIndex,
   /**
@@ -1430,6 +1442,18 @@ export function manaSources(
   paying?: PaymentFor,
 ): ManaSourceEntry[] {
   const free: ManaSourceEntry[] = [];
+  /*
+    Restricted mana already in the pool (D1397), one source a mana, for a payment its words allow
+    and for nothing else. First, so it is spent before anything is tapped.
+  */
+  if (paying !== undefined) {
+    (state.boundMana?.[String(seat)] ?? []).forEach((unit, i) => {
+      const rule = spendRestriction(unit.words);
+      if (rule !== null && rule.chosenType !== true && rule.allows(paying)) {
+        free.push({ key: `${BOUND_MANA_KEY}${i}`, produces: [unit.type], abilityIndex: -1 });
+      }
+    });
+  }
   /*
     Sources that are **spent** rather than tapped, queued between the free ones and the painful
     ones (see `ManaSource.sacrifices` for why order is all this needs to be).
@@ -3178,7 +3202,13 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         mana does not remember what it may pay for. The engine taps it while paying for something
         its restriction allows — see `AbilityDef.spendOnly`.
       */
-      if (ability.produces !== undefined && ability.spendOnly !== undefined) continue;
+      /*
+        Unless the auto-payer cannot use it (D1397): one with a mana cost or a cost it does not pay
+        (Castle Garenbrig's {2}{G}{G}, Food Chain's exiled creature) is pressed, and its mana floats
+        in the pool still marked with what it may pay for (`GameState.boundMana`).
+      */
+      if (ability.produces !== undefined && ability.spendOnly !== undefined
+        && (ability.spendOnly.chosenType === true || !pressedForMana(ability))) continue;
       /*
         Which zone this ability is used from, read off its cost.
 

@@ -312,3 +312,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1393 pushed in 4095f09. D1394 modal spells on alternative-cost rows (sweep 105001 seed 105085): legalActions.
 - D1394 pushed in d8340b1. D1395 this Saga and modal Saga chapters: characteristics (SELF_TYPE_WORDS), scripts.ts (modalTriggerFor), compile.test.ts pin.
 - D1395 pushed in fc76e6d. D1396 Read ahead: scriptTypes, effects (READ_AHEAD_CHAPTERS), scripts.ts, automation.
+- D1396 pushed in cfc8437. D1397 restricted floating mana (GameState.boundMana): turnTypes, effects, legalActions (manaSources, pressedForMana), automation (tapSources, payFrom, emptyPools), autoActions, view, scripts.ts (worded runs), web ArenaBar and arena.ts, pins in compile.test.ts and scripts.test.ts.

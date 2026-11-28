@@ -31,7 +31,7 @@ import { nextTargetQuestion, emergeOptions, conspireOptions, casualtyOptions,
   type AutoOrderAction,
 } from './automation.js';
 import {
-  MYRIAD, SEAT_CHOICE, TIME, addCounters, addToPool, addTokens, bottomPile, counterSpell, draw,
+  MYRIAD, SEAT_CHOICE, TIME, addCounters, addBoundMana, addToPool, addTokens, bottomPile, counterSpell, draw,
   canPayLife, energyOf, enterAttacking, lifeLocked, loseLife, paymentWords,
   mill, moveToHand, removeFromCombat,
   poolOf, preparedCopyOf, spendEnergy,
@@ -2122,8 +2122,12 @@ function activate(
           : 'you do not control that permanent');
   }
   if (ability === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no such ability');
-  // Restricted mana is made while paying for what it may pay for, never on its own (D595).
-  if (ability.produces !== undefined && ability.spendOnly !== undefined) {
+  /*
+    Restricted mana pressed for (D1397) goes into the pool marked with what it may pay for
+    (`GameState.boundMana`). It was refused until the pool could tell (D595); a restriction that
+    needs the source's chosen type is still made only while paying, where the source is known.
+  */
+  if (ability.produces !== undefined && ability.spendOnly?.chosenType === true) {
     throw new EngineError('RULE_NOT_APPLICABLE',
       `that mana can only be spent ${ability.spendOnly.words}, so it is made while you pay for one`);
   }
@@ -2592,7 +2596,10 @@ function activate(
     // makes tapping a land in response to something work at all.
     // A counted ability's mana is read now, before anything moves (D662): Gaea's Cradle.
     const made = producedBy(state, ability, inst.id, action.by, xPaid ?? 0, sacrificedStats ?? undefined);
-    for (const type of made) next = addToPool(next, action.by, type, 1);
+    const only = ability.spendOnly;
+    for (const type of made) {
+      next = only === undefined ? addToPool(next, action.by, type, 1) : addBoundMana(next, action.by, type, 1, only.words);
+    }
     // A Wild Growth on it, a Crypt Ghast beside it (D1088): read before the tap, as the mana is.
     if (ability.cost.tap) for (const type of tapManaExtras(state, inst.id)) next = addToPool(next, action.by, type, 1);
     // A Mana Flare (D1106): one more of the first mana the tap made, per Flare.

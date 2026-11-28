@@ -8,7 +8,7 @@
  */
 import type { CardInstance, ZoneId } from './cards.js';
 import type { ContinuousEffect, GrantedTriggerRef } from './characteristics.js';
-import type { Color, ManaPool } from './mana.js';
+import type { Color, ManaPool, ManaType } from './mana.js';
 import type { SeatIndex } from './types.js';
 
 /**
@@ -681,6 +681,12 @@ export interface AttackedTarget {
   readonly planeswalker?: string;
 }
 
+/** One restricted mana in a pool (D1397): see `GameState.boundMana`. */
+export interface BoundMana {
+  readonly type: ManaType;
+  readonly words: string;
+}
+
 export interface CombatAttack {
   readonly attacker: string;
   readonly defender: SeatIndex;
@@ -798,6 +804,14 @@ export interface AutomationState {
    * step clears it. Spending takes the ordinary mana first, which is the player's best order.
    */
   readonly keptMana?: Readonly<Record<string, ManaPool>>;
+  /**
+   * **Restricted mana floating in a pool** (D1397, CR 106.6): mana a pressed ability or a resolving
+   * spell made with "Spend this mana only …" on it. One entry a mana, its type and the words of its
+   * restriction, which `spendRestriction` reads again when something is paid for: a pool of plain
+   * counts could not tell this mana from mana that may pay for anything. Spent only on what its
+   * words allow, through `manaSources`, and emptied with the pools.
+   */
+  readonly boundMana?: Readonly<Record<string, readonly BoundMana[]>>;
   /**
    * The same, until end of combat (D1138): firebending's "This mana lasts until end of combat", Avatar
    * Roku's "Until end of combat, you don't lose this mana". Kept through the combat steps and lost

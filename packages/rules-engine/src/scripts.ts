@@ -38092,7 +38092,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const restrictedTo = /^(add .+?)\.\s*Spend this mana only (.+)$/i.exec(clause);
   const spendOnly = restrictedTo === null ? undefined : spendRestriction(restrictedTo[2]!);
   if (restrictedTo !== null && spendOnly === null) return null;
-  const manaClause = restrictedTo === null ? clause : restrictedTo[1]!;
+  /*
+    "Add six {G}" (D1397, Castle Garenbrig) beside a mana cost: the run written out, as the symbols
+    the readers below take. The data reader in `fromCardData.ts` reads the words beside {T} alone.
+  */
+  const RUN_WORDS: Readonly<Record<string, number>> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const manaClause = (restrictedTo === null ? clause : restrictedTo[1]!)
+    .replace(/^add (two|three|four|five|six|seven|eight|nine|ten) (\{[WUBRGC]\})$/i, (_whole, word: string, symbol: string) => `Add ${symbol.repeat(RUN_WORDS[word.toLowerCase()]!)}`);
   const only = spendOnly === undefined || spendOnly === null ? {} : { spendOnly };
 
   /*

@@ -237,6 +237,20 @@ export function addToPool(state: GameState, seat: SeatIndex, type: ManaType, amo
   return setPool(state, seat, addMana(poolOf(state, seat), type, amount));
 }
 
+/** The key a restricted mana in a pool is offered under as a source (D1397): `bound:<index>`. */
+export const BOUND_MANA_KEY = 'bound:';
+
+/** Restricted mana into a pool (D1397): `amount` of `type`, spendable only as `words` allow. */
+export function addBoundMana(state: GameState, seat: SeatIndex, type: ManaType, amount: number, words: string): GameState {
+  if (amount <= 0) return state;
+  const key = String(seat);
+  const have = state.boundMana?.[key] ?? [];
+  return {
+    ...state,
+    boundMana: { ...(state.boundMana ?? {}), [key]: [...have, ...Array.from({ length: amount }, () => ({ type, words }))] },
+  };
+}
+
 /** Every permanent on the battlefield, optionally filtered. */
 export function battlefield(state: GameState, predicate?: (id: string) => boolean): string[] {
   const out: string[] = [];
