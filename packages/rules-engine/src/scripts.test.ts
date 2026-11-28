@@ -53701,6 +53701,80 @@ describe('addendum: more when cast during your main phase (D1423)', () => {
   });
 });
 
+describe('"as long as blue is the most common color among all permanents" (D1424)', () => {
+  const DJINN = { name: 'Test Djinn', type_line: 'Creature — Djinn', mana_cost: '{5}{U}', cmc: 6, colors: ['U'], layout: 'normal', power: '5', toughness: '6',
+    oracle_text: 'Flying\nTest Djinn gets -2/-2 as long as blue is the most common color among all permanents or is tied for most common.' };
+  const deck = customDeck({ id: 'd1424', name: 'Djinn', entries: [{ name: 'Test Djinn', count: 4 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Island', count: 48 }], data: [DJINN] as never[] });
+  const size = (theirs: readonly string[]): readonly [number, number] => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1424', 1: 'd1424' }, deckSpecs: { d1424: deck.deck },
+      battlefield: { 0: ['Test Djinn', 'Island'], 1: [...theirs] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ch = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Djinn')]!);
+    return [ch.power, ch.toughness];
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(DJINN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('alone on a board of lands it is the most common colour, so it shrinks', () => {
+    expect(size(['Island', 'Island'])).toEqual([3, 4]);
+  });
+
+  it('tied with one green Bears it still shrinks', () => {
+    expect(size(['Grizzly Bears'])).toEqual([3, 4]);
+  });
+
+  it('outnumbered by two green Bears it is full size', () => {
+    expect(size(['Grizzly Bears', 'Grizzly Bears'])).toEqual([5, 6]);
+  });
+});
+
+describe('what entered under your control this turn, as a condition (D1424)', () => {
+  const MICE = { name: 'Test Mice', type_line: 'Creature — Mouse', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Test Mice gets +0/+2 as long as two or more nonland permanents entered the battlefield under your control this turn.' };
+  const SWELL = { name: 'Test Swell', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Target creature gets +2/+2 until end of turn.\nLandfall — If you had a land enter the battlefield under your control this turn, that creature gets +4/+4 until end of turn instead.' };
+  const ROWS = [MICE, SWELL];
+  const deck = customDeck({ id: 'd1424b', name: 'Entered', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const board = (hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1424b', 1: 'd1424b' }, deckSpecs: { d1424b: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 0: ['Test Mice', 'Forest', 'Forest', 'Forest', 'Forest'], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const toughness = (s: GameState): number => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Mice')]!).toughness;
+  const castBears = (s: GameState): GameState => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Mice grow once two nonland permanents have entered, and not for one or for a land', () => {
+    let s = board(['Grizzly Bears', 'Grizzly Bears', 'Forest']);
+    s = drain(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action), 20);
+    expect(toughness(s)).toBe(1);
+    s = castBears(s);
+    expect(toughness(s)).toBe(1);
+    s = castBears(s);
+    expect(toughness(s)).toBe(3);
+    // A new turn forgets them.
+    s = nextTurn(s);
+    expect(toughness(s)).toBe(1);
+  });
+
+  it('the Swell gives +4/+4 after a land drop and +2/+2 without one', () => {
+    for (const [landed, power] of [[true, 6], [false, 4]] as const) {
+      let s = board(['Test Swell', 'Forest']);
+      if (landed) s = drain(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action), 20);
+      const mice = find(s, 0, 'battlefield', 'Test Mice');
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Swell'), targets: [{ kind: 'card', id: mice }] } as Action)), 20);
+      expect(characteristicsOf(s, s.instances[mice]!).power - 1, String(landed)).toBe(power - 2);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

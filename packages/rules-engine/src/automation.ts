@@ -1413,6 +1413,7 @@ export function endTurnCleanup(state: GameState): GameState {
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
     tokensCreatedThisTurn: {},
+    enteredThisTurn: {},
     manaSpentOnSpellsThisTurn: {},
     counteredSpellsThisTurn: {},
     damageUnpreventableThisTurn: false,
@@ -5234,6 +5235,18 @@ function settle(state: GameState, before: GameState): GameState {
         continue;
       }
       if (arrival?.zone !== 'battlefield') continue;
+      // Counted by kind for "… entered the battlefield under your control this turn" (D1424).
+      {
+        const ch = characteristicsOf(next, arrival);
+        const kinds = [
+          ...(hasType(ch.typeLine, 'land') ? ['land'] : ['nonland']),
+          ...(ch.isCreature ? ['creature'] : []),
+          ...(hasType(ch.typeLine, 'artifact') ? ['artifact'] : []),
+        ];
+        const tally = { ...(next.enteredThisTurn ?? {}) };
+        for (const kind of kinds) tally[`${arrival.zoneSeat}:${kind}`] = (tally[`${arrival.zoneSeat}:${kind}`] ?? 0) + 1;
+        next = { ...next, enteredThisTurn: tally };
+      }
       /*
         "Enters the battlefield tapped" is a replacement effect (CR 614.1c), not a trigger: the
         land was never untapped, so nobody could have tapped it for mana in between. Applied here,

@@ -339,3 +339,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1420 pushed in 9a4b066. D1421 waterbend costs (AbilityCost.waterbend, tapToPayPlan 'waterbend' with exclude and last, legalActions offer and spent check, activate payment).
 - D1421 pushed in ca6a7f2. D1422 airbend (playFromExile.cost; offer and payment in the alternative-cost chain; airbendEffect). Sweep 110001 (D1417): 100/100, 58.9 turns.
 - D1422 pushed in 4ddde1e. D1423 addendum (addendumPairFor beside the kicker pair; condition read at resolution).
+- D1423 pushed in e7c62c1. D1424 most-common-colour condition and GameState.enteredThisTurn with controller-entered condition.

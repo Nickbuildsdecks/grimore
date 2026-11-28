@@ -39846,6 +39846,20 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 
   // "As long as you have the city's blessing" (D762).
   if (/^you have the city's blessing$/i.test(text)) return { kind: 'controller-citys-blessing' };
+  /*
+    What entered under your control this turn (D1424): "two or more nonland permanents entered the
+    battlefield under your control this turn", "an artifact entered …", "you had a land enter …".
+  */
+  const entered = /^(?:(an?|\w+ or more) (nonland permanents?|lands?|creatures?|artifacts?) entered|you had (an?) (land|creature|artifact|nonland permanent) enter) (?:the battlefield )?under your control this turn$/i.exec(text);
+  if (entered !== null) {
+    const least = n((entered[1] ?? entered[3]!).replace(/ or more$/i, ''));
+    const word = (entered[2] ?? entered[4]!).toLowerCase().replace(/s$/, '');
+    const what = word === 'nonland permanent' ? 'nonland' : word as 'land' | 'creature' | 'artifact';
+    if (least !== null && least > 0) return { kind: 'controller-entered', what, atLeast: least };
+  }
+  // "As long as black is the most common color among all permanents or is tied for most common" (D1424).
+  const commonest = /^(white|blue|black|red|green) is the most common colou?r among all permanents or is tied for most common$/i.exec(text);
+  if (commonest !== null) return { kind: 'most-common-colour', colour: COLOUR_WORDS[commonest[1]!.toLowerCase()]! };
   // D1188: see the union's note on the four facts.
   const drew = /^you've drawn (\S+) or more cards this turn$/i.exec(text);
   if (drew !== null) {

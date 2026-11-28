@@ -1601,6 +1601,13 @@ export interface AutomationState {
    */
   readonly tokensCreatedThisTurn?: Readonly<Record<string, number>>;
   /**
+   * What entered the battlefield under each seat's control this turn, by kind (D1424): "as long as
+   * two or more nonland permanents entered the battlefield under your control this turn", "if you
+   * had a land enter …", "if an artifact entered …". Counted as each arrival is settled, by its
+   * characteristics as it arrived. Keyed `${seat}:${kind}`; cleared with the rest of the turn.
+   */
+  readonly enteredThisTurn?: Readonly<Record<string, number>>;
+  /**
    * How much mana each seat has spent **to cast spells** this turn (D1002), for expend: "you expend
    * 4 as you spend your fourth total mana to cast spells during a turn". Activated abilities do not
    * count.

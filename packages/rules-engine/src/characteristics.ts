@@ -2220,8 +2220,16 @@ export interface ContinuousEffect {
       cards in hand than each opponent", "~ entered this turn".
     */
     | { readonly kind: 'controller-drew'; readonly atLeast: number }
+    /*
+      D1424: "as long as black is the most common color among all permanents or is tied for most
+      common", the Djinn cycle. Counted off the permanents' printed colours, as the artifact count
+      reads printed types (see `conditionMet`): asking live colours here would ask this very effect.
+    */
+    | { readonly kind: 'most-common-colour'; readonly colour: Color }
     // D1406: "as long as you gained life this turn", off `lifeGainedThisTurn`.
     | { readonly kind: 'controller-gained-life' }
+    // D1424: "two or more nonland permanents entered the battlefield under your control this turn".
+    | { readonly kind: 'controller-entered'; readonly what: 'land' | 'nonland' | 'creature' | 'artifact'; readonly atLeast: number }
     | { readonly kind: 'controller-monarch' }
     | { readonly kind: 'controller-most-cards-in-hand' }
     | { readonly kind: 'source-entered-this-turn' }
@@ -2686,6 +2694,19 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
       : holds(effect.controller);
   }
   if (cond.kind === 'controller-drew') return (state.cardsDrawnThisTurn[String(effect.controller)] ?? 0) >= cond.atLeast;
+  if (cond.kind === 'most-common-colour') {
+    const counts: Record<string, number> = {};
+    for (const seat of state.seats) {
+      for (const id of state.zones[zoneKey(seat.index, 'battlefield')] ?? []) {
+        const inst = state.instances[id];
+        if (inst === undefined || inst.faceDown) continue;
+        for (const colour of printedColors(state.cardDefs[inst.defKey])) counts[colour] = (counts[colour] ?? 0) + 1;
+      }
+    }
+    const most = Math.max(0, ...Object.values(counts));
+    return most > 0 && (counts[cond.colour] ?? 0) === most;
+  }
+  if (cond.kind === 'controller-entered') return (state.enteredThisTurn?.[`${effect.controller}:${cond.what}`] ?? 0) >= cond.atLeast;
   if (cond.kind === 'controller-gained-life') return (state.lifeGainedThisTurn?.[String(effect.controller)] ?? 0) > 0;
   if (cond.kind === 'controller-monarch') return state.monarch === effect.controller;
   if (cond.kind === 'controller-most-cards-in-hand') {
