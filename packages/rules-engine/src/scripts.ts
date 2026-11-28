@@ -31856,6 +31856,12 @@ function readEffect(
     if (/^(?:you )?draw \u000e many cards$/i.test(text)) {
       return { effect: (c) => drawLater(c.state, c.controller, n(c)), immediate: (c) => draw(c.state, c.controller, n(c)) };
     }
+    // "Draw that many cards plus one" (D1401): Into the Night, Celes, Colossus of the Blood Age.
+    const drawPlus = /^(?:you )?draw \u000e many cards plus (one|two|three)$/i.exec(text);
+    if (drawPlus !== null) {
+      const more = ({ one: 1, two: 2, three: 3 } as Record<string, number>)[drawPlus[1]!.toLowerCase()]!;
+      return { effect: (c) => drawLater(c.state, c.controller, n(c) + more), immediate: (c) => draw(c.state, c.controller, n(c) + more) };
+    }
     if (/^you gain \u000e much life$/i.test(text)) return { effect: (c) => gainLife(c.state, c.controller, n(c)) };
     // D904: the other things a damage trigger does "that much" of.
     if (/^you lose \u000e much life$/i.test(text)) return { effect: (c) => loseLife(c.state, c.controller, n(c)) };
@@ -35488,6 +35494,45 @@ function pluralPermanentKinds(words: string): ((state: GameState, id: string) =>
 }
 
 /**
+ * "Discard up to two cards, then draw that many cards" (D1401): the rummage of Kinetic Augur, Jaya
+ * Ballard, Daretti, Cathartic Pyre and Fable of the Mirror-Breaker's chapter II, and "discard any
+ * number of cards, then draw that many cards (plus one)" (Cavalier of Flame, Into the Night).
+ *
+ * D1332's shape with a hand for a battlefield: the cards are the controller's choice as it resolves,
+ * nought up to the number printed, and "that many" is how many were discarded, run as the event
+ * amount. "If you do," after "you may discard" changes nothing a count of nought would not. Not
+ * when what follows asks a question of its own. The bot discards nothing, as it sacrifices nothing
+ * there: what a card in hand is worth against a fresh one is not something it can weigh.
+ */
+function discardAnyThenThatMany(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  if (clauses.length < 2) return null;
+  // "Up two" is Scryfall's own text for Fable of the Mirror-Breaker's chapter II, and the card means "up to".
+  const first = /^(?:you may )?discard (?:up (?:to )?(one|two|three|four|five)|any number of) (land )?cards?\.?$/i.exec(clauses[0]!.trim());
+  if (first === null) return null;
+  const UP_TO: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const max = first[1] === undefined ? ANY_NUMBER : UP_TO[first[1].toLowerCase()]!;
+  const lands = first[2] !== undefined;
+  const rest = clauses.slice(1).map((clause, i) => (i === 0 ? clause.trim().replace(/^if you do,\s*/i, '') : clause));
+  if (!rest.some((clause) => /\bthat many\b/i.test(clause)) || rest.some((clause) => /\bX\b/.test(clause))) return null;
+  const then = composeEffects(rest.map((clause) => clause.replace(/\bthat many\b/gi, '\u000e many')), name, where);
+  if (then === null || then.reflexive !== undefined || then.cardFields !== undefined || (then.decisions ?? []).length > 0) return null;
+  const prompt = `Discard ${first[1] === undefined ? 'any number of' : `up to ${first[1]}`} ${lands ? 'land ' : ''}cards`;
+  return {
+    ...(then.targets === undefined ? {} : { targets: then.targets }),
+    ...(then.spellFlags === undefined ? {} : { spellFlags: then.spellFlags }),
+    decisions: [{
+      who: 'controller', from: 'hand', min: 0, max, prompt,
+      ...(lands ? { filter: (state: GameState, id: string) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land') } : {}),
+      pick: () => [],
+    }],
+    effect: (c) => {
+      const thrown = chosenCards(c).filter((id) => c.state.instances[id]?.zone === 'hand');
+      return then.effect({ ...c, state: moveToGraveyard(c.state, thrown), eventAmount: thrown.length, decisions: c.decisions.slice(1) });
+    },
+  };
+}
+
+/**
  * "Sacrifice any number of <kinds>, then <something> that many" (D1332): God-Eternal Bontu's "…
  * other permanents, then draw that many cards", Last-Ditch Effort's "Sacrifice any number of
  * creatures. Last-Ditch Effort deals that much damage to any target", Landslide's Mountains,
@@ -36138,6 +36183,9 @@ function composeEffectsAsPrinted(
   // "Sacrifice any number of lands. … that many" (D1332): see `sacrificeAnyThenThatMany`.
   const sacrificedAny = sacrificeAnyThenThatMany(clauses, name, where);
   if (sacrificedAny !== null) return sacrificedAny;
+  // "Discard up to two cards, then draw that many cards" (D1401): see `discardAnyThenThatMany`.
+  const discardedAny = discardAnyThenThatMany(clauses, name, where);
+  if (discardedAny !== null) return discardedAny;
   // Demonic Consultation (D1247): see `consultation`.
   const consulted = consultation(clauses);
   if (consulted !== null) return consulted;

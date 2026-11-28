@@ -52439,6 +52439,65 @@ describe("A Saga that gains abilities, and a search by printed mana cost: Urza's
   });
 });
 
+describe('discard up to N, then draw that many: the rummage, and Fable of the Mirror-Breaker (D1401)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: text });
+  const RUMMAGE = card('Test Rummage', 'Discard up to two cards, then draw that many cards.');
+  const NIGHT = card('Test Night', 'Discard any number of cards, then draw that many cards plus one.');
+  const FABLE = card('Test Fable', 'You may discard up two cards. If you do, draw that many cards.');
+  const LANDS = card('Test Lands', 'You may discard any number of land cards. If you do, draw that many cards.');
+  const ROWS = [RUMMAGE, NIGHT, FABLE, LANDS];
+  const deck = customDeck({ id: 'd1401', name: 'Rummage', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Mountain', count: 44 }], data: ROWS as never[] });
+  const cast = (name: string): { s: GameState; hand: readonly string[] } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1401', 1: 'd1401' }, deckSpecs: { d1401: deck.deck },
+      hands: { 0: [name, 'Grizzly Bears', 'Grizzly Bears', 'Mountain'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return { s, hand: ids(s, 0, 'hand') };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two discarded, two drawn: the hand is the same size and the two are in the graveyard', () => {
+    const { s: asked, hand } = cast('Test Rummage');
+    expect(asked.pendingDecision).toMatchObject({ min: 0, max: 2 });
+    const thrown = hand.slice(0, 2);
+    const s = drain(apply(asked, { type: 'auto:decide', by: 0, cards: thrown } as Action), 20);
+    expect(thrown.every((id) => s.instances[id]!.zone === 'graveyard')).toBe(true);
+    expect(ids(s, 0, 'hand').length).toBe(hand.length);
+  });
+
+  it('none discarded, none drawn; three is more than it allows and is refused', () => {
+    const { s: asked, hand } = cast('Test Rummage');
+    expect(() => apply(asked, { type: 'auto:decide', by: 0, cards: hand.slice(0, 3) } as Action)).toThrow();
+    const s = drain(apply(asked, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand.length);
+    expect(ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) !== 'Test Rummage')).toEqual([]);
+  });
+
+  it('any number, plus one: one discarded draws two', () => {
+    const { s: asked, hand } = cast('Test Night');
+    const s = drain(apply(asked, { type: 'auto:decide', by: 0, cards: hand.slice(0, 1) } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand.length + 1);
+  });
+
+  it('"up two", as the data prints Fable\'s chapter, is up to two, asked once its "you may" is taken', () => {
+    const asked = say(cast('Test Fable').s, 0, 'Yes');
+    expect(asked.pendingDecision).toMatchObject({ min: 0, max: 2 });
+  });
+
+  it('land cards only: the Mountain is offered, the Bears are not', () => {
+    const asked = say(cast('Test Lands').s, 0, 'Yes');
+    const offered = (asked.pendingDecision?.candidates ?? []).map((id) => nameOf(asked, id));
+    expect(offered.length).toBeGreaterThan(0);
+    expect([...new Set(offered)]).toEqual(['Mountain']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
