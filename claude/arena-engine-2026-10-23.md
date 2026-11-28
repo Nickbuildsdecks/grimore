@@ -52331,3 +52331,35 @@ D776's saddled tests pass alongside. The scripts tests, compile tests and pins: 
 Test typecheck clean.
 
 Coverage: 17,879 of 31,900 cards (+10 over D1408's 17,869), 41,162 of 59,888 lines (+11).
+
+## D1410 — A trigger on a creature of the chosen type: Kindred Discovery
+
+"As Kindred Discovery enters, choose a creature type. Whenever a creature you control of the chosen
+type enters or attacks, draw a card." D641 gave a permanent its chosen type, and statics read it.
+No trigger event could name it, and "enters or attacks" for a creature other than the card itself
+wasn't read either.
+
+**The reading.** "Whenever a/another (nontoken) creature (you control) of the chosen type enters /
+attacks / dies / enters or attacks, …" is read as the line without "of the chosen type".
+- "Enters or attacks" becomes two triggers.
+- Each trigger asks that the creature it's about has the creature type its source chose as it
+  entered (`CardInstance.chosen`, read live through `characteristicsOf`).
+- The condition is an intervening one, asked again as the trigger resolves, so a creature that
+  stopped being that type in between does nothing.
+
+Read whole now: Kindred Discovery, Bloodline Pretender, Molten Echoes and Species Specialist.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole, the Discovery as two triggers.
+- With Elf chosen as it's cast and resolves, a Goblin entering draws nothing and an Elf entering
+  draws a card.
+- An Elf attacking draws a card.
+
+Faults injected by hand: 3, all caught.
+- The chosen-type condition dropped: caught.
+- Only the "enters" half made: caught.
+- The type itself not compared: caught.
+
+The scripts tests, compile tests and pins: 6745 of 6745 pass. Test typecheck clean.
+
+Coverage: 17,883 of 31,900 cards (+4 over D1409's 17,879), 41,166 of 59,888 lines (+4).
