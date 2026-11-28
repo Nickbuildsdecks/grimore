@@ -52363,3 +52363,33 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6745 of 6745 pass. Test typecheck clean.
 
 Coverage: 17,883 of 31,900 cards (+4 over D1409's 17,879), 41,166 of 59,888 lines (+4).
+
+## D1411 — Enchanted and equipped creatures you control: Greater Auramancy
+
+"Enchanted creatures you control have shroud" (Greater Auramancy, from the third staples list) and
+"Equipped creatures you control get +1/+1" (Stone Haven Outfitter, Kemba). D735's kind words for
+"<kind> creatures you control" didn't include either.
+
+**The words.** `CreatureKindWord` adds `enchanted` and `equipped`. Each holds while an Aura or an
+Equipment is attached to the creature on the battlefield. The attachment's kind is read off its
+printed type line, because asking its live characteristics would ask this question again. Both
+words join `KIND_WORDS`, so D735's reader takes "Enchanted creatures you control get/have …" as it
+takes "Artifact creatures you control …".
+
+Read whole now: Greater Auramancy, A Tale for the Ages, and Dalakos, Crafter of Wonders. Firion,
+Kemba and Syr Armont have other unread lines.
+
+**Tests.** 3 engine tests:
+- Four fixtures read whole.
+- Beside Auramancy, Bears with an Aura have shroud and the other Bears don't.
+- Beside the Outfitter, the equipped Bears are 3/3 and the other Bears 2/2.
+
+Faults injected by hand: 4, all caught.
+- "Enchanted" always true: caught.
+- "Equipped" always true: caught.
+- The attachment not required to be on this creature: caught.
+- An Equipment counted as an Aura: caught.
+
+The scripts tests, compile tests and pins: 6748 of 6748 pass. Test typecheck clean.
+
+Coverage: 17,886 of 31,900 cards (+3 over D1410's 17,883), 41,174 of 59,888 lines (+8).
