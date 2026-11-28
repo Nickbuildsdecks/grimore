@@ -69498,3 +69498,38 @@ Faults injected by hand: 7, all caught.
 The scripts tests, compile tests and pins: 6713 of 6713 pass. Test typecheck clean.
 
 Coverage: 17,832 of 31,900 cards (+9 over D1400's 17,823), 41,112 of 59,888 lines (+18).
+
+## D1402 — A search for a card with a keyword: Mystical Teachings
+
+"Search your library for an instant card or a card with flash, reveal it, put it into your hand,
+then shuffle." This is Mystical Teachings and Waterlogged Teachings. "A creature card with flying"
+and "… with deathtouch" are the same kind of filter.
+
+**The filter.** "<card phrase> with <keyword>" narrows the phrase to cards that print that keyword.
+- The keyword is read as a card in a library has it: its printed keyword lines (`printedKeywords`),
+  or a hand-written script's `keywords`.
+- One keyword only. A word that isn't a keyword leaves the phrase to the branches it reached before.
+- Not when the phrase joins two kinds with "or", which D1054's branch splits first.
+- D1054's two-phrase branch now takes a keyword after its second phrase, and that phrase may be "a
+  card" with nothing before "card".
+- Only a keyword: "an instant card or a sorcery card with mana value 3 or less" still doesn't read,
+  as before this change.
+
+Read whole now: Mystical Teachings and Waterlogged Teachings. Mwonvuli Beast Tracker's entry line is
+still unread.
+
+**Tests.** 3 engine tests:
+- Five fixtures read whole.
+- "An instant card or a card with flash" offers the instant and the creature with flash, and not
+  the creature with flying or the Bears.
+- "A creature card with flying" offers the flyer only.
+
+Faults injected by hand: 4, all caught.
+- The keyword not checked: caught.
+- The two-phrase branch not taking a keyword: caught.
+- The printed keyword lines not read: caught.
+- The "or" guard dropped: caught.
+
+The scripts tests, compile tests and pins: 6716 of 6716 pass. Test typecheck clean.
+
+Coverage: 17,835 of 31,900 cards (+3 over D1401's 17,832), 41,115 of 59,888 lines (+3).
