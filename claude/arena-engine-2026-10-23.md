@@ -51915,3 +51915,73 @@ Faults injected by hand: 7, all caught. The sixth wasn't caught until the abilit
 The scripts tests, compile tests and pins: 6696 of 6696 pass. Test typecheck clean.
 
 Coverage: 17,820 of 31,900 cards (+4 over D1398's 17,816), 41,089 of 59,888 lines (+4).
+
+## D1400 — Urza's Saga, and a 0/0 kept alive by its own static
+
+Three things, the last found by the second.
+
+**A Saga that gains an ability.** "I — Urza's Saga gains "{T}: Add {C}."" and "II — Urza's Saga
+gains "{2}, {T}: Create a 0/0 colorless Construct artifact creature token with 'This token gets
++1/+1 for each artifact you control.'"" give the Saga an ability with no end (CR 611.2c).
+- `sagaGains` reads the quoted ability as a line of the card's own, with its inner single quotes as
+  the double quotes a printed line has.
+- `CardInstance.gainedChapters` records the chapters whose gain has resolved on this object. The
+  chapter's trigger marks the Saga, if it is still on the battlefield as the trigger resolves.
+- A zone change clears the mark, as it clears a Class's level (CR 400.7).
+- The ability is live only once marked: an activated ability through `activateOnlyIf`, a trigger
+  through `condition`, as D638 scopes a Class's levels.
+- One chapter number only; anything else stays unread.
+
+**A search by printed mana cost.** "an artifact card with mana cost {0} or {1}" compares the card's
+printed mana cost exactly, so a card whose cost is {X} (mana value 0 in a library) is not one.
+
+Read whole now: Urza's Saga and Down in the Valley.
+
+**A mana line's restriction and then its condition.** Shrine of the Forsaken Gods' "{T}: Add {C}{C}.
+Spend this mana only to cast colorless spells. Activate only if you control seven or more lands."
+The data reader took both sentences as one restriction, which refused the line. Now each is read as
+it would be alone, and a condition that isn't read still refuses the line. Shrine of the Forsaken
+Gods reads whole.
+
+**A 0/0 kept alive by its own static died on arrival.** Testing chapter II showed the Construct token
+never stayed. Nor did a cast 0/0 artifact creature with "~ gets +1/+1 for each artifact you control".
+- `settle` checked state-based actions once before its loop installed each arrival's statics, so the
+  first check saw a 0/0 and put it into the graveyard.
+- A static is true from the moment its permanent is there (CR 611.3a). `arrivalStatics` now installs
+  the arrivals' own statics before that first check, with the script the loop uses.
+- A permanent that chooses a type, colour or name as it enters waits for the loop, which answers
+  first. The loop's guard finds the effects already there and doesn't install them twice.
+- A face-down permanent is skipped, as in the loop.
+- This affects every card whose size comes from its own static, and every token made that way.
+
+**Tests.** 11 engine tests:
+- Shrine (3): it reads whole with both the restriction and the condition, and a condition it can't
+  read refuses the line. Seven lands give the {C}{C} and cast an eight-mana colorless creature. With
+  six lands, a seven-mana one can't be cast.
+- Urza's Saga (8):
+  - The Saga and the search read whole.
+  - Once chapter I resolves, the Saga taps for {C}, and a Saga no chapter has resolved on can't.
+  - Chapter II's ability isn't offered before chapter II. After it, it makes a 1/1 Construct.
+  - Returned to the hand, the card carries no mark.
+  - The search offers the {0} and {1} artifacts and not the {X} or {2} ones.
+  - A cast 0/0 kept alive by its own static stays, as a 1/1.
+  - A chooser put onto the battlefield has both its chosen-type static and its plain one.
+  - A face-down creature's static doesn't apply.
+
+Faults injected by hand: 11, of which 10 caught.
+- Shrine's condition ignored: caught.
+- The two sentences not split: caught.
+- An unread condition not refusing the line: caught.
+- `arrivalStatics` not called: caught.
+- The gained ability not gated: caught.
+- The chapter not marking the Saga: caught.
+- The mark not cleared on leaving: caught.
+- Mana value compared instead of the printed cost: caught.
+- The inner quotes not converted: caught.
+- The chooser not waiting for the loop: caught, by the chooser test.
+- The face-down skip removed: **not caught**. `silenced` in characteristics.ts already mutes a
+  face-down source's effects, so the skip only keeps the pre-pass consistent with the loop.
+
+The scripts tests, compile tests and pins: 6707 of 6707 pass. Test typecheck clean.
+
+Coverage: 17,823 of 31,900 cards (+3 over D1399's 17,820), 41,094 of 59,888 lines (+5).
