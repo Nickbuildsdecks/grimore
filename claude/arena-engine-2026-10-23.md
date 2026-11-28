@@ -52067,3 +52067,44 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6716 of 6716 pass. Test typecheck clean.
 
 Coverage: 17,835 of 31,900 cards (+3 over D1401's 17,832), 41,115 of 59,888 lines (+3).
+
+## D1403 — Rotlung Reanimator, seven lands untapped, and Relic of Progenitus
+
+Three widely played Commander cards and their families, from a new list of 355 such cards
+(`staples3.txt` in the scratchpad), of which 298 read whole before this.
+
+**"~ or another Cleric dies"** (Rotlung Reanimator, Vengeful Dead, Noxious Ghoul, Serum Tank,
+Minotaur, Roxxon CEO). D483's "~ or another <thing> you control" pattern now takes the line
+without "you control". The "another" half is then anyone's: Rotlung makes a Zombie for an opponent's
+Cleric. Plain "~ or another creature dies" stays with Blood Artist's own row, which has always read
+it. Read through the new path, it would give a different shape from Blood Artist's hand-written
+script, and the comparison pin in compiled-vs-written.test.ts caught that.
+
+**"Untap up to seven lands"** (Palinchron, Great Whale): the count reader now takes six and seven.
+
+**"Target player exiles a card from their graveyard"** (Relic of Progenitus): the target player
+chooses from their own graveyard, as a discard is chosen from their own hand. The count is one to
+three.
+
+Read whole now: Rotlung Reanimator, Vengeful Dead, Noxious Ghoul, Serum Tank, Minotaur, Roxxon CEO,
+Palinchron, Great Whale and Relic of Progenitus.
+
+**Tests.** 5 engine tests:
+- Five fixtures read whole.
+- An opponent's Cleric dying makes a Zombie for the Rotlung's controller and none for the opponent,
+  and a Bear dying makes none.
+- The Rotlung dying makes one.
+- The Whale asks to untap up to seven of eight tapped lands.
+- The Relic's target player is asked, chooses the Bears, and the Bears are exiled while the other
+  card stays.
+
+Faults injected by hand: 4, all caught. The Blood Artist guard was found the other way round: the
+whole suite failed the compiled-vs-written pin before the guard existed.
+- The "another" half kept to your side: caught.
+- "Seven" not read: caught.
+- The Relic asking its controller: caught.
+- The Relic exiling nothing: caught.
+
+The scripts tests, compile tests and pins: 6721 of 6721 pass. Test typecheck clean.
+
+Coverage: 17,847 of 31,900 cards (+12 over D1402's 17,835), 41,127 of 59,888 lines (+12).
