@@ -69235,3 +69235,64 @@ The scripts tests, compile tests and pins: 6680 of 6680 pass. Test typecheck and
 clean.
 
 Coverage: 17,812 of 31,900 cards (+2 over D1395's 17,810), 41,081 of 59,888 lines (+10).
+
+## D1397 — Restricted mana that floats, marked with what it may pay for
+
+"{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells or activate abilities of
+creatures." That is Castle Garenbrig, a staple and the last card on the first staples list. D595
+read "Spend this mana only …" on a mana ability the auto-payer taps while paying for something its
+restriction allows. A pool of plain counts couldn't tell restricted mana from free mana, so
+restricted mana never floated: such an ability wasn't a button, and the engine refused it when
+pressed. An ability the auto-payer never uses (a mana cost, or a cost other than tapping,
+sacrificing itself, life or energy) therefore had no way to be used at all, and D669 left
+Garenbrig's line unread.
+
+**The pool.** `GameState.boundMana` holds restricted mana per seat, one entry a mana: its type and
+the words of its restriction.
+- `spendRestriction` reads the words again when something is paid for, so the state stays
+  JSON-safe.
+- `manaSources` offers each entry as a source, first and only for a payment its words allow.
+- `tapSources` spends an entry rather than tapping anything.
+- Entries `payFrom` took out but didn't need go back into the pool still marked. That path is a
+  guard: the solver takes one-mana entries only as needed, so no test reaches it.
+- The pool empties with the others as a step ends (CR 500.4), and the view shows it.
+
+**The ability.** A restricted mana ability the auto-payer never uses is offered as a play, and
+pressing one makes its mana into the restricted pool. Pressing a free one (Ancient Ziggurat) is
+allowed too now, with the same result. Only a restriction that needs the
+source's chosen type is still made only while paying, where the source is known.
+
+**The reading.** "Add six {G}" beside a mana cost is read as the run of symbols written out; the
+data reader takes the words only beside {T}.
+
+**The table.** The arena bar shows restricted mana beside the free pool as outlined pips with what
+they may pay for ("only cast creature spells …"), from `boundPips`.
+
+Read whole now: Castle Garenbrig. Food Chain still needs "Exile a creature you control" as a cost
+and "1 plus the exiled creature's mana value" as its amount, which is D1398.
+
+D669's pin now asserts Garenbrig's line reads, as a costed ability with six {G} and its
+restriction. D595's Ziggurat test now asserts that pressing it floats one marked mana and no free
+mana, where it asserted a refusal.
+
+**Tests.** 6 engine tests and 1 web test:
+- The fixtures read whole.
+- Pressed, the six {G} float marked and the free pool is empty.
+- They pay for a 6-mana creature and are spent.
+- A {1}{G} creature spends two, and four stay marked.
+- An instant isn't offered with them and is refused.
+- They empty as the step ends.
+- `boundPips` groups the marked mana by what it may pay for.
+
+Faults injected by hand: 6, of which 5 caught.
+- Not offered as sources: caught.
+- Not removed when spent: caught.
+- Made into the free pool: caught.
+- Not emptied: caught.
+- The restriction not asked: caught.
+- The return of unneeded entries removed: **not caught**, as no test reaches it (above).
+
+The scripts tests, compile tests and pins: 6686 of 6686 pass. Web tests: 284 of 284. Test
+typecheck and web typecheck clean.
+
+Coverage: 17,813 of 31,900 cards (+1 over D1396's 17,812), 41,082 of 59,888 lines (+1).
