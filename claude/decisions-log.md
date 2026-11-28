@@ -69859,3 +69859,57 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6748 of 6748 pass. Test typecheck clean.
 
 Coverage: 17,886 of 31,900 cards (+3 over D1410's 17,883), 41,174 of 59,888 lines (+8).
+
+## D1412 — No more than N creatures can attack or block each combat: Silent Arbiter, Crawlspace
+
+"No more than one creature can attack each combat. No more than one creature can block each combat."
+(Silent Arbiter, Dueling Grounds; "two" on Caverns of Despair.) And "No more than two creatures can
+attack you each combat" (Crawlspace; "one" on Judoon Enforcers). Two of these are on the third
+staples list, and the engine had no limit on how many creatures could attack or block.
+
+**The fields.** `CardScript.attackLimit`, `attackYouLimit` and `blockLimit`, read from those lines.
+They're restrictions on the declaration (CR 508.1c, 509.1b), and the strictest one on the
+battlefield applies. A face-down permanent's, or one that lost its abilities, doesn't count.
+- An attack limit counts every attacker.
+- "Attack you" counts the attacks on that permanent's controller, and not those on their
+  planeswalkers.
+- A block limit counts every blocker declared this combat, including the other defenders' in a pod.
+
+**The rules around it.** Requirements give way to a restriction (CR 508.1d, 509.1c):
+- A creature that attacks each combat if able isn't owed when attacking with it would break the
+  limit.
+- Blocking requirements (Lure) aren't asked once the block limit is reached.
+
+**The bot.** `legalDeclaration` cuts its attack to the limits, keeping entries in order, and
+`withoutLoneBlock` does the same for blocks. Its search already dropped plans that throw, so the
+cut matters for the declaration it makes without searching.
+
+Read whole now: Silent Arbiter, Crawlspace, Dueling Grounds, Caverns of Despair and Judoon Enforcers.
+Astral Arena has another unread line.
+
+"Has a card behind every mechanic it declares" exempts the three fields, naming this entry's
+runtime test.
+
+**Tests.** 7 engine tests:
+- The fixtures read whole.
+- With the Arbiter out, two attackers are refused and one is taken.
+- Two creatures that must attack: attacking with one is legal.
+- Two blockers on one attacker are refused, and one is taken.
+- A Lure attacking: one blocker is enough.
+- Crawlspace: three attacking its controller are refused, and two are taken.
+- The bot attacks with no more than the Arbiter allows, with and without its search, and its
+  declaration applies.
+
+Faults injected by hand: 6, all caught. Two were caught only once the Lure test and the no-search
+bot case were added.
+- The attack limit not checked: caught.
+- A must-attack creature owed past the limit: caught.
+- The block limit not checked: caught.
+- The bot not cutting its attack: caught, by the no-search case.
+- "Attack you" not counted: caught.
+- The block requirement not giving way: caught, by the Lure test.
+
+The scripts tests, compile tests and pins: 6755 of 6755 pass. Bot and combat tests: 47 of 47. Test
+typecheck clean.
+
+Coverage: 17,891 of 31,900 cards (+5 over D1411's 17,886), 41,182 of 59,888 lines (+8).
