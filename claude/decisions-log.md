@@ -69200,3 +69200,38 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6676 of 6676 pass. Test typecheck clean.
 
 Coverage: 17,810 of 31,900 cards (+4 over D1394's 17,806), 41,071 of 59,888 lines (+9).
+
+## D1396 — Read ahead
+
+"Read ahead (As this Saga enters, choose a chapter and start with that many lore counters. Add one
+after your draw step. Skipped chapters don't trigger.)" Ten legal Sagas print it, and the line
+was unread on all of them (CR 714.3b).
+
+**The rule.** An enters-choice (`entersChoice: 'read-ahead'`), asked as the Saga resolves, the way
+riot and the creature-type choice are. The answers run from "Chapter I" to the Saga's last chapter,
+counted from its own chapter triggers when the question is asked. Chosen II or later, the Saga gets
+that many lore counters and only that chapter triggers. The chapters before it are skipped, and the
+arrival's own first counter is not added on top. Chosen I, it is the ordinary arrival. The bot
+starts at the beginning. A Saga put onto the battlefield without being cast is asked nothing and
+starts at chapter I.
+
+`READ_AHEAD_CHAPTERS` lives in `effects.ts` beside the other answer words, so the resolution in
+`automation.ts` and the question in `scripts.ts` share one list.
+
+41 of the 220 legal Sagas read whole.
+
+**Tests.** 4 engine tests, on a fixture three-chapter Saga with read ahead:
+- It reads whole.
+- Started at chapter III: only chapter III's 3 life, and it is sacrificed.
+- Started at chapter II: chapter I is skipped, and it has two lore counters.
+- Started at chapter I: the ordinary Saga.
+
+Faults injected by hand: 3, all caught.
+- The chosen chapter ignored.
+- The chapter not triggered.
+- Six answers offered for three chapters.
+
+The scripts tests, compile tests and pins: 6680 of 6680 pass. Test typecheck and web typecheck
+clean.
+
+Coverage: 17,812 of 31,900 cards (+2 over D1395's 17,810), 41,081 of 59,888 lines (+10).
