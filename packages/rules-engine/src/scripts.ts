@@ -20342,6 +20342,8 @@ function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
     ? { nontoken: true as const }
     : {};
   const printed = (groups.what ?? '').trim().replace(/^nontoken /i, '');
+  // Without "you control" (D1403), a plain creature is Blood Artist's row below, which reads it whole.
+  if (groups.you === undefined && /^creature$/i.test(printed) && !('nontoken' in nonToken) && (groups.filter ?? '') === '') return null;
   // "With flying", "with a +1/+1 counter on it" (D1125), on the `another` half: the card printing the
   // line has the quality it names (Archon of Redemption flies).
   const filter = boardFilter(groups.filter ?? '');
@@ -20358,10 +20360,11 @@ function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
   // `dies` is defined for creatures (CR 700.4), so a land has no death half — the same refusal
   // `boardTrigger` makes.
   if (dies && what === 'land') return null;
+  // Nobody's side named is no `of` at all, as the plainer death rows write it (D565, D1403).
   const another: BoardEvent = {
     kind: dies ? 'dies' : 'etb',
     who: 'another',
-    of: 'you',
+    ...(groups.you === undefined ? {} : { of: 'you' }),
     what,
     ...nonToken,
     ...(parts === null ? {} : { ofSubtypes: [parts[1]!] }),
@@ -21169,7 +21172,8 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: (self) => new RegExp(
-      `^When(?:ever)? ${self} or another (?<what>[^,]*?) you control(?<filter> with [^,]+?)?`
+      // "You control" may be left out (D1403): Rotlung Reanimator's "~ or another Cleric dies" is anyone's.
+      `^When(?:ever)? ${self} or another (?<what>[^,]*?)(?<you> you control)?(?<filter> with [^,]+?)?`
       + ` (?<event>${ENTERS}|dies), (?<clause>.+)$`,
       'i',
     ),
@@ -29259,6 +29263,22 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    "Target player exiles a card from their graveyard" (D1403, Relic of Progenitus): their choice,
+    as a discard is, from their own graveyard. Exactly that many, or all they have.
+  */
+  const exiledOwn = /^(target player|target opponent) exiles (a|one|two|three) cards? from their graveyard$/i.exec(text);
+  if (exiledOwn !== null) {
+    const n = countFrom(exiledOwn[2]!);
+    const spec = targetSpecFrom(exiledOwn[1]!, false);
+    if (n !== null && spec !== null) {
+      return {
+        targets: [spec],
+        decisions: [{ who: 'target-player', from: 'graveyard', prompt: `Exile ${exiledOwn[2]!} card${n === 1 ? '' : 's'} from your graveyard`, min: n, max: n }],
+        effect: (c) => chosenCards(c).reduce((state, id) => (state.instances[id]?.zone === 'graveyard' ? exileCard(state, id) : state), c.state),
+      };
+    }
+  }
   const discarded = /^(target player|target opponent) discards ([\w]+) (cards?)$/i.exec(text);
   if (discarded !== null) {
     const n = countFrom(discarded[2]!);
@@ -31420,7 +31440,8 @@ function readEffect(
       },
     };
   }
-  const untapLands = /^untap up to (one|two|three|four|five|\d+) lands$/i.exec(clause.trim());
+  // "Seven" (D1403): Palinchron and Great Whale.
+  const untapLands = /^untap up to (one|two|three|four|five|six|seven|\d+) lands$/i.exec(clause.trim());
   if (untapLands !== null) {
     const n = countFrom(untapLands[1]!);
     if (n !== null) {

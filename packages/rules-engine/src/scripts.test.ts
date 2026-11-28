@@ -52529,6 +52529,66 @@ describe('a search for a card with a keyword: Mystical Teachings (D1402)', () =>
   });
 });
 
+describe("Rotlung Reanimator's anyone's Cleric, seven lands untapped, and Relic of Progenitus (D1403)", () => {
+  const ROTLUNG = { name: 'Test Rotlung', type_line: 'Creature — Zombie Cleric', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Whenever Test Rotlung or another Cleric dies, create a 2/2 black Zombie creature token.' };
+  const CLERIC = { name: 'Test Acolyte', type_line: 'Creature — Human Cleric', mana_cost: '{1}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const WHALE = { name: 'Test Whale', type_line: 'Creature — Whale', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '5', toughness: '5',
+    oracle_text: 'When Test Whale enters, untap up to seven lands.' };
+  const RELIC = { name: 'Test Relic', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    oracle_text: '{T}: Target player exiles a card from their graveyard.' };
+  const DOOM = { name: 'Test Doom', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' };
+  const ROWS = [ROTLUNG, CLERIC, WHALE, RELIC, DOOM];
+  const deck = customDeck({ id: 'd1403', name: 'Rotlung', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  const zombies = (s: GameState, seat: SeatIndex): number => ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === 'Zombie').length;
+  const board = (extra: Partial<Parameters<typeof arena>[0]> = {}): GameState => advanceTo(arena({
+    decks: { 0: 'd1403', 1: 'd1403' }, deckSpecs: { d1403: deck.deck }, turn: 3, firstSeat: 0, ...extra,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("an opponent's Cleric dying makes a Zombie for the Rotlung's controller; a Bear dying does not", () => {
+    let s = board({ battlefield: { 0: ['Test Rotlung', 'Grizzly Bears'], 1: ['Test Acolyte'] } });
+    s = drain(apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'battlefield', 'Test Acolyte'), toZone: 'graveyard' } as Action), 20);
+    expect(zombies(s, 0)).toBe(1);
+    expect(zombies(s, 1)).toBe(0);
+    s = drain(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Grizzly Bears'), toZone: 'graveyard' } as Action), 20);
+    expect(zombies(s, 0)).toBe(1);
+  });
+
+  it('and the Rotlung dying makes one', () => {
+    let s = board({ hands: { 0: ['Test Doom'] }, battlefield: { 0: ['Test Rotlung'] } });
+    const rotlung = find(s, 0, 'battlefield', 'Test Rotlung');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: rotlung }] } as Action)), 20);
+    expect(s.instances[rotlung]!.zone).toBe('graveyard');
+    expect(zombies(s, 0)).toBe(1);
+  });
+
+  it('the Whale asks to untap up to seven lands', () => {
+    let s = board({ hands: { 0: ['Test Whale'] }, battlefield: { 0: Array.from({ length: 8 }, () => 'Swamp') } });
+    s = tapAllLands(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Whale') } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    expect(s.pendingDecision).toMatchObject({ min: 0, max: 7 });
+    expect(s.pendingDecision?.candidates.length).toBe(8);
+  });
+
+  it('the Relic: the target player exiles a card of their own choice from their graveyard', () => {
+    let s = board({ battlefield: { 0: ['Test Relic'] }, graveyard: { 1: ['Grizzly Bears', 'Swamp'] } });
+    const relic = find(s, 0, 'battlefield', 'Test Relic');
+    s = apply(s, { type: 'auto:activate', by: 0, card: relic, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(1);
+    const bears = find(s, 1, 'graveyard', 'Grizzly Bears');
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [bears] } as Action), 20);
+    expect(s.instances[bears]!.zone).toBe('exile');
+    expect(ids(s, 1, 'graveyard').map((id) => nameOf(s, id))).toEqual(['Swamp']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
