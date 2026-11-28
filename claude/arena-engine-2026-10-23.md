@@ -52711,3 +52711,37 @@ Faults injected by hand: 5, all caught, each run alone and restored from a snaps
 The scripts tests, compile tests and pins: 6785 of 6785 pass. Test typecheck clean.
 
 Coverage: 17,961 of 31,900 cards (+26 over D1417's 17,935), 41,282 of 59,888 lines (+34).
+
+## D1419 — A Role on the card itself, or on what its trigger is about: Cursed Courtier, Unassuming Sage
+
+"When Cursed Courtier enters, create a Cursed Role token attached to it." D1418 read a Role
+attached to a target, and to an earlier target through the referent swap. An "it" meaning the
+card itself was left unread.
+
+**The reading.** `selfEffect` takes "create a <Role> Role token attached to ~/it". Its existing
+rule (`itMeans`) settles what "it" is:
+- A named card is the card itself.
+- A bare "it" is the permanent the trigger is about, else the card. For example, "Whenever another
+  creature you control enters, … attached to it" puts the Role on that creature.
+
+A bare "it" is read only for an ability on the battlefield. An "it" that names an earlier target
+is claimed first by the referent swap, so Monstrous Rage still puts its Role on its target (D1418's
+tests pass unchanged). Nothing is made when the permanent is gone or isn't a creature.
+
+Read whole now: Cursed Courtier and Unassuming Sage.
+
+**Tests.** 3 engine tests:
+- The fixtures read whole, and a lone "Create a Monster Role token attached to it." on an instant
+  stays unread.
+- The Courtier curses itself into a 1/1 that keeps lifelink.
+- An enchantment's "whenever another creature you control enters" puts the Role on the Bears, not
+  on itself.
+
+Faults injected by hand: 2, both caught, each restored from a backup.
+- "It" resolved to the card instead of the trigger's permanent: the enchantment test fails.
+- The battlefield-only guard on a bare "it" removed: the lone instant reads, and the reading test
+  fails. It was not caught until that assertion was added.
+
+The scripts tests, compile tests and pins: 6788 of 6788 pass. Test typecheck clean.
+
+Coverage: 17,963 of 31,900 cards (+2 over D1418's 17,961), 41,285 of 59,888 lines (+3).
