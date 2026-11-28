@@ -52909,3 +52909,47 @@ Faults injected by hand: 4, all caught, each run alone and restored from a snaps
 The scripts, compile, pin, automation and playout tests: 7035 of 7035 pass. Test typecheck clean.
 
 Coverage: 17,992 of 31,900 cards (+5 over D1421's 17,987), 41,330 of 59,888 lines (+9).
+
+## D1423 — Addendum: Sphinx's Insight, Summary Judgment, Arrester's Zeal, Might of Old Krosa
+
+"If you cast this spell during your main phase, …". 15 legal cards print it: as an "Addendum —"
+line (Ravnica Allegiance), or at the end of the spell's text (Might of Old Krosa, Sulfurous Blast).
+Nothing read it before this change.
+
+**The reading.** `addendumPairFor` is the kicker pair's sibling (D562), with the same two meanings:
+- Without "instead", the spell does both halves in printed order. An extra half that is only an
+  effect runs after the base. One that refers back ("that creature gains flying") is read together
+  with the base, so it means the base's target.
+- With "instead", the second half replaces the last sentence of the base.
+- Summary Judgment's "it deals 5 damage instead" is the base's sentence with the new number.
+
+Both branches must want the same targets and ask no questions, so they can be listed once. They
+may differ in the bot's hints, and the base's hints are kept.
+
+**The condition.** It's read as the spell resolves, and nothing needs recording at the cast. A
+spell resolves in the step it was cast in, since no step ends with anything on the stack. So it
+holds when it is the caster's turn, the step is a main phase, and the spell was cast rather than
+copied.
+
+Read whole now: Arrester's Admonition, Arrester's Zeal, Code of Constraint, Might of Old Krosa,
+Sphinx's Insight, Sulfurous Blast and Summary Judgment.
+
+Still unread:
+- A branch that asks a question: Precognitive Perception's scry, and Haunting Hymn's discard.
+- A branch with targets of its own: Return to Dust, Tail Swipe.
+- Text that doesn't read on its own: Careful Consideration, Contractual Safeguard, Emergency
+  Powers, Unbreakable Formation.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole.
+- The Insight gains 2 life in its main phase, and none in combat or in an opponent's main phase.
+- The Judgment deals 5 to a 0/6 in the main phase and 3 in combat.
+- The Zeal's creature gets +2/+2 either way, and flying only in the main phase.
+
+Faults injected by hand: 2, both caught, each restored from a backup.
+- The condition always true.
+- The caster's-turn check removed: caught by the opponent's-main-phase case.
+
+The scripts, compile, pin, automation and playout tests: 7039 of 7039 pass. Test typecheck clean.
+
+Coverage: 17,999 of 31,900 cards (+7 over D1422's 17,992), 41,343 of 59,888 lines (+13).
