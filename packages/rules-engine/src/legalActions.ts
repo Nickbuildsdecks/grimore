@@ -2222,6 +2222,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash')
       // "As though it had flash" (D727).
       || scriptForCard(state.cardDefs[inst.defKey])?.castAsThoughFlash !== undefined
+      // A condition on it (D1408): Hungering Yeti. See `CardScript.flashWhile`.
+      || ((cond) => cond !== undefined && conditionHolds(state, cond, seat, inst.id))(scriptForCard(state.cardDefs[inst.defKey])?.flashWhile)
       // And a permanent that grants it (D800): Leyline of Anticipation.
       || flashGranted(state, seat, ch);
     // An offered cast ignores the timing, because the ability offering it is what says when: cascade

@@ -42307,6 +42307,22 @@ function lineScriptForPrinted(line: string, name: string): Partial<CardScript> |
 }
 
 function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
+  /*
+    "You may cast ~ as though it had flash if you control a Faerie", "As long as you control a green
+    or blue permanent, you may cast ~ as though it had flash", "If …, you may cast this spell as
+    though it had flash" (D1408): see `CardScript.flashWhile`. The condition is a static's.
+  */
+  {
+    const text = withoutAbilityWord(plain(line)).trim().replace(/\.$/, '');
+    const it = `(?:${selfRef(name)}|this spell)`;
+    const after = new RegExp(`^You may cast ${it} as though it had flash (?:if|as long as) (.+)$`, 'i').exec(text);
+    const before = after === null ? new RegExp(`^(?:If|As long as) ([^,]+), you may cast ${it} as though it had flash$`, 'i').exec(text) : null;
+    const printed = after?.[1] ?? before?.[1];
+    if (printed !== undefined) {
+      const condition = staticCondition(printed, name);
+      return condition === null ? null : { flashWhile: condition };
+    }
+  }
   // "You may cast ~ from your graveyard (as long as …)" (D1405): see `CardScript.castsSelfFromGraveyard`.
   const selfYard = new RegExp(`^You may cast (?:${selfRef(name)}|this card) from your graveyard(?:,? (?:as long as|if) (.+?))?\\.?$`, 'i').exec(plain(line).trim());
   if (selfYard !== null) {

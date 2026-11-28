@@ -8129,6 +8129,9 @@ describe('deck coverage', () => {
       // D1405: Gravecrawler, Skaab Ruinator; no pool deck plays one. Driven at runtime by "a card that
       // may be cast from its own graveyard: Gravecrawler (D1405)".
       'script castsSelfFromGraveyard',
+      // D1408: Hungering Yeti, Illusion Spinners; no pool deck plays one. Driven at runtime by "cast
+      // as though it had flash while a condition holds: Hungering Yeti (D1408)".
+      'script flashWhile',
       // D1251: Snuff Out and the Bringers; no pool deck plays one. Driven at runtime by "A printed
       // alternative of mana or life: Snuff Out, the Bringers (D1251)".
       'script altCost',
@@ -52766,6 +52769,51 @@ describe("an attachment's bonus while its controller controls something: the Run
     expect([forest.power, forest.keywords.has('trample')]).toEqual([3, true]);
     const none = enchanted('Test Banneret', []);
     expect([none.power, none.keywords.has('trample')]).toEqual([2, false]);
+  });
+});
+
+describe('cast as though it had flash while a condition holds: Hungering Yeti (D1408)', () => {
+  const YETI = { name: 'Test Yeti', type_line: 'Creature — Yeti', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: 'As long as you control a green or blue permanent, you may cast Test Yeti as though it had flash.' };
+  // A generic cost, so the Mountains pay for it.
+  const SPINNER = { name: 'Test Spinner', type_line: 'Creature — Faerie Wizard', mana_cost: '{2}', cmc: 2, colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: 'You may cast this spell as though it had flash if you control a Faerie.' };
+  const FAERIE = { name: 'Test Pixie', type_line: 'Creature — Faerie', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [YETI, SPINNER, FAERIE];
+  const deck = customDeck({ id: 'd1408', name: 'Yeti', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Mountain', count: 46 }], data: ROWS as never[] });
+  const atCombat = (card: string, battlefield: string[]): { s: GameState; id: string } => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1408', 1: 'd1408' }, deckSpecs: { d1408: deck.deck }, hands: { 0: [card] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', ...battlefield] }, turn: 3, firstSeat: 0,
+    }), 'begin-combat');
+    return { s, id: find(s, 0, 'hand', card) };
+  };
+  const castable = (s: GameState, id: string): boolean => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === id);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('beside a green creature the Yeti is cast at the beginning of combat, and resolves', () => {
+    let { s, id } = atCombat('Test Yeti', ['Grizzly Bears']);
+    expect(s.step).toBe('begin-combat');
+    expect(castable(s, id)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 20);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+  });
+
+  it('beside a red one it is not offered then, and is refused', () => {
+    const { s, id } = atCombat('Test Yeti', ['Raging Goblin']);
+    expect(castable(s, id)).toBe(false);
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: id } as Action)).toThrow();
+  });
+
+  it('"if you control a Faerie": with one, the Spinner is cast at combat; with none, not', () => {
+    const yes = atCombat('Test Spinner', ['Test Pixie']);
+    expect(castable(yes.s, yes.id)).toBe(true);
+    const no = atCombat('Test Spinner', ['Grizzly Bears']);
+    expect(castable(no.s, no.id)).toBe(false);
   });
 });
 

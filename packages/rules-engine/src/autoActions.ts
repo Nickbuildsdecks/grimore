@@ -13,7 +13,7 @@ import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
 import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPaid, withInstance } from './cardActions.js';
 import {
-  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
+  allAbilitiesLost, characteristicsOf, conditionHolds, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import { nextTargetQuestion, emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
@@ -451,6 +451,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     characteristics.keywords.has('flash') ||
     // "As though it had flash" (D727), which is a permission and not the keyword.
     script?.castAsThoughFlash !== undefined ||
+    // A condition on it (D1408): Hungering Yeti. See `CardScript.flashWhile`.
+    (script?.flashWhile !== undefined && conditionHolds(state, script.flashWhile, action.by, inst.id)) ||
     // And a permanent of the caster's that grants it (D800): Leyline of Anticipation.
     flashGranted(state, action.by, characteristics);
   /*

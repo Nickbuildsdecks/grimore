@@ -323,3 +323,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1404 pushed in a580ab2. D1405 a card cast from its own graveyard (CardScript.castsSelfFromGraveyard): scriptTypes, scripts.ts, legalActions (yardPermission), exemption in scripts.test.ts.
 - D1405 pushed in 56f596f. D1406 two colours in boardCondition, controller-gained-life condition: characteristics, scripts.ts.
 - D1406 pushed in 8b3af98. D1407 attachment bonus with a controller condition (controllerConditional in hostConditionalParts): scripts.ts.
+- D1407 pushed in 4bde459. D1408 conditional cast-as-though-flash (CardScript.flashWhile): scriptTypes, scripts.ts, legalActions, autoActions, exemption in scripts.test.ts.

@@ -4725,6 +4725,14 @@ export interface CardScript {
    */
   readonly castAsThoughFlash?: 'sacrifice-at-cleanup';
   /**
+   * "As long as you control a green or blue permanent, you may cast Hungering Yeti as though it had
+   * flash" (D1408), Illusion Spinners' "if you control a Faerie", Serpent of the Pass. The card may
+   * be cast at any time its controller could cast an instant while `flashWhile` holds (a static's
+   * condition, asked with the card as source and the caster as controller). A permission, not the
+   * keyword: "creatures with flash" do not see it.
+   */
+  readonly flashWhile?: NonNullable<PumpOptions['while']>;
+  /**
    * "You may cast spells as though they had flash" (D800): Leyline of Anticipation, Vedalken Orrery,
    * and the narrower printings ("noncreature spells", "creature spells", "artifact spells", "Aura and
    * Equipment spells", "green creature spells", "colorless spells"). Which of its controller's spells
