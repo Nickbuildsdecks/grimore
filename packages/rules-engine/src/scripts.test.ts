@@ -52498,6 +52498,37 @@ describe('discard up to N, then draw that many: the rummage, and Fable of the Mi
   });
 });
 
+describe('a search for a card with a keyword: Mystical Teachings (D1402)', () => {
+  const sorcery = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text });
+  const TEACH = sorcery('Test Teachings', 'Search your library for an instant card or a card with flash, reveal it, put it into your hand, then shuffle.');
+  const TRACK = sorcery('Test Tracker', 'Search your library for a creature card with flying, reveal it, put it into your hand, then shuffle.');
+  const creature = (name: string, text: string) => ({ name, type_line: 'Creature — Bird', mana_cost: '{2}', cmc: 2, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const FLASHER = creature('Test Flasher', 'Flash');
+  const FLYER = creature('Test Flyer', 'Flying');
+  const BOLT = { name: 'Test Bolt', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card.' };
+  const ROWS = [TEACH, TRACK, FLASHER, FLYER, BOLT];
+  const deck = customDeck({ id: 'd1402', name: 'Teach', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Island', count: 44 }], data: ROWS as never[] });
+  const offered = (name: string): string[] => {
+    let s = advanceTo(arena({ decks: { 0: 'd1402', 1: 'd1402' }, deckSpecs: { d1402: deck.deck }, hands: { 0: [name] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    return [...new Set((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)))].sort();
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an instant or a card with flash: the Bolt and the Flasher, not the Flyer nor the Bears', () => {
+    expect(offered('Test Teachings')).toEqual(['Test Bolt', 'Test Flasher']);
+  });
+
+  it('a creature card with flying: the Flyer only', () => {
+    expect(offered('Test Tracker')).toEqual(['Test Flyer']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

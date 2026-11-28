@@ -2560,11 +2560,32 @@ function libraryFilter(
     star answers with what its characteristic-defining ability makes it there (CR 208.2a).
   */
   /*
+    "A creature card with flying", "a card with flash" (D1402): the keyword printed on the card, as
+    a card in a library has it: its printed keyword lines, or a hand-written script's. One keyword; anything else stays unread. Not
+    when the phrase joins two kinds with "or", which the branch below splits first.
+  */
+  const keyworded = /^(.+? cards?) with ([a-z]+(?: [a-z]+)?)$/i.exec(whole);
+  if (keyworded !== null && isKeyword(keyworded[2]!) && !/\bor\b/i.test(keyworded[1]!)) {
+    const keyword = keyworded[2]!.toLowerCase();
+    const body = libraryFilter(keyworded[1]!, name);
+    if (body === null || body.xBound === true) return null;
+    const inner = body.filter;
+    return {
+      phrase: whole,
+      filter: (state, id, seat) => (inner === null || inner === undefined || inner(state, id, seat))
+        && ((def) => [...(scriptOfCard(def)?.keywords ?? []), ...printedKeywords(def?.oracleText)].some((k) => k === keyword))(
+          state.cardDefs[state.instances[id]?.defKey ?? '']),
+    };
+  }
+  /*
     Two card phrases joined by "or" (D1054): "a basic land card or Gate card", "… or a Gate card"
     (District Guide, Gatecreeper Vine). Either one; each is read on its own, so "an artifact or
     creature card" — one phrase whose type words take the "or" — is not split here.
   */
-  const either = /^(an? .+? card) or (?:(an?) )?(.+? card)$/i.exec(whole);
+  // The second may carry a keyword (D1402): Mystical Teachings' "an instant card or a card with flash".
+  const eitherRead = /^(an? .+? card) or (?:(an?) )?((?:.+? )?card(?: with ([a-z]+(?: [a-z]+)?))?)$/i.exec(whole);
+  // Only a keyword after the second: "… or a sorcery card with mana value 3 or less" reads as it did.
+  const either = eitherRead !== null && (eitherRead[4] === undefined || isKeyword(eitherRead[4])) ? eitherRead : null;
   if (either !== null) {
     const first = libraryFilter(either[1]!, name);
     const second = libraryFilter(`${either[2] ?? (/^[aeiou]/i.test(either[3]!) ? 'an' : 'a')} ${either[3]!}`, name);

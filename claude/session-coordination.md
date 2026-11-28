@@ -317,3 +317,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1398 pushed in 5fd32f6. D1399 colour words in spending restrictions (PaymentFor.spellColors/abilityColors): scriptTypes, spending, legalActions, autoActions, pins in compile.test.ts and scripts.test.ts.
 - D1399 pushed in 5cd4d03, checkpoint d87999b. D1400 Urza's Saga (sagaGains, CardInstance.gainedChapters, mana cost search), Shrine's restriction then condition (fromCardData), statics before the first state-based check (automation arrivalStatics).
 - D1400 pushed in 890bd64. D1401 discard up to N then draw that many (discardAnyThenThatMany), draw that many plus N: scripts.ts.
+- D1401 pushed in 171f419. D1402 search filter 'card with <keyword>' (libraryFilter): scripts.ts.
