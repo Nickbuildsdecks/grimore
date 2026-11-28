@@ -52806,3 +52806,62 @@ Faults injected by hand: 6, all caught, each run alone and restored from a snaps
 The scripts, compile, pin and automation tests: 6905 of 6905 pass. Test typecheck clean.
 
 Coverage: 17,978 of 31,900 cards (+15 over D1419's 17,963), 41,310 of 59,888 lines (+25).
+
+## D1421 — Waterbend costs: Giant Koi, North Pole Patrol, Yue, Katara, Water Tribe Rallier
+
+"Waterbend {3}: This creature can't be blocked this turn." The reminder text: "While paying a
+waterbend cost, you can tap your artifacts and creatures to help. Each one pays for {1}." 25 legal
+cards print waterbend, and 18 of their lines are an activated ability with a waterbend cost.
+Nothing read it before this change.
+
+**The cost.** `AbilityCost.waterbend` marks the ability's mana as a waterbend cost. The cost reader
+takes "Waterbend {N}", and refuses it beside other mana, which the flag would widen.
+
+**The planner.** Convoke and improvise's planner, `tapToPayPlan`, gets a third rule. Under
+`'waterbend'` an artifact or a creature may be tapped, each paying one generic pip. Two new
+parameters:
+- `exclude`: never a permanent the cost spends another way. North Pole Patrol's own {T} doesn't
+  help pay its {3}.
+- `last`: the permanent whose ability this pays for goes last, as `payFrom`'s `avoid` does. A
+  Giant Koi tapping itself to become unblockable could no longer attack.
+
+Mana comes first, then the shortfall, as for convoke.
+
+**The offer and the payment ask the same plan.** `legalActions` checks it in two places: the
+ability's affordability, and the check that keeps a cost's spent permanents out of its mana
+(sweep 47815). The Patrol was missed by the second until it asked the planner too. `activate`
+taps the planned permanents, pays the rest as mana, and refuses when no plan exists.
+
+Read whole now: Flexible Waterbender, Foggy Swamp Vinebender, Geyser Leaper, Giant Koi, Katara,
+Bending Prodigy, North Pole Patrol, Water Tribe Rallier, Waterbender Ascension and Yue, the Moon
+Spirit.
+
+Still unread:
+- Waterbend as a spell's additional cost (Benevolent River Spirit, Crashing Wave, the "you may"
+  ones).
+- "Waterbend {X}".
+- Exhaust with waterbend.
+- "Ward—Waterbend".
+- "Unless you waterbend" (Waterbending Lesson).
+- "Whenever you waterbend".
+
+**Tests.** 5 engine tests:
+- The fixtures read whole as a waterbend {3}; beside {U} it stays unread.
+- Three Bears pay it with no land, and are tapped.
+- With two Islands and two Bears, both Islands and one Bear pay, and the Koi stays untapped.
+- Two non-mana artifacts and a Bear pay it, while a single Bear can't and nothing is offered.
+- The Patrol isn't offered with only two Bears, and with three it taps all three to tap the
+  opponent's creature.
+
+Faults injected by hand: 6, all caught, each run alone and restored from a snapshot.
+- Artifacts left out of the rule. Caught only once Sol Ring was replaced by an artifact that makes
+  no mana.
+- `exclude` ignored.
+- `last` ignored.
+- The payment's plan skipped.
+- The offer asking plain mana.
+- The spent-permanents check asking plain mana.
+
+The scripts, compile, pin, automation and playout tests: 7031 of 7031 pass. Test typecheck clean.
+
+Coverage: 17,987 of 31,900 cards (+9 over D1420's 17,978), 41,321 of 59,888 lines (+11).
