@@ -76,7 +76,7 @@ import type { Color, ManaPool, ManaType } from './mana.js';
 import type { CreatureKindWord, Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { isLegalTarget, legalTargets, retarget } from './targeting.js';
-import { targetKey, type ActivationTiming, type DecisionAnswer, type StackObject, type Target } from './turnTypes.js';
+import { MAIN_STEPS, targetKey, type ActivationTiming, type DecisionAnswer, type StackObject, type Target } from './turnTypes.js';
 
 /**
  * The biggest toughness on the battlefield, which is where a sweeper's useful range stops.
@@ -43529,6 +43529,103 @@ function kickerSpellFor(
   };
 }
 
+/**
+ * Addendum (D1423): "If you cast this spell during your main phase, <more>", printed on its own
+ * line ("Addendum — …") or at the end of the spell's text, with kicker's two meanings (D562).
+ * Without "instead" the spell does both, in printed order; with it, the second in place of the
+ * last sentence before it. Both halves must want the same targets, as the kicker pair's "instead"
+ * does; an extra half with targets of its own is refused.
+ *
+ * The condition is read as the spell resolves, and needs nothing recorded at the cast: a spell
+ * resolves in the step it was cast in, since no step ends with anything on the stack. So it holds
+ * when it is the caster's turn, a main phase, and the spell was cast rather than copied.
+ */
+const ADDENDUM = 'If you cast this spell during your main phase, ';
+function castInMainPhase(c: EffectContext): boolean {
+  return c.state.activeSeat === c.controller && MAIN_STEPS.includes(c.state.step)
+    && c.resolving?.copyOf === undefined && c.resolving?.kind === 'spell';
+}
+function addendumPairFor(
+  lines: readonly string[], name: string,
+): { fragment: Partial<CardScript>; claimed: readonly string[] } | null {
+  const texts = lines.map((line) => plain(line).trim().replace(/^Addendum\s*[—–-]\s*/i, ''));
+  const body = texts.join(' ');
+  const at = body.lastIndexOf(ADDENDUM);
+  if (at <= 0 || body.indexOf(ADDENDUM) !== at) return null;
+  const baseText = body.slice(0, at).trim();
+  const printed = body.slice(at + ADDENDUM.length).trim();
+  if (!/[.]$/.test(baseText)) return null;
+  const instead = /^instead,?\s+/i.test(printed) || /\s+instead\.?$/i.test(printed);
+  const tail = printed.replace(/^instead,?\s+/i, '').replace(/\s+instead(\.?)$/i, '$1');
+  if (tail === '' || /\binstead\b/i.test(tail)) return null;
+  const sentence = (text: string): string => `${text[0]!.toUpperCase()}${text.slice(1)}${/[.]$/.test(text) ? '' : '.'}`;
+  const base = spellScriptFor([baseText], name);
+  if (base.script === null || base.unread.length > 0 || base.script.modal !== undefined || base.script.kicker !== undefined) return null;
+  const baseEffect = base.script.onResolve;
+  if (baseEffect === undefined || base.script.decisions !== undefined || base.script.beforeDecisions !== undefined) return null;
+  const shape = (script: Partial<CardScript>): string => JSON.stringify(
+    Object.entries(script)
+      .filter(([key]) => key !== 'onResolve' && key !== 'expiresAtEndOfTurn')
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, value]) => [key, key === 'targets'
+        ? (value as readonly TargetSpec[]).map(({ friendly: _f, blinks: _b, helpsInCombat: _h, ...spec }) => spec)
+        : value]),
+  );
+  // "That creature" for the base's own target phrase, and "it deals" for the spell's own name.
+  const referent = KICKED_REFERENT.exec(tail);
+  let named = tail.replace(/^it deals\b/i, `${name} deals`);
+  if (referent !== null) {
+    const phrase = new RegExp(`\\btarget (?:[\\w'-]+ )*?${referent[1]!.toLowerCase()}(?: card)?(?: you control| you don't control| an opponent controls)?`, 'i').exec(baseText);
+    if (phrase !== null) named = named.replace(KICKED_REFERENT, phrase[0].toLowerCase());
+  }
+  /*
+    The same targets and no questions, which is what both branches must share to be listed once.
+    The bot's hints may differ (scrying as well as drawing): the base's are the ones kept.
+  */
+  const targetsOf = (script: Partial<CardScript>): string => shape({ targets: script.targets ?? [] });
+  const sameShape = (text: string): EffectFn | null => {
+    const read = spellScriptFor([text], name);
+    if (read.script === null || read.unread.length > 0 || read.script.onResolve === undefined) return null;
+    if (read.script.decisions !== undefined || read.script.beforeDecisions !== undefined || read.script.modal !== undefined) return null;
+    return targetsOf(read.script) === targetsOf(base.script!) ? read.script.onResolve : null;
+  };
+  const switched = (other: EffectFn): { fragment: Partial<CardScript>; claimed: readonly string[] } => ({
+    fragment: { ...base.script!, onResolve: (c) => (castInMainPhase(c) ? other(c) : baseEffect(c)) },
+    claimed: [...lines],
+  });
+  if (!instead) {
+    // An extra half that is only an effect runs after the base; one that refers back is read with it.
+    const extra = spellScriptFor([sentence(tail)], name);
+    const extraEffect = extra.script?.onResolve;
+    if (extra.script !== null && extra.unread.length === 0 && extraEffect !== undefined
+      && Object.keys(extra.script).every((key) => key === 'onResolve' || key === 'expiresAtEndOfTurn')) {
+      return {
+        fragment: {
+          ...base.script,
+          onResolve: (c) => {
+            const state = baseEffect(c);
+            return castInMainPhase(c) ? extraEffect({ ...c, state }) : state;
+          },
+        },
+        claimed: [...lines],
+      };
+    }
+    // Read with the base it refers back to: "that creature gains flying" is the base's target.
+    const both = sameShape(`${baseText} ${sentence(tail)}`);
+    return both === null ? null : switched(both);
+  }
+  // "It deals 5 damage instead" (Summary Judgment): the base's own sentence with the new number.
+  const louder = /^it deals (\d+) damage$/i.exec(tail.replace(/\.$/, ''));
+  if (louder !== null && (baseText.match(/\bdeals \d+ damage\b/g) ?? []).length === 1) {
+    const alt = sameShape(baseText.replace(/\bdeals \d+ damage\b/, `deals ${louder[1]!} damage`));
+    return alt === null ? null : switched(alt);
+  }
+  // "Instead" replaces the last sentence of the base, so the sentences before it still happen.
+  const baseSentences = /"/.test(baseText) ? [baseText] : baseText.split(/(?<=[.])\s+(?=[A-Z])/);
+  const alt = sameShape([...baseSentences.slice(0, -1), sentence(named)].join(' '));
+  return alt === null ? null : switched(alt);
+}
+
 /** The nouns a kicked sentence refers back with: "that creature", "that player". */
 const KICKED_REFERENT = /\bthat (creature|player|permanent|artifact|enchantment|spell|land|card)\b/i;
 
@@ -43961,7 +44058,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     be refused on its own, which is a card reported as two separate failures rather than read. See
     `kickerSpellFor` for why the two lines are one unit.
   */
-  const kicker = kickerSpellFor(lines, name) ?? kickerClausePairFor(lines, name);
+  const kicker = kickerSpellFor(lines, name) ?? kickerClausePairFor(lines, name) ?? addendumPairFor(lines, name);
   if (kicker !== null) {
     return { script: kicker.fragment, compiled: kicker.claimed, unread: [] };
   }

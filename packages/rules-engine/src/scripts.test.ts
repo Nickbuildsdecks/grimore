@@ -53641,6 +53641,66 @@ describe('airbend: exiled, and its owner may cast it for {2} (D1422)', () => {
   });
 });
 
+describe('addendum: more when cast during your main phase (D1423)', () => {
+  const INSIGHT = { name: 'Test Insight', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: 'Draw two cards.\nAddendum — If you cast this spell during your main phase, you gain 2 life.' };
+  const JUDGMENT = { name: 'Test Judgment', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'Test Judgment deals 3 damage to target tapped creature.\nAddendum — If you cast this spell during your main phase, it deals 5 damage instead.' };
+  const ZEAL = { name: 'Test Zeal', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'Target creature gets +2/+2 until end of turn.\nAddendum — If you cast this spell during your main phase, that creature gains flying until end of turn.' };
+  const WALL = { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '0', toughness: '6', oracle_text: 'Defender' };
+  const ROWS = [INSIGHT, JUDGMENT, ZEAL];
+  const deck = customDeck({ id: 'd1423', name: 'Addendum', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 4 }, { name: 'Test Wall', count: 2 }, { name: 'Plains', count: 48 }], data: [...ROWS, WALL] as never[] });
+  const board = (step: Step): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1423', 1: 'd1423' }, deckSpecs: { d1423: deck.deck }, hands: { 0: ROWS.map((r) => r.name) },
+      battlefield: { 0: ['Hill Giant'], 1: ['Test Wall'] }, turn: 3, firstSeat: 0,
+    }), step);
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    return { ...s, instances: { ...s.instances, [wall]: { ...s.instances[wall]!, tapped: true } } };
+  };
+  const cast = (s: GameState, card: string, target?: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }),
+  } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Insight gains 2 life in the main phase, and not in combat', () => {
+    const main = cast(board('precombat-main'), 'Test Insight');
+    expect(life(main, 0)).toBe(22);
+    const combat = cast(board('begin-combat'), 'Test Insight');
+    expect(life(combat, 0)).toBe(20);
+    expect(ids(combat, 0, 'hand').length).toBe(ids(board('begin-combat'), 0, 'hand').length - 1 + 2);
+    // Nor in an opponent's main phase: it is "your" main phase.
+    let theirs = advanceTo(nextTurn(board('precombat-main')), 'precombat-main');
+    theirs = apply(theirs, { type: 'auto:pass', by: 1 } as Action);
+    const before = life(theirs, 0);
+    theirs = cast(theirs, 'Test Insight');
+    expect(life(theirs, 0)).toBe(before);
+  });
+
+  it('the Judgment deals 5 in the main phase and 3 otherwise', () => {
+    for (const [step, dealt] of [['precombat-main', 5], ['begin-combat', 3]] as const) {
+      const s0 = board(step);
+      const wall = find(s0, 1, 'battlefield', 'Test Wall');
+      expect(damageOn(cast(s0, 'Test Judgment', wall), wall), step).toBe(dealt);
+    }
+  });
+
+  it("the Zeal's creature gains flying in the main phase only, and gets +2/+2 either way", () => {
+    for (const [step, flies] of [['precombat-main', true], ['begin-combat', false]] as const) {
+      const s0 = board(step);
+      const mine = find(s0, 0, 'battlefield', 'Hill Giant');
+      const s = cast(s0, 'Test Zeal', mine);
+      const ch = characteristicsOf(s, s.instances[mine]!);
+      expect([ch.power, ch.keywords.has('flying')], step).toEqual([5, flies]);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
