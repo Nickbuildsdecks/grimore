@@ -52721,6 +52721,54 @@ describe('two colours, and life gained this turn, as a static condition (D1406)'
   });
 });
 
+describe("an attachment's bonus while its controller controls something: the Runemarks (D1407)", () => {
+  const RUNEMARK = { name: 'Test Runemark', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: 'Enchant creature\nEnchanted creature gets +2/+2.\nEnchanted creature has vigilance as long as you control a black or green permanent.' };
+  const FIRST = { name: 'Test Banneret', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Enchant creature\nAs long as you control a Forest, enchanted creature gets +1/+1 and has trample.' };
+  // White, so the host is not itself the black or green permanent the Runemark asks for.
+  const SQUIRE = { name: 'Test Squire', type_line: 'Creature — Human', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  // Its only bonus line is the conditional one, as Shardmage's Rescue's is.
+  const ONLY = { name: 'Test Wings', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    oracle_text: 'Enchant creature\nEnchanted creature has flying as long as you control a Forest.' };
+  const ROWS = [RUNEMARK, FIRST, SQUIRE, ONLY];
+  const deck = customDeck({ id: 'd1407', name: 'Runemark', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 4 }, { name: 'Plains', count: 46 }], data: ROWS as never[] });
+  const enchanted = (aura: string, battlefield: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1407', 1: 'd1407' }, deckSpecs: { d1407: deck.deck }, hands: { 0: [aura] },
+      battlefield: { 0: ['Test Squire', ...battlefield] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 0, 'battlefield', 'Test Squire');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    return characteristicsOf(s, s.instances[bears]!);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with a green permanent, +2/+2 and vigilance; without one, the +2/+2 only', () => {
+    // A Forest is colourless; the Bears are the green permanent.
+    const green = enchanted('Test Runemark', ['Grizzly Bears']);
+    expect([green.power, green.keywords.has('vigilance')]).toEqual([4, true]);
+    const none = enchanted('Test Runemark', []);
+    expect([none.power, none.keywords.has('vigilance')]).toEqual([4, false]);
+  });
+
+  it('the conditional line alone: flying with a Forest, none without', () => {
+    expect(enchanted('Test Wings', ['Forest']).keywords.has('flying')).toBe(true);
+    expect(enchanted('Test Wings', []).keywords.has('flying')).toBe(false);
+  });
+
+  it('the condition first: with a Forest, +1/+1 and trample; without, nothing', () => {
+    const forest = enchanted('Test Banneret', ['Forest']);
+    expect([forest.power, forest.keywords.has('trample')]).toEqual([3, true]);
+    const none = enchanted('Test Banneret', []);
+    expect([none.power, none.keywords.has('trample')]).toEqual([2, false]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

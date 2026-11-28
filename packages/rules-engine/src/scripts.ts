@@ -18709,12 +18709,42 @@ const ARRIVES_ATTACHED: Readonly<Record<string, string>> = {
  * and a harmful part (Ray of Frost) would mislead the bot's choice of host. A line that does not
  * read is left out and stays flagged.
  */
+/**
+ * "Enchanted creature has vigilance as long as you control a black or green permanent" (D1407, the
+ * Runemarks), and the condition first: "As long as you have 30 or more life, equipped creature gets
+ * …". A condition about the controller, or the attachment itself, rather than the host: read by
+ * `staticCondition` and carried as the part's `while`, asked with the attachment as source and its
+ * controller as controller. Null when the line is not this shape or its condition does not read.
+ */
+function controllerConditional(
+  line: string, host: 'enchanted' | 'equipped', name: string,
+): { readonly rest: string; readonly condition: NonNullable<PumpOptions['while']> } | null {
+  const text = withoutAbilityWord(plain(line)).trim().replace(/\.$/, '');
+  const after = new RegExp(`^${host} creature ((?:gets|has) [^"]+?) as long as ([^"]+)$`, 'i').exec(text);
+  const before = after === null ? new RegExp(`^as long as ([^,"]+), ${host} creature (.+)$`, 'i').exec(text) : null;
+  if (after === null && before === null) return null;
+  const printed = after !== null ? after[2]! : before![1]!;
+  // About the host ("as long as it's a Human") is D814's, not this.
+  if (/^(?:it|enchanted|equipped)\b/i.test(printed)) return null;
+  const condition = staticCondition(printed, name);
+  return condition === null ? null : { rest: after !== null ? after[1]! : before![2]!, condition };
+}
+
 function hostConditionalParts(
   lines: readonly string[], host: 'enchanted' | 'equipped', name: string,
 ): { parts: PumpOptions[]; lines: string[] } {
   const parts: PumpOptions[] = [];
   const claimed: string[] = [];
   for (const line of lines) {
+    // A condition about the controller (D1407): see `controllerConditional`.
+    const controlled = controllerConditional(line, host, name);
+    if (controlled !== null) {
+      const read = attachmentBonus(`${host} creature ${controlled.rest}`, name);
+      if (read === null || read.harmful || read.grantedTriggers !== undefined || read.grantedAbilities !== undefined) continue;
+      parts.push({ ...read.bonus, while: controlled.condition });
+      claimed.push(line);
+      continue;
+    }
     /*
       And "As long as enchanted permanent is a creature, it gets +2/+1" (D1365): an Aura that may
       enchant any permanent, and helps it only while it is a creature. A keyword on an artifact
@@ -18764,7 +18794,9 @@ export function attachmentScriptFor(
     ? /^(?:enchanted (?:creature|land|artifact|enchantment|permanent)\b|all creatures able to block enchanted creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) enchanted creature\.?$)/i
     : /^(?:equipped creature|all creatures able to block equipped creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) equipped creature\.?$)/i;
   // Under an ability word too (D1168): "Domain — Enchanted creature gets +1/+1 for each …".
-  const staticLine = lines.find((line) => subject.test(withoutAbilityWord(plain(line)).trim()));
+  // Not a line whose condition is its controller's (D1407): `hostConditionalParts` reads those.
+  const staticLine = lines.find((line) => subject.test(withoutAbilityWord(plain(line)).trim())
+    && controllerConditional(line, isAura ? 'enchanted' : 'equipped', def.name) === null);
   const plainRead = staticLine === undefined ? null : attachmentBonus(withoutAbilityWord(plain(staticLine)), def.name);
   /*
     And the host-conditional lines (D814), as further parts of the same bonus. Not beside a plain
