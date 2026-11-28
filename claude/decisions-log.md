@@ -69913,3 +69913,41 @@ The scripts tests, compile tests and pins: 6755 of 6755 pass. Bot and combat tes
 typecheck clean.
 
 Coverage: 17,891 of 31,900 cards (+5 over D1411's 17,886), 41,182 of 59,888 lines (+8).
+
+## D1413 — Tapping seven or ten creatures, and draw X lose X: Lathril, Painful Truths, Damnable Pact
+
+Two readings, each a family.
+
+**"Tap ten untapped Elves you control"** (Lathril, Blade of the Elves, on the third staples list).
+D610's tap-others cost read counts up to five. It now reads six to ten too, through a table of its
+own, so the other cost readers that share `COST_COUNTS` read no new counts. Gilt-Leaf Archdruid and
+Lullmage Mentor print seven too, and each still has an unread line.
+
+**"You draw X cards and you lose X life, where X is …"** (Painful Truths, Graveborn Muse, Champion
+of Dusk, Sanguimancy, Minions' Murmurs, Bone Devourer), and "Target player draws X cards and loses
+X life" (Damnable Pact, Eldritch Pact, Monumental Corruption).
+- Read as one effect: drawn first, then lost, as printed.
+- X is counted by `whereXCount`, which reads converge, devotion and the board counts. With no "where
+  X is", X is the spell's own.
+- A target player draws and loses; "you" is the controller.
+- Skeletal Scrying, whose X is paid as an additional cost, is still unread.
+
+Read whole now: Lathril, Painful Truths, Graveborn Muse, Champion of Dusk, Sanguimancy, Damnable
+Pact, Eldritch Pact, Minions' Murmurs, Bone Devourer and Monumental Corruption.
+
+**Tests.** 4 engine tests:
+- Four fixtures read whole, and the tap cost counts seven.
+- With seven other Elves the ability is offered, and with six it isn't.
+- Beside two creatures, "where X is the number of creatures you control" draws two and loses two.
+- The Pact at X=3, aimed at the opponent: they draw three and lose three, and its caster loses
+  nothing.
+
+Faults injected by hand: 4, all caught.
+- "Seven" read as six: caught.
+- The life not lost: caught.
+- The target not the one drawing: caught.
+- The spell's own X not used: caught.
+
+The scripts tests, compile tests and pins: 6759 of 6759 pass. Test typecheck clean.
+
+Coverage: 17,902 of 31,900 cards (+11 over D1412's 17,891), 41,194 of 59,888 lines (+12).
