@@ -52029,6 +52029,31 @@ describe('A modal spell cast for an alternative cost is offered once per mode (D
   });
 });
 
+describe('"This Saga", and a Saga\'s modal chapter (D1395)', () => {
+  const ANNALS = { name: 'Test Annals', type_line: 'Enchantment — Saga', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: '(As this Saga enters and after your draw step, add a lore counter.)\nI — This Saga deals 2 damage to each opponent.\nII, III — Choose one —\n• You gain 2 life.\n• You gain 5 life.' };
+  const deck = customDeck({ id: 'd1395', name: 'Annals', entries: [{ name: 'Test Annals', count: 2 }, { name: 'Mountain', count: 58 }], data: [ANNALS] as never[] });
+
+  it('reads whole, chapters 1, 2 and 3', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ANNALS as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok ? (read.script?.triggers ?? []).map((t) => (t.on as { n?: number }).n ?? 0).sort() : []).toEqual([1, 2, 3]);
+  });
+
+  it('"This Saga deals 2 damage" as it enters, then the modal chapter asks which mode', () => {
+    let s = advanceTo(arena({ decks: { 0: 'd1395', 1: 'd1395' }, deckSpecs: { d1395: deck.deck }, hands: { 0: ['Test Annals'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Annals') } as Action)), 20);
+    expect(life(s, 1)).toBe(18);
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    for (let i = 0; i < 4 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.pendingDecision?.options).toEqual(['You gain 2 life', 'You gain 5 life']);
+    const before = life(s, 0);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'You gain 5 life' } as Action), 20);
+    expect(life(s, 0)).toBe(before + 5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

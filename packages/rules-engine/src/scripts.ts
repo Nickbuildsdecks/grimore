@@ -42682,6 +42682,25 @@ export function dieTableFor(
 export function modalTriggerFor(
   lines: readonly string[], name: string,
 ): { readonly fragment: Partial<CardScript>; readonly claimed: readonly string[] } | null {
+  /*
+    A Saga's modal chapter (D1395): "I, II — Choose one —" and its bullets (Life of Toshiro Umezawa).
+    Read as the modal trigger below with an entry prologue, then put on the chapter numbers, as
+    `sagaChapterLine` does for a chapter of one sentence.
+  */
+  const chapterAt = lines.findIndex((line) => /^(?:VI|IV|V|I{1,3})(?:,\s*(?:VI|IV|V|I{1,3}))*\s*—\s*choose (?:up to )?one\s*[—-]$/i.test(plain(line).trim()));
+  if (chapterAt >= 0) {
+    const head = /^((?:VI|IV|V|I{1,3})(?:,\s*(?:VI|IV|V|I{1,3}))*)\s*—\s*(choose (?:up to )?one\s*[—-])$/i.exec(plain(lines[chapterAt]!).trim())!;
+    const numbers = head[1]!.split(/,\s*/).map((roman) => ROMAN_CHAPTERS[roman.toUpperCase()]);
+    const rewritten = lines.map((line, i) => (i === chapterAt ? `When ${name} enters, ${head[2]!}` : line));
+    const inner = numbers.some((n) => n === undefined) ? null : modalTriggerFor(rewritten, name);
+    const only = inner?.fragment.triggers?.length === 1 && Object.keys(inner.fragment).every((key) => key === 'triggers')
+      ? inner.fragment.triggers[0]! : null;
+    if (inner === null || only === null) return null;
+    return {
+      fragment: { saga: true, triggers: numbers.map((n) => ({ ...only, on: { kind: 'chapter' as const, n: n! } }) as TriggerDef) },
+      claimed: inner.claimed.map((line) => (line === rewritten[chapterAt] ? lines[chapterAt]! : line)),
+    };
+  }
   const at = lines.findIndex((line) => /^.+, choose (?:up to )?one\s*[—-]$/i.test(plain(line).trim()));
   if (at < 0) return null;
   const headed = /^(.+), choose (up to )?one\s*[—-]$/i.exec(plain(lines[at]!).trim())!;

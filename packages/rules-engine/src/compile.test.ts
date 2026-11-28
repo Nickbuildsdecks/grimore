@@ -7004,9 +7004,10 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
 
     it('refuses a type the self-reference list does not name, rather than any "this X"', () => {
-      // The list is a list: "this Saga" is not one of the words printed text uses for the object an
-      // ability is on, so the line is unread (D362) rather than guessed at.
-      const saga = permanent('When this Saga enters, draw a card.');
+      // The list is a list: "this Contraption" is not one of the words printed text uses for the
+      // object an ability is on, so the line is unread (D362) rather than guessed at. (This was "this
+      // Saga" until D1395 put Saga on the list for a Saga's own chapters.)
+      const saga = permanent('When this Contraption enters, draw a card.');
       expect(saga.ok).toBe(true);
       if (saga.ok) expect(saga.unread.map((entry) => entry.line)).toHaveLength(1);
     });

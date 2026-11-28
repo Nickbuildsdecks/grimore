@@ -419,6 +419,8 @@ export const SELF_TYPE_WORDS = [
   'emblem',
   // D1298: "When you unlock this door, this Room deals 6 damage to target creature".
   'Room',
+  // D1395: "III — This Saga deals X damage to target opponent", a Saga's own chapter.
+  'Saga',
 ] as const;
 
 /**
