@@ -336,3 +336,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1417 pushed in 4a2e6f8. D1418 Role tokens (ROLE_TOKENS, createAttachedToken, the Role state-based check in automation, 'if its power is N' after a self head).
 - D1418 pushed in f8513e0. D1419 a Role attached to the card itself or the trigger's permanent (selfEffect).
 - D1419 pushed in 7cc6d67; checkpoint 67d31bb. D1420 earthbend (effects.earthbend, lasting/orExiled death watch, builtin return-tapped).
+- D1420 pushed in 9a4b066. D1421 waterbend costs (AbilityCost.waterbend, tapToPayPlan 'waterbend' with exclude and last, legalActions offer and spent check, activate payment).

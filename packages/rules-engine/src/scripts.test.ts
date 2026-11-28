@@ -53518,6 +53518,74 @@ describe('earthbend: a land made a creature, back tapped when it dies or is exil
   });
 });
 
+describe('waterbend: artifacts and creatures tapped to help pay (D1421)', () => {
+  const KOI = { name: 'Test Koi', type_line: 'Creature — Fish', mana_cost: '{4}{U}{U}', cmc: 6, colors: ['U'], layout: 'normal', power: '5', toughness: '7',
+    oracle_text: "Waterbend {3}: This creature can't be blocked this turn. (While paying a waterbend cost, you can tap your artifacts and creatures to help. Each one pays for {1}.)" };
+  const PATROL = { name: 'Test Patrol', type_line: 'Creature — Human Soldier Ally', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', power: '2', toughness: '3',
+    oracle_text: 'Waterbend {3}, {T}: Tap target creature an opponent controls.' };
+  // An artifact that makes no mana, so only waterbend can spend it.
+  const TRINKET = { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const ROWS = [KOI, PATROL];
+  const deck = customDeck({ id: 'd1421', name: 'Water', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Test Trinket', count: 2 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Island', count: 44 }], data: [...ROWS, TRINKET] as never[] });
+  const board = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1421', 1: 'd1421' }, deckSpecs: { d1421: deck.deck },
+    battlefield: { 0: [...mine], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const koiRow = (s: GameState, koi: string) => legalActions(s, 0).plays.find((p) => p.card === koi && p.kind === 'activate');
+
+  it('reads whole, as a waterbend cost of {3}', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(KOI as never)).toMatchObject({ script: { abilities: [{ cost: { mana: '{3}', waterbend: true } }] } });
+    // Not beside other mana, which the flag would wrongly widen.
+    const mixed = compileCard({ ...KOI, name: 'Test Mixed', oracle_text: "{U}, Waterbend {2}: This creature can't be blocked this turn." } as never);
+    expect(mixed.ok && mixed.unread.length).toBe(1);
+  });
+
+  it('three creatures pay it with no land at all, and are tapped', () => {
+    let s = board(['Test Koi', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears']);
+    const koi = find(s, 0, 'battlefield', 'Test Koi');
+    const row = koiRow(s, koi);
+    expect(row).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: koi, abilityIndex: row!.abilityIndex! } as Action)), 20);
+    const bears = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    expect(bears.every((id) => s.instances[id]!.tapped)).toBe(true);
+    expect(characteristicsOf(s, s.instances[koi]!).cantBeBlocked).toBe(true);
+  });
+
+  it('two creatures and one land: the land pays first, a creature only for the shortfall', () => {
+    let s = board(['Test Koi', 'Grizzly Bears', 'Grizzly Bears', 'Island', 'Island']);
+    const koi = find(s, 0, 'battlefield', 'Test Koi');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: koi, abilityIndex: koiRow(s, koi)!.abilityIndex! } as Action)), 20);
+    const tapped = (name: string): number => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === name && s.instances[id]!.tapped).length;
+    expect([tapped('Island'), tapped('Grizzly Bears')]).toEqual([2, 1]);
+  });
+
+  it('an artifact helps, and two helpers are not enough for {3}', () => {
+    const short = board(['Test Koi', 'Grizzly Bears']);
+    expect(koiRow(short, find(short, 0, 'battlefield', 'Test Koi'))).toBeUndefined();
+    let s = board(['Test Koi', 'Grizzly Bears', 'Test Trinket', 'Test Trinket']);
+    const koi = find(s, 0, 'battlefield', 'Test Koi');
+    expect(koiRow(s, koi)).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: koi, abilityIndex: koiRow(s, koi)!.abilityIndex! } as Action)), 20);
+    expect(characteristicsOf(s, s.instances[koi]!).cantBeBlocked).toBe(true);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Trinket' && s.instances[id]!.tapped).length).toBe(2);
+  });
+
+  it('the Patrol\'s own {T} is not one of its helpers', () => {
+    const two = board(['Test Patrol', 'Grizzly Bears', 'Grizzly Bears']);
+    const patrol = find(two, 0, 'battlefield', 'Test Patrol');
+    expect(legalActions(two, 0).plays.some((p) => p.card === patrol && p.kind === 'activate')).toBe(false);
+    let s = board(['Test Patrol', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears']);
+    const p2 = find(s, 0, 'battlefield', 'Test Patrol');
+    const target = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const row = legalActions(s, 0).plays.find((p) => p.card === p2 && p.kind === 'activate')!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: p2, abilityIndex: row.abilityIndex!, targets: [{ kind: 'card', id: target }] } as Action)), 20);
+    expect(s.instances[target]!.tapped).toBe(true);
+    expect(ids(s, 0, 'battlefield').every((id) => s.instances[id]!.tapped)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

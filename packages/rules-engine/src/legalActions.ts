@@ -1100,11 +1100,19 @@ export function tapCostPlan(
  * `castSpell` both call this, so there is one answer to "can this be paid for" rather than an offer
  * and a refusal.
  */
-export type TapToPayRule = 'convoke' | 'improvise';
+// And waterbend (D1421): an artifact or a creature, each paying {1}. See `AbilityCost.waterbend`.
+export type TapToPayRule = 'convoke' | 'improvise' | 'waterbend';
 
 export function tapToPayPlan(
   state: GameState, seat: SeatIndex, cost: ManaCost, sources: readonly ManaSourceEntry[],
   rule: TapToPayRule,
+  /** Permanents the same cost spends another way (D1421): a waterbend ability's own {T}. */
+  exclude?: ReadonlySet<string>,
+  /**
+   * The permanent whose ability this pays for, tapped only when nothing else will do (D1421): a
+   * Giant Koi tapping itself to become unblockable could no longer attack. `payFrom`'s `avoid`.
+   */
+  last?: string,
 ): { readonly tapped: readonly string[]; readonly cost: ManaCost } | null {
   const pool = poolOf(state, seat);
   if (canAfford(pool, cost, sources)) return { tapped: [], cost };
@@ -1113,11 +1121,13 @@ export function tapToPayPlan(
   const available: { id: string; colors: readonly ManaType[] }[] = [];
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
-    if (inst === undefined || inst.tapped) continue;
+    if (inst === undefined || inst.tapped || exclude?.has(id) === true) continue;
     const ch = characteristicsOf(state, inst);
     // Asked of the **live** characteristics rather than the printed type line, so an animated
     // artifact convokes and a creature turned into an artifact improvises.
-    if (!(rule === 'convoke' ? ch.isCreature : hasType(ch.typeLine, 'artifact'))) continue;
+    if (!(rule === 'convoke' ? ch.isCreature
+      : rule === 'waterbend' ? ch.isCreature || hasType(ch.typeLine, 'artifact')
+        : hasType(ch.typeLine, 'artifact'))) continue;
     // Improvise pays generic and only generic, so an artifact's colours are not offered to the
     // assignment below. That is what stops a blue artifact paying a {U} pip.
     available.push({ id, colors: rule === 'convoke' ? ch.colors as readonly ManaType[] : [] });
@@ -1126,6 +1136,7 @@ export function tapToPayPlan(
   // a permanent spent on a pip is a permanent not spent on mana, and mana pays pips too.
   const makesMana = new Set(sources.map((source) => source.key));
   available.sort((a, b) => Number(makesMana.has(a.id)) - Number(makesMana.has(b.id)));
+  if (last !== undefined) available.sort((a, b) => Number(a.id === last) - Number(b.id === last));
 
   const tapped: string[] = [];
   let left: ManaCost = cost;
@@ -3306,10 +3317,14 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       if (ability.cost.energy !== undefined && energyOf(state, seat) < ability.cost.energy) continue;
       // What it costs now (D781): a channel land's "costs {1} less for each legendary creature".
       const manaNow = abilityManaText(state, seat, ability, id);
-      if (manaNow
-        && !canAfford(poolOf(state, seat), parseManaCost(manaNow), restrictedMana
-          ? manaSources(state, seat, { abilityOf: ch.typeLine, abilityColors: ch.colors })
-          : sources, 0, phyrexianLife(state, seat))) continue;
+      const paySources = restrictedMana
+        ? manaSources(state, seat, { abilityOf: ch.typeLine, abilityColors: ch.colors })
+        : sources;
+      // A waterbend cost (D1421) is asked of the planner that will pay it, never tapping the source its {T} taps.
+      const ownTap = ability.cost.tap === true ? new Set([id]) : undefined;
+      if (manaNow && (ability.cost.waterbend === true
+        ? tapToPayPlan(state, seat, parseManaCost(manaNow), paySources.filter((s) => ownTap?.has(s.key) !== true), 'waterbend', ownTap, id) === null
+        : !canAfford(poolOf(state, seat), parseManaCost(manaNow), paySources, 0, phyrexianLife(state, seat)))) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
       // a Mana Confluence stops making mana at one life and a City of Brass does not.
       const lifeCost = abilityLifeCost(state, seat, ability.cost);
@@ -3377,8 +3392,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         const cost = parseManaCost(manaNow);
         const all = restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine, abilityColors: ch.colors }) : sources;
         const spent = new Set<string>([...(ability.cost.tap ? [id] : []), ...(crew ?? []), ...(tapped ?? [])]);
-        const affords = (also?: string) => canAfford(poolOf(state, seat), cost,
-          all.filter((source) => !spent.has(source.key) && source.key !== also), 0, phyrexianLife(state, seat));
+        // A waterbend cost (D1421) through its planner, with the same permanents kept out of it.
+        const affords = (also?: string) => (ability.cost.waterbend === true
+          ? tapToPayPlan(state, seat, cost, all.filter((source) => !spent.has(source.key) && source.key !== also), 'waterbend',
+            new Set([...spent, ...(also === undefined ? [] : [also])]), id) !== null
+          : canAfford(poolOf(state, seat), cost,
+            all.filter((source) => !spent.has(source.key) && source.key !== also), 0, phyrexianLife(state, seat)));
         if (spent.size > 0 && !affords()) continue;
         if (ability.cost.sacrifice !== undefined) {
           fodder = victims.filter((victim) => affords(victim));

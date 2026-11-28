@@ -2446,8 +2446,28 @@ function activate(
     throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, zero or more');
   }
   const xPaid = paysX ? action.x ?? 0 : undefined;
-  const paid = payFrom(state, action.by, manaText, parseManaCost(manaText).x ? xPaid ?? 0 : 0, 0, action.card, { abilityOf: ch.typeLine, abilityColors: ch.colors }, spent);
+  /*
+    A waterbend cost (D1421): the artifacts and creatures the planner taps pay {1} each, and the rest
+    is paid as mana. The same plan `legalActions` asked, so the offer and the payment agree.
+  */
+  let waterbent: readonly string[] = [];
+  let manaToPay: string | ManaCost | undefined = manaText;
+  if (ability.cost.waterbend === true && manaText !== undefined) {
+    const plan = tapToPayPlan(
+      state, action.by, parseManaCost(manaText),
+      manaSources(state, action.by, { abilityOf: ch.typeLine, abilityColors: ch.colors }).filter((source) => !spent.has(source.key)),
+      'waterbend', spent, action.card,
+    );
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'not enough mana, counting every artifact and creature you could tap to waterbend');
+    }
+    waterbent = plan.tapped;
+    manaToPay = plan.cost;
+    for (const id of waterbent) spent.add(id);
+  }
+  const paid = payFrom(state, action.by, manaToPay, parseManaCost(manaText).x ? xPaid ?? 0 : 0, 0, action.card, { abilityOf: ch.typeLine, abilityColors: ch.colors }, spent);
   let next = paid.state;
+  for (const id of waterbent) next = withInstance(next, id, { tapped: true });
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.
   // The power of the creatures tapped for a `tapUntapped` cost, read before they tap (D637).

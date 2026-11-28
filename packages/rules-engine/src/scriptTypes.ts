@@ -2957,6 +2957,13 @@ export interface AbilityCost {
    */
   readonly energy?: number;
   /**
+   * Waterbend (D1421): "While paying a waterbend cost, you can tap your artifacts and creatures to
+   * help. Each one pays for {1}." The whole of `mana` is the waterbend cost, generic only. Which
+   * permanents are tapped is the engine's choice, as convoke's is (`tapToPayPlan`): mana first,
+   * then the shortfall, never a permanent the cost spends another way.
+   */
+  readonly waterbend?: true;
+  /**
    * "Activate this only from your graveyard" — unearth's zone, and the third thing a cost can be
    * paid out of the graveyard for (CR 702.84a).
    *

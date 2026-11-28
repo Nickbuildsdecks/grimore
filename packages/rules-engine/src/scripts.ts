@@ -37984,6 +37984,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let exilesSelf = false;
   let exilesFromGraveyard = false;
   let energy = 0;
+  let waterbends = false;
   let removes: { counter: string; amount: number } | null = null;
   let removesX: string | null = null;
   let puts: { counter: string; amount: number } | null = null;
@@ -38190,6 +38191,14 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     }
     if (new RegExp(`^Exile ${self}$`, 'i').test(component)) { exilesSelf = true; continue; }
     // "Pay {E}{E}": energy is counted, not parsed — `parseManaCost` rightly refuses {E} as mana.
+    // "Waterbend {3}" (D1421): generic mana the controller's artifacts and creatures may help pay.
+    const watery = /^Waterbend ((?:\{\d+\})+)$/i.exec(component);
+    if (watery !== null) {
+      if (waterbends) return null;
+      waterbends = true;
+      mana.push(watery[1]!);
+      continue;
+    }
     const charged = /^Pay ((?:\{E\})+)$/i.exec(component);
     if (charged !== null) { energy += charged[1]!.length / 3; continue; }
     /*
@@ -38384,6 +38393,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     Sacrifice a creature". One card is a line here, not a second question in two clients.
   */
   if ((discardsACard || discardsAtRandom) && sacrifices !== null) return null;
+  // The waterbend cost is the whole mana cost (D1421): no other mana beside it.
+  if (waterbends && mana.length !== 1) return null;
   const cost: AbilityCost = {
     ...(mana.length === 0 ? {} : { mana: mana.join('') }),
     ...(taps === 1 ? { tap: true } : {}),
@@ -38405,6 +38416,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(removesX === null ? {} : { removeXCounters: removesX }),
     ...(puts === null ? {} : { putCounter: puts }),
     ...(energy === 0 ? {} : { energy }),
+    ...(waterbends ? { waterbend: true as const } : {}),
     ...(exilesSelf ? { exileSelf: true as const } : {}),
     ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
     ...(tapsOthers === null ? {} : { tapUntapped: tapsOthers }),
