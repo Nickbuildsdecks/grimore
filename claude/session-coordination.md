@@ -343,3 +343,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1424 pushed in 33d0c64. D1425 four conditions (fewer than N in hand, creatures-died, no opponent controls, empty graveyard); the D564 pin's death count moved to its read rows. Sweep 111001 (D1421): 100/100, 61.3 turns.
 - D1425 pushed in 5e29dc8. D1426 Mana Reflection and Nyxbloom Ancient (CardScript.tapManaMultiply, tapManaMultiplier in activate, manaSources and potentialMana).
 - D1426 pushed in 29be891. D1427 two-kind library search (Krosan Verge), beside Myriad Landscape's reader.
+- D1427 pushed in 2413426. D1428 clone exceptions (size, quoted ability, triggered keyword) in copyExceptions.

@@ -41335,10 +41335,13 @@ function copyExceptions(
   const addSubtypes: string[] = [];
   let notLegendary = false;
   const keywordLines: string[] = [];
+  let size: { power: string; toughness: string } | null = null;
+  const quotedLines: string[] = [];
   const exceptions = printed === undefined ? [] : printed.split(/,?\s*(?:and\s+)?(?=it(?:'s| is| isn't| has)\s)/i)
     .map((part) => part.replace(/,\s*$/, '').trim()).filter((part) => part !== '');
   for (const exception of exceptions) {
-    const typed = /^it's an? (.+) in addition to its other types$/i.exec(exception);
+    // "… its other creature types" too (D1428, Sakashima's Student): a creature type is still added.
+    const typed = /^it's an? (.+) in addition to its other (?:creature )?types$/i.exec(exception);
     if (typed !== null) {
       for (const word of typed[1]!.split(/\s+/)) {
         if (permanentWordMatch(word) === null) return null;
@@ -41347,8 +41350,42 @@ function copyExceptions(
       continue;
     }
     if (/^it isn't legendary$/i.test(exception)) { notLegendary = true; continue; }
+    // "Except it's 7/7" (D1428, Quicksilver Gargantuan): a printed size, as eternalize's is.
+    const sized = /^it's (\d+)\/(\d+)$/i.exec(exception);
+    if (sized !== null) { size = { power: sized[1]!, toughness: sized[2]! }; continue; }
+    /*
+      A quoted ability (D1428): Phantasmal Image's "When this creature becomes the target of a spell
+      or ability, sacrifice it", Mercurial Pretender's bounce, Machine God's Effigy's {T}: Add {U}. A
+      line on the copy's text, read as every printed line is. Only a line this file reads on its own,
+      so the copy never carries a line nothing runs: anything else refuses the clone.
+    */
+    const quotedAbility = /^it has "(.+)"$/i.exec(exception);
+    if (quotedAbility !== null) {
+      const ability = quotedAbility[1]!.trim();
+      const reads = isManaAbilityLine(ability)
+        ? /^\{T\}: Add (?:\{[WUBRGC]\})+\.?$/i.test(ability)
+        : lineScriptFor(ability, 'Test Copy') !== null;
+      if (!reads) return null;
+      quotedLines.push(ability);
+      continue;
+    }
     const has = /^it has (.+)$/i.exec(exception);
     if (has !== null) {
+      /*
+        A keyword that is a triggered ability rather than a static one (D1428): Dack's Duplicate's
+        "haste and dethrone". Each of those is written as its own line, read only if this file reads
+        it as one.
+      */
+      const names = has[1]!.trim().replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+/).map((k) => k.trim()).filter((k) => k !== '');
+      const asLines = names.filter((k) => grantedKeywords(k) === null);
+      if (asLines.length > 0) {
+        const lines = asLines.map((k) => `${k.charAt(0).toUpperCase()}${k.slice(1)}`);
+        if (!lines.every((line) => lineScriptFor(line, 'Test Copy') !== null)) return null;
+        quotedLines.push(...lines);
+        const statics = names.filter((k) => grantedKeywords(k) !== null);
+        if (statics.length > 0) keywordLines.push(...grantedKeywords(statics.join(', '))!.map((k) => `${k.charAt(0).toUpperCase()}${k.slice(1)}`));
+        continue;
+      }
       const keywords = grantedKeywords(has[1]!);
       if (keywords === null) return null;
       keywordLines.push(...keywords.map((k) => `${k.charAt(0).toUpperCase()}${k.slice(1)}`));
@@ -41370,7 +41407,10 @@ function copyExceptions(
       return {
         as: `copy-${exceptions.join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         typeLine: `${[...supers, ...added, ...types].join(' ')}${subs.length === 0 ? '' : ` — ${subs.join(' ')}`}`,
-        ...(keywordLines.length === 0 ? {} : { extraText: keywordLines.join(', ') }),
+        ...(keywordLines.length === 0 && quotedLines.length === 0 ? {} : {
+          extraText: [...(keywordLines.length === 0 ? [] : [keywordLines.join(', ')]), ...quotedLines].join('\n'),
+        }),
+        ...(size === null ? {} : size),
       };
     },
   };
@@ -41403,7 +41443,8 @@ function entersAsCopyFromLine(line: string, name: string): Partial<CardScript> |
   const text = plain(line).trim();
   const read = new RegExp(
     `^You may have ${selfRef(name)} enter(?: the battlefield)? as a copy of (?:any|an?) (.+?)`
-    + '( on the battlefield| you control| an opponent controls)(?:, except (.+?))?\\.$',
+    // A quoted ability ends the line '."' (D1428), so the full stop is optional and the quote stays in.
+    + '( on the battlefield| you control| an opponent controls)(?:, except (.+?))?\\.?$',
     'i',
   ).exec(text);
   if (read === null) return null;

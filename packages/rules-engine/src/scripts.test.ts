@@ -53928,6 +53928,56 @@ describe('a search for two kinds of card: Krosan Verge (D1427)', () => {
   });
 });
 
+describe('clone exceptions: a printed size, a quoted ability, a triggered keyword (D1428)', () => {
+  const IMAGE = { name: 'Test Image', type_line: 'Creature — Illusion', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '0', toughness: '0',
+    oracle_text: 'You may have Test Image enter as a copy of any creature on the battlefield, except it\'s an Illusion in addition to its other types and it has "When this creature becomes the target of a spell or ability, sacrifice it."' };
+  const GARGANTUAN = { name: 'Test Gargantuan', type_line: 'Creature — Shapeshifter', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '7', toughness: '7',
+    oracle_text: "You may have Test Gargantuan enter as a copy of any creature on the battlefield, except it's 7/7." };
+  const DUPLICATE = { name: 'Test Duplicate', type_line: 'Creature — Shapeshifter', mana_cost: '{0}', cmc: 0, colors: ['U', 'R'], layout: 'normal', power: '0', toughness: '0',
+    oracle_text: 'You may have Test Duplicate enter as a copy of any creature on the battlefield, except it has haste and dethrone.' };
+  const PUMP = { name: 'Test Pump', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gets +1/+1 until end of turn.' };
+  const ROWS = [IMAGE, GARGANTUAN, DUPLICATE, PUMP];
+  const deck = customDeck({ id: 'd1428', name: 'Clones', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1428', 1: 'd1428' }, deckSpecs: { d1428: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 0: ['Grizzly Bears', 'Island'], 1: [] }, turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const copyBears = (s0: GameState, name: string): { s: GameState; id: string } => {
+    let s = passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', name) } as Action));
+    const id = s.stackObjects[s.stackOrder[0]!]!.source;
+    s = drain(decide(s, ['Grizzly Bears']), 20);
+    return { s, id };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A quoted ability this file does not read refuses the clone rather than copying a dead line.
+    const dead = compileCard({ ...IMAGE, name: 'Test Dead', oracle_text: 'You may have Test Dead enter as a copy of any creature on the battlefield, except it has "{X}: This creature has base power and toughness X/X."' } as never);
+    expect(dead.ok && dead.unread.length).toBe(1);
+  });
+
+  it('the Gargantuan is a 7/7 Bears', () => {
+    const { s, id } = copyBears(table(['Test Gargantuan']), 'Test Gargantuan');
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect([nameOf(s, id), ch.power, ch.toughness]).toEqual(['Grizzly Bears', 7, 7]);
+  });
+
+  it('the Image is an Illusion Bears that is sacrificed when it becomes a target', () => {
+    let { s, id } = copyBears(table(['Test Image', 'Test Pump']), 'Test Image');
+    expect(s.cardDefs[s.instances[id]!.defKey]!.typeLine).toContain('Illusion');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pump'), targets: [{ kind: 'card', id }] } as Action)), 30);
+    expect(s.instances[id]?.zone ?? 'gone').not.toBe('battlefield');
+  });
+
+  it('the Duplicate is a Bears with haste and dethrone', () => {
+    const { s, id } = copyBears(table(['Test Duplicate']), 'Test Duplicate');
+    expect(characteristicsOf(s, s.instances[id]!).keywords.has('haste')).toBe(true);
+    expect(s.cardDefs[s.instances[id]!.defKey]!.oracleText).toMatch(/Dethrone/);
+    expect(scriptForCard(s.cardDefs[s.instances[id]!.defKey])?.triggers?.length ?? 0).toBeGreaterThan(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
