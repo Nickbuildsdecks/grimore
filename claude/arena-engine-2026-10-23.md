@@ -52186,3 +52186,40 @@ Faults injected by hand: 4, of which 3 caught.
 The scripts tests, compile tests and pins: 6728 of 6728 pass. Test typecheck clean.
 
 Coverage: 17,851 of 31,900 cards (+2 over D1404's 17,849), 41,132 of 59,888 lines (+3).
+
+## D1406 — Two colours, and life gained this turn, as a static condition
+
+"As long as you control a red or white permanent, Battle Brawler gets +1/+0 and has first strike."
+`boardCondition` read one colour. "As long as you gained life this turn" and "if you gained life
+this turn" had a trigger's reading (`interveningConditionFor`) but no static one, so D1405's
+Oathsworn Vampire and the Infusion statics (Tenured Concocter, Ulna Alley Shopkeep, Thornfist
+Striker) stayed unread.
+
+**The colours.** "A <colour> or <colour> permanent" (or creature, and the rest of `boardCondition`'s
+kinds) is either colour, through `board-has`'s `colours`, which was already an "any of".
+
+**The life.** A new condition kind, `controller-gained-life`, holds while its controller's
+`lifeGainedThisTurn` is above nought. `staticCondition` reads "you gained life this turn" and "you've
+gained life this turn" into it.
+
+Read whole now: Battle Brawler, Abzan Kin-Guard, Marang River Prowler, Oathsworn Vampire, Tenured
+Concocter, Ulna Alley Shopkeep and Thornfist Striker. The Runemark cycle ("Enchanted creature has
+vigilance as long as you control a black or green permanent") and Hungering Yeti are still unread.
+
+**Tests.** 4 engine tests:
+- Five fixtures read whole.
+- The Brawler is 3/2 with first strike beside a red creature or a white one, and 2/2 beside a
+  green one.
+- The Concocter gets +2/+0 once its controller gains life.
+- The Oathsworn is offered from the graveyard only after life was gained this turn.
+
+Faults injected by hand: 4, all caught. The first was caught only once a white creature joined the
+test.
+- The second colour dropped: caught.
+- The life condition always true: caught.
+- The life condition not read: caught.
+- The second colour not parsed: caught.
+
+The scripts tests, compile tests and pins: 6732 of 6732 pass. Test typecheck clean.
+
+Coverage: 17,859 of 31,900 cards (+8 over D1405's 17,851), 41,140 of 59,888 lines (+8).
