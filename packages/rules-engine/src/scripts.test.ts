@@ -38,7 +38,8 @@ import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
-import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
+import { CARD_SCRIPTS, PEST_TOKEN, ROLE_TOKENS, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
+import { createAttachedToken } from './effects.js';
 import { maxHandSize } from './automation.js';
 
 /**
@@ -53261,6 +53262,138 @@ describe('a mana ability paid with energy or a counter, pressed by the player (D
     const core = find(s, 0, 'battlefield', "Mirrodin's Core");
     const colours = legalActions(s, 0).plays.filter((p) => p.card === core && p.kind === 'activate' && /Add \{[WUBRG]\}/.test(p.description));
     expect(colours).toEqual([]);
+  });
+});
+
+describe('Role tokens: Aura tokens created attached, one per controller on a creature (D1418)', () => {
+  const RAGE = { name: 'Test Rage', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Target creature gets +2/+0 until end of turn. Create a Monster Role token attached to it. (If you control another Role on it, put that one into the graveyard. Enchanted creature gets +1/+1 and has trample.)' };
+  const TREATMENT = { name: 'Test Treatment', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Target creature you control gains hexproof until end of turn. Create a Royal Role token attached to that creature. (If you control another Role on it, put that one into the graveyard. Enchanted creature gets +1/+1 and has ward {1}.)' };
+  const HEXMAGE = { name: 'Test Hexmage', type_line: 'Creature — Human Warlock', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '3', toughness: '2',
+    oracle_text: 'When Test Hexmage enters, create a Cursed Role token attached to target creature you control. (If you control another Role on it, put that one into the graveyard. Enchanted creature is 1/1.)' };
+  const VETERAN = { name: 'Test Veteran', type_line: 'Creature — Human Knight', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '1',
+    oracle_text: '{0}, Sacrifice Test Veteran: Create a Young Hero Role token attached to another target creature. (If you control another Role on it, put that one into the graveyard. Enchanted creature has "Whenever this creature attacks, if its toughness is 3 or less, put a +1/+1 counter on it.")' };
+  const PARENTS = { name: 'Test Parents', type_line: 'Creature — Human Peasant', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', power: '3', toughness: '2',
+    oracle_text: 'When Test Parents dies, create a Young Hero Role token attached to up to one target creature you control.' };
+  const SELLSWORD = { name: 'Test Sell-Sword', type_line: 'Creature — Angel Mercenary', mana_cost: '{4}{R}{W}', cmc: 6, colors: ['R', 'W'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: 'Flying, vigilance\nWhenever Test Sell-Sword attacks, if its power is 6 or greater, draw a card.' };
+  const ROWS = [RAGE, TREATMENT, HEXMAGE, VETERAN, PARENTS, SELLSWORD];
+  const deck = customDeck({ id: 'd1418', name: 'Roles', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Mountain', count: 40 }], data: ROWS as never[] });
+  const board = (hand: readonly string[], mine: readonly string[] = ['Grizzly Bears']): GameState => advanceTo(arena({
+    decks: { 0: 'd1418', 1: 'd1418' }, deckSpecs: { d1418: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 0: [...mine], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const rolesOn = (s: GameState, host: string): string[] => Object.values(s.instances)
+    .filter((inst) => inst.zone === 'battlefield' && inst.attachedTo === host).map((inst) => s.cardDefs[inst.defKey]!.name);
+  const cast = (s: GameState, card: string, target: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'card', id: target }],
+  } as Action)), 20);
+
+  it('every Role reads whole as an Aura, and so do the fixtures', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const role of Object.values(ROLE_TOKENS)) {
+      const read = compileCard({ name: role.name, type_line: role.typeLine, mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: role.oracleText } as never);
+      expect(read, role.name).toMatchObject({ ok: true, unread: [] });
+      expect(read.ok && read.script?.aura !== undefined, role.name).toBe(true);
+    }
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(TREATMENT as never)).toMatchObject({ script: { targets: [{ kind: 'creature', friendly: true }] } });
+  });
+
+  it('a Monster Role makes the Bears a 3/3 with trample, on top of the +2/+0', () => {
+    let s = board(['Test Rage']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = cast(s, 'Test Rage', bears);
+    expect(rolesOn(s, bears)).toEqual(['Monster Role']);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect([ch.power, ch.toughness, ch.keywords.has('trample')]).toEqual([5, 3, true]);
+  });
+
+  it('a second Role of yours on the same creature replaces the first', () => {
+    let s = board(['Test Rage', 'Test Treatment']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = cast(s, 'Test Rage', bears);
+    s = cast(s, 'Test Treatment', bears);
+    expect(rolesOn(s, bears)).toEqual(['Royal Role']);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect([ch.power, ch.toughness, ch.keywords.has('trample')]).toEqual([5, 3, false]);
+  });
+
+  it("another player's Role on it stays", () => {
+    let s = board(['Test Rage']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = createAttachedToken(s, 1 as SeatIndex, ROLE_TOKENS['Cursed']!, bears);
+    s = cast(s, 'Test Rage', bears);
+    expect(rolesOn(s, bears).sort()).toEqual(['Cursed Role', 'Monster Role']);
+  });
+
+  it('the Cursed Role makes a 4/4 a 1/1, its keywords kept', () => {
+    let s = board([], ['Test Sell-Sword']);
+    const angel = find(s, 0, 'battlefield', 'Test Sell-Sword');
+    s = createAttachedToken(s, 0 as SeatIndex, ROLE_TOKENS['Cursed']!, angel);
+    const ch = characteristicsOf(s, s.instances[angel]!);
+    expect([ch.power, ch.toughness, ch.keywords.has('flying')]).toEqual([1, 1, true]);
+  });
+
+  it('nothing is made for a creature that is gone', () => {
+    const s = board([]);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const gone = destroy(s, bears);
+    expect(createAttachedToken(gone, 0 as SeatIndex, ROLE_TOKENS['Monster']!, bears)).toBe(gone);
+  });
+
+  it('a Young Hero Role grows a small attacker, and the Role goes when the Bears do', () => {
+    let s = board([], ['Grizzly Bears', 'Test Veteran']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const veteran = find(s, 0, 'battlefield', 'Test Veteran');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: veteran, abilityIndex: 0, targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    expect(rolesOn(s, bears)).toEqual(['Young Hero Role']);
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] } as Action)), 20);
+    expect(s.instances[bears]!.counters['+1/+1'] ?? 0).toBe(1);
+    s = destroy(s, bears);
+    s = drain(s, 20);
+    expect(Object.values(s.instances).some((inst) => inst.zone === 'battlefield' && s.cardDefs[inst.defKey]!.name === 'Young Hero Role')).toBe(false);
+  });
+
+  it('the Young Hero counter stops at toughness 4', () => {
+    let s = board([], ['Grizzly Bears']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = addCounters(s, bears, '+1/+1', 2);
+    s = createAttachedToken(s, 0 as SeatIndex, ROLE_TOKENS['Young Hero']!, bears);
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] } as Action)), 20);
+    expect(s.instances[bears]!.counters['+1/+1'] ?? 0).toBe(2);
+  });
+
+  it('a Wicked Role put into the graveyard by a newer Role drains each opponent', () => {
+    let s = board(['Test Rage']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = createAttachedToken(s, 0 as SeatIndex, ROLE_TOKENS['Wicked']!, bears);
+    s = cast(s, 'Test Rage', bears);
+    expect(rolesOn(s, bears)).toEqual(['Monster Role']);
+    expect(life(s, 1)).toBe(19);
+  });
+
+  it('"its" after another creature\'s attack is not the card itself', () => {
+    const writ = compileCard({ name: 'Test Writ', type_line: 'Enchantment — Aura', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+      oracle_text: 'Enchant creature\nWhenever enchanted creature attacks, if its power is 2 or less, draw a card.' } as never);
+    expect(writ.ok && writ.unread.map((u) => u.line)).toEqual(['Whenever enchanted creature attacks, if its power is 2 or less, draw a card.']);
+  });
+
+  it('"if its power is 6 or greater" is the attacker itself, read live', () => {
+    const attackWith = (extra: number): number => {
+      let s = board([], ['Test Sell-Sword']);
+      const sword = find(s, 0, 'battlefield', 'Test Sell-Sword');
+      if (extra > 0) s = addCounters(s, sword, '+1/+1', extra);
+      const held = ids(s, 0, 'hand').length;
+      s = advanceTo(s, 'declare-attackers');
+      s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: sword, defender: 1 }] } as Action)), 20);
+      return ids(s, 0, 'hand').length - held;
+    };
+    expect(attackWith(0)).toBe(0);
+    expect(attackWith(2)).toBe(1);
   });
 });
 

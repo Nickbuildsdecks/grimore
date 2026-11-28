@@ -4115,6 +4115,31 @@ export function stateBasedActions(state: GameState): GameState {
       }
     }
 
+    /*
+      The Role rule (D1418), a state-based action: a permanent with more than one Role attached that one player
+      controls keeps the newest, and the others go to their owners' graveyards. Newest is last in
+      that player's battlefield order, which is the order things arrived in.
+    */
+    for (const seatRecord of next.seats) {
+      const byHost = new Map<string, string[]>();
+      for (const id of listAt(next, zoneKey(seatRecord.index, 'battlefield'))) {
+        const inst = next.instances[id];
+        if (inst === undefined || inst.attachedTo === null) continue;
+        if (!hasSubtype(characteristicsOf(next, inst).typeLine, 'role')) continue;
+        const seen = byHost.get(inst.attachedTo);
+        if (seen === undefined) byHost.set(inst.attachedTo, [id]);
+        else seen.push(id);
+      }
+      for (const ids of byHost.values()) {
+        for (const id of ids.slice(0, -1)) {
+          const inst = next.instances[id];
+          if (inst === undefined) continue;
+          next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+          changed = true;
+        }
+      }
+    }
+
     // Ascend on a permanent (D762): ten or more permanents, and the city's blessing for good.
     const blessed = ascendBlessings(next);
     if (blessed !== next) {

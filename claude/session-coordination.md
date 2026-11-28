@@ -333,3 +333,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1414 pushed in da906ec. D1415 'up to one target' as optional (readEffect fallback over readEffectCore; exile-until-it-leaves shape): scripts.ts.
 - D1415 pushed in b5005c5. D1416 distribute +1/+1 counters among targets (scripts.ts), friendly division in the bot (dividedAimings).
 - D1416 pushed in 43297d4. D1417 mana abilities with an energy or fixed counter cost (compile.ts routing; manaSources skips both).
+- D1417 pushed in 4a2e6f8. D1418 Role tokens (ROLE_TOKENS, createAttachedToken, the Role state-based check in automation, 'if its power is N' after a self head).

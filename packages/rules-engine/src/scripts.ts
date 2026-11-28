@@ -34,7 +34,7 @@ import {
   addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
   counterSpell, returnSpellToHand, putOnTopOfLibrary,
-  counterUnlessPaid, createToken,
+  counterUnlessPaid, createToken, createAttachedToken,
   IMPENDED, REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
@@ -15392,6 +15392,8 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   // Tapped and attacking (D1183): see `attackingTokenEffect`.
   const attackingTokens = attackingTokenEffect(text, name);
   if (attackingTokens !== null) return attackingTokens;
+  const role = roleTokenEffect(text);
+  if (role !== null) return role;
   const token = tokenEffect(text, name);
   if (token !== null) return token;
   /*
@@ -18495,6 +18497,11 @@ function attachmentBonus(
   }
   if (/^is indestructible$/i.test(tail)) {
     return { bonus: { keywords: ['indestructible'] }, harmful: false };
+  }
+  // "Enchanted creature is 1/1" (D1418, the Cursed Role): its base power and toughness (layer 7b).
+  const isSize = /^is (\d+)\/(\d+)$/.exec(tail);
+  if (isSize !== null && /^enchanted creature\b/i.test(plain(line).trim())) {
+    return { bonus: { setPower: Number(isSize[1]), setToughness: Number(isSize[2]) }, harmful: true };
   }
 
   /*
@@ -23806,6 +23813,49 @@ function subtypeFromTribalPhrase(word: string, number: 'plural' | 'singular'): s
  * both go through `tokenEffect`'s own count machinery, so "two Treasure tokens" and "a Clue token
  * for each artifact you control" need nothing new here.
  */
+/*
+  The Roles (D1418): Aura tokens with "enchant creature", each one's ability quoted from the
+  reminder text the cards that make one print. The corpus prints these seven on legal cards. The
+  Huntsman and Questing Roles are left out: the first is printed only on digital cards, and the
+  second grants the abilities of a named card, which no reader here takes.
+*/
+const roleToken = (name: string, text: string): CardDef => ({
+  name: `${name} Role`, typeLine: 'Token Enchantment — Aura Role', manaCost: '', cmc: 0,
+  oracleText: `Enchant creature\n${text}`, colors: [],
+});
+export const ROLE_TOKENS: Readonly<Record<string, CardDef>> = {
+  Cursed: roleToken('Cursed', 'Enchanted creature is 1/1.'),
+  Monster: roleToken('Monster', 'Enchanted creature gets +1/+1 and has trample.'),
+  Royal: roleToken('Royal', 'Enchanted creature gets +1/+1 and has ward {1}.'),
+  Sorcerer: roleToken('Sorcerer', 'Enchanted creature gets +1/+1 and has "Whenever this creature attacks, scry 1."'),
+  Virtuous: roleToken('Virtuous', 'Enchanted creature gets +1/+1 for each enchantment you control.'),
+  // "Put into a graveyard" as printed is from anywhere; a token only ever gets there from the battlefield.
+  Wicked: roleToken('Wicked', 'Enchanted creature gets +1/+1.\nWhen this Aura is put into a graveyard from the battlefield, each opponent loses 1 life.'),
+  'Young Hero': roleToken('Young Hero', 'Enchanted creature has "Whenever this creature attacks, if its toughness is 3 or less, put a +1/+1 counter on it."'),
+};
+
+/**
+ * "Create a Monster Role token attached to target creature you control" (D1418). One creature,
+ * pointed at as printed: "another", "up to one", "you control" or not. "Attached to it" and "attached
+ * to that creature" are this sentence with the referent in the target's place (`referentEffect`).
+ * Every Role but the Cursed one helps, so the bot aims those at its own creatures.
+ */
+function roleTokenEffect(text: string): ReadEffect | null {
+  const made = /^create an? (cursed|monster|royal|sorcerer|virtuous|wicked|young hero) role token attached to (.+)$/i.exec(text.trim().replace(/\.$/, ''));
+  if (made === null) return null;
+  const key = Object.keys(ROLE_TOKENS).find((k) => k.toLowerCase() === made[1]!.toLowerCase())!;
+  const spec = targetSpecFrom(made[2]!, key !== 'Cursed');
+  if (spec === null || spec.kind !== 'creature' || (spec.count ?? 1) !== 1) return null;
+  const token = ROLE_TOKENS[key]!;
+  return {
+    targets: [spec],
+    effect: (c) => {
+      const host = firstCardTarget(c);
+      return host === null ? c.state : createAttachedToken(c.state, c.controller, token, host);
+    },
+  };
+}
+
 const NAMED_TOKENS: Readonly<Record<string, CardDef>> = {
   Treasure: TREASURE_TOKEN,
   Clue: CLUE_TOKEN,
@@ -42196,11 +42246,27 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
   const handCount = /^each (?:opponent's|player's) upkeep$/i.test(clause[1]!.replace(/^At the beginning of /i, ''))
     ? /^that player has (no|one or fewer|two or fewer|three or fewer) cards in hand$/i.exec(clause[2]!.trim())
     : null;
+  /*
+    "Whenever ~ attacks, if its power is 6 or greater" (D1418): Angelic Sell-Sword, and the Young
+    Hero Role's "Whenever this creature attacks, if its toughness is 3 or less". The creature the
+    trigger is about, read live. "Its" is read only after a head about the card itself. After
+    "Whenever enchanted creature attacks" (Writ of Passage) it is another creature.
+  */
+  const sizeIf = new RegExp(`^(?:its|${selfRef(name)}['’]s) (power|toughness) is (\\w+) or (less|greater)$`, 'i').exec(clause[2]!.trim());
+  const aboutSelf = new RegExp(`^(?:When|Whenever) (?:${selfRef(name)}|this creature) `, 'i').test(clause[1]!);
+  const sizeN = sizeIf === null || !aboutSelf ? null : countFrom(sizeIf[2]!);
+  const sizeHolds = sizeN === null ? null : (c: EffectContext): boolean => {
+    const inst = c.state.instances[c.source];
+    if (inst === undefined || inst.zone !== 'battlefield') return false;
+    const ch = characteristicsOf(c.state, inst);
+    const value = sizeIf![1]!.toLowerCase() === 'power' ? ch.power : ch.toughness;
+    return sizeIf![3]!.toLowerCase() === 'less' ? value <= sizeN : value >= sizeN;
+  };
   const most = handCount === null ? undefined
     : ({ no: 0, 'one or fewer': 1, 'two or fewer': 2, 'three or fewer': 3 } as Record<string, number>)[handCount[1]!.toLowerCase()];
   const condition = most !== undefined
     ? (c: EffectContext) => (c.state.zones[`${c.state.activeSeat}:hand`] ?? []).length <= most
-    : interveningConditionFor(clause[2]!, name);
+    : sizeHolds ?? interveningConditionFor(clause[2]!, name);
   if (condition === null) return null;
   const read = lineScriptFor(`${clause[1]!}, ${clause[3]!}`, name);
   if (read === null) return null;

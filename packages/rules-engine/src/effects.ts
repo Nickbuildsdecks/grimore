@@ -3124,6 +3124,35 @@ export function createTappedTokens(state: GameState, seat: SeatIndex, card: Card
 }
 
 /**
+ * An Aura token created attached to a permanent (D1418): the Roles, "create a Monster Role token
+ * attached to target creature you control". It was never a spell, so nothing resolved it onto its
+ * host. It arrives attached, and what it grants is installed here, as an Aura spell's is as it
+ * resolves (`addAuraEffect`). Nothing is created when the host is gone. Every copy a Parallel Lives
+ * makes goes on the same host, and the Role rule keeps the newest.
+ */
+export function createAttachedToken(state: GameState, seat: SeatIndex, card: CardDef, hostId: string): GameState {
+  const host = state.instances[hostId];
+  if (host === undefined || host.zone !== 'battlefield') return state;
+  const made = addTokens(state, seat, card);
+  let next = made.state;
+  for (const id of made.created) {
+    const aura = scriptOfCard(next.cardDefs[next.instances[id]?.defKey ?? ''])?.aura;
+    next = withInstance(next, id, { attachedTo: hostId });
+    if (aura === undefined) continue;
+    const seq = next.autoSeq + 1;
+    const effect: ContinuousEffect = {
+      id: `fx${seq}`, source: id, controller: seat,
+      scope: { kind: 'cards', ids: [hostId] },
+      duration: 'permanent', createdTurn: next.turn,
+      ...modsFrom(aura.effect),
+    };
+    next = { ...next, autoSeq: seq, effects: [...next.effects, effect] };
+    for (const part of aura.effect.alsoParts ?? []) next = staticEffect(next, id, seat, effect.scope, part);
+  }
+  return next;
+}
+
+/**
  * `createToken`, and the ids of what it made.
  *
  * Every caller but one wants the state and nothing else, which is why `createToken` is the shape
