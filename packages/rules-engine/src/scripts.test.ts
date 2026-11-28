@@ -53441,6 +53441,83 @@ describe('a Role on the card itself, or on what its trigger is about (D1419)', (
   });
 });
 
+describe('earthbend: a land made a creature, back tapped when it dies or is exiled (D1420)', () => {
+  const MOLE = { name: 'Test Mole', type_line: 'Creature — Badger Mole', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: "When this creature enters, earthbend 2. (Target land you control becomes a 0/0 creature with haste that's still a land. Put two +1/+1 counters on it. When it dies or is exiled, return it to the battlefield tapped.)" };
+  const LESSON = { name: 'Test Lesson', type_line: 'Sorcery — Lesson', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: "Earthbend 4. (Target land you control becomes a 0/0 creature with haste that's still a land. Put four +1/+1 counters on it. When it dies or is exiled, return it to the battlefield tapped.)" };
+  const AVALANCHE = { name: 'Test Avalanche', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Earthbend X, where X is the number of Forests you control.' };
+  const ROWS = [MOLE, LESSON, AVALANCHE];
+  const deck = customDeck({ id: 'd1420', name: 'Earth', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 50 }], data: ROWS as never[] });
+  const board = (hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1420', 1: 'd1420' }, deckSpecs: { d1420: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 0: ['Forest', 'Forest', 'Forest'], 1: ['Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bend = (s: GameState, card: string): { s: GameState; land: string } => {
+    const land = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Forest')!;
+    const next = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'card', id: land }] } as Action)), 20);
+    return { s: next, land };
+  };
+
+  it('reads whole, aimed at a land of your own', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(LESSON as never)).toMatchObject({ script: { targets: [{ friendly: true }] } });
+  });
+
+  it('the Forest becomes a 4/4 creature with haste, still a Forest', () => {
+    const { s, land } = bend(board(['Test Lesson']), 'Test Lesson');
+    const ch = characteristicsOf(s, s.instances[land]!);
+    expect([ch.isCreature, ch.power, ch.toughness, ch.keywords.has('haste'), hasType(ch.typeLine, 'land')]).toEqual([true, 4, 4, true, true]);
+    expect(ch.typeLine.subtypes).toContain('Forest');
+  });
+
+  it('destroyed, it comes back tapped, a land again with no counters', () => {
+    let { s, land } = bend(board(['Test Lesson']), 'Test Lesson');
+    s = drain(passBoth(destroy(s, land)), 20);
+    const back = s.instances[land]!;
+    expect([back.zone, back.tapped, back.counters['+1/+1'] ?? 0]).toEqual(['battlefield', true, 0]);
+    expect(characteristicsOf(s, back).isCreature).toBe(false);
+  });
+
+  it('exiled, it comes back tapped as well', () => {
+    let { s, land } = bend(board(['Test Lesson']), 'Test Lesson');
+    s = drain(passBoth(exileCard(s, land)), 20);
+    expect([s.instances[land]!.zone, s.instances[land]!.tapped]).toEqual(['battlefield', true]);
+  });
+
+  it('the watch lasts past the turn it was made in, and fires once', () => {
+    let { s, land } = bend(board(['Test Lesson']), 'Test Lesson');
+    s = nextTurn(nextTurn(s));
+    s = drain(passBoth(destroy(s, land)), 20);
+    expect(s.instances[land]!.zone).toBe('battlefield');
+    // Back as a new object with no watch: a second death leaves it in the graveyard.
+    s = drain(passBoth(destroy(s, land)), 20);
+    expect(s.instances[land]!.zone).toBe('graveyard');
+  });
+
+  it('an ordinary death watch still fires only on a death, not on an exile', () => {
+    const WATCH = { name: 'Test Watch', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Choose target creature. When that creature dies this turn, draw a card.' };
+    const watchDeck = customDeck({ id: 'd1420w', name: 'Watch', entries: [{ name: 'Test Watch', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 52 }], data: [WATCH] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1420w', 1: 'd1420w' }, deckSpecs: { d1420w: watchDeck.deck }, hands: { 0: ['Test Watch'] },
+      battlefield: { 0: ['Forest'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Watch'), targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    const held = ids(s, 0, 'hand').length;
+    s = drain(passBoth(exileCard(s, bears)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(held);
+  });
+
+  it('X is the Forests you control as it resolves', () => {
+    const { s, land } = bend(board(['Test Avalanche']), 'Test Avalanche');
+    expect(s.instances[land]!.counters['+1/+1']).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

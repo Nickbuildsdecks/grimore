@@ -34,7 +34,7 @@ import {
   addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
   counterSpell, returnSpellToHand, putOnTopOfLibrary,
-  counterUnlessPaid, createToken, createAttachedToken,
+  counterUnlessPaid, createToken, createAttachedToken, earthbend,
   IMPENDED, REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
@@ -15394,6 +15394,8 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   if (attackingTokens !== null) return attackingTokens;
   const role = roleTokenEffect(text);
   if (role !== null) return role;
+  const bent = earthbendEffect(text, name);
+  if (bent !== null) return bent;
   const token = tokenEffect(text, name);
   if (token !== null) return token;
   /*
@@ -23872,6 +23874,33 @@ function roleTokenEffect(text: string): ReadEffect | null {
     effect: (c) => {
       const host = firstCardTarget(c);
       return host === null ? c.state : createAttachedToken(c.state, c.controller, token, host);
+    },
+  };
+}
+
+/**
+ * "Earthbend 2" and "Earthbend X, where X is the number of Forests you control" (D1420): see
+ * `earthbend`. The target is a land the ability's controller controls, which the bot picks among
+ * its own. X is counted as the ability resolves.
+ */
+function earthbendEffect(text: string, name: string): ReadEffect | null {
+  const bent = /^(?:you )?earthbend (\w+)(?:, where x is (.+))?$/i.exec(plain(text).trim().replace(/\.$/, ''));
+  if (bent === null) return null;
+  let count: ((c: EffectContext) => number) | null;
+  if (/^x$/i.test(bent[1]!)) {
+    count = bent[2] === undefined ? null : whereXCount(bent[2], name);
+  } else {
+    const n = countFrom(bent[1]!);
+    count = n === null || bent[2] !== undefined ? null : () => n;
+  }
+  const spec = targetSpecFrom('target land you control', true);
+  if (count === null || spec === null) return null;
+  const amount = count;
+  return {
+    targets: [spec],
+    effect: (c) => {
+      const land = firstCardTarget(c);
+      return land === null ? c.state : earthbend(c.state, land, c.controller, c.source, amount(c));
     },
   };
 }

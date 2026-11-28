@@ -550,7 +550,8 @@ export function raiseUnblockedAttacks(state: GameState): GameState {
 function fireDelayed(from: GameState, step: Step): GameState {
   if (from.delayed.length === 0) return from;
   // A death watch (D1222) lasts the turn it was made in, and is dropped on the next turn's first step.
-  const stale = from.delayed.filter((entry) => entry.onDeath === true && entry.createdTurn !== from.turn);
+  // Not a lasting one (D1420): earthbend's watch is for the rest of the game.
+  const stale = from.delayed.filter((entry) => entry.onDeath === true && entry.lasting !== true && entry.createdTurn !== from.turn);
   const state = stale.length === 0 ? from : { ...from, delayed: from.delayed.filter((entry) => !stale.includes(entry)) };
   const due = state.delayed.filter((entry) => {
     if (entry.onDeath === true) return false;
@@ -2738,10 +2739,15 @@ function batchCount(
  * still carries that object's `objectSeq`. The player who controlled it goes down as the actor, for
  * "its controller" — the snapshot's seat, which for a token is where it went (its owner's).
  */
-function fireDeathWatches(state: GameState, id: string): GameState {
+function fireDeathWatches(state: GameState, id: string, exiled = false): GameState {
   const was = state.vanished[id] ?? state.instances[id];
+  /*
+    A lasting watch (D1420) fires on any turn, and one that says "or is exiled" on an exile from the
+    battlefield too. An exile fires only those.
+  */
   const due = state.delayed.filter((entry) => entry.onDeath === true && entry.subject === id
-    && entry.createdTurn === state.turn
+    && (entry.lasting === true || entry.createdTurn === state.turn)
+    && (!exiled || entry.orExiled === true)
     && (entry.subjectSeq === undefined || (was?.objectSeq ?? 0) === entry.subjectSeq));
   if (due.length === 0) return state;
   let next: GameState = { ...state, delayed: state.delayed.filter((entry) => !due.includes(entry)) };
@@ -2750,6 +2756,11 @@ function fireDeathWatches(state: GameState, id: string): GameState {
       next, entry.source, entry.controller, entry.abilityIndex, [], 'triggered', entry.description,
       { subject: id, ...(was === undefined ? {} : { actor: was.zoneSeat }) },
     );
+    // An engine-known ability (D1420, earthbend's return), as `fireDelayed` marks one.
+    if (entry.builtin !== undefined) {
+      const top = next.stackOrder[next.stackOrder.length - 1]!;
+      next = { ...next, stackObjects: { ...next.stackObjects, [top]: { ...next.stackObjects[top]!, builtin: entry.builtin } } };
+    }
   }
   return next;
 }
@@ -2861,7 +2872,9 @@ function raise(
       event = { ...event, entered: kept };
     }
   }
-  let next = event.kind === 'dies' && subject !== undefined ? fireDeathWatches(state, subject) : state;
+  let next = event.kind === 'dies' && subject !== undefined ? fireDeathWatches(state, subject)
+    : event.kind === 'to-exile' && subject !== undefined && (event as Extract<TriggerEvent, { kind: 'to-exile' }>).cameFrom === 'battlefield'
+      ? fireDeathWatches(state, subject, true) : state;
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
       || event.kind === 'blocks' || event.kind === 'becomes-blocked'
@@ -7459,7 +7472,7 @@ function resolveObject(
  * if that object is still on the battlefield; one that left, or became a new object (CR 400.7),
  * has no subject and nothing happens.
  */
-const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one', Resolvable>> = {
+const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one' | 'return-tapped', Resolvable>> = {
   // The basilisks' "destroy that creature at end of combat" (D969). Only from the battlefield.
   destroy: {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
@@ -7500,6 +7513,18 @@ const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'dest
     effect: (c) => {
       const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
       return inst === undefined ? c.state : putOntoBattlefield(c.state, inst.id, inst.owner);
+    },
+  },
+  /*
+    Earthbend's return (D1420): "When it dies or is exiled, return it to the battlefield tapped",
+    under its owner's control, from the graveyard or exile it went to. A token has ceased to exist,
+    so there is nothing to return. A card that has moved on from there stays where it is.
+  */
+  'return-tapped': {
+    effect: (c) => {
+      const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+      return inst === undefined || (inst.zone !== 'graveyard' && inst.zone !== 'exile')
+        ? c.state : putOntoBattlefield(c.state, inst.id, inst.owner, { tapped: true });
     },
   },
   // "… under your control": the delayed ability's controller, who is the one that scheduled it.

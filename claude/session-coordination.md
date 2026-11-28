@@ -335,3 +335,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1416 pushed in 43297d4. D1417 mana abilities with an energy or fixed counter cost (compile.ts routing; manaSources skips both).
 - D1417 pushed in 4a2e6f8. D1418 Role tokens (ROLE_TOKENS, createAttachedToken, the Role state-based check in automation, 'if its power is N' after a self head).
 - D1418 pushed in f8513e0. D1419 a Role attached to the card itself or the trigger's permanent (selfEffect).
+- D1419 pushed in 7cc6d67; checkpoint 67d31bb. D1420 earthbend (effects.earthbend, lasting/orExiled death watch, builtin return-tapped).

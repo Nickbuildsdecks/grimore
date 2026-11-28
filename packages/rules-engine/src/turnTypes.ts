@@ -229,7 +229,7 @@ export interface DelayedTrigger {
    * (D1310) is Carrier Pigeons': "draw a card at the beginning of the next turn's upkeep", by the
    * ability's controller, with no subject.
    */
-  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one';
+  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one' | 'return-tapped';
   /**
    * Fires when `subject` dies, not at a step (D1222): "When that creature dies this turn, …". Only
    * during the turn it was made in (`createdTurn`), and only for the object it was made about
@@ -237,6 +237,10 @@ export interface DelayedTrigger {
    * `step`, which is only a placeholder here.
    */
   readonly onDeath?: true;
+  /** A death watch for the rest of the game rather than this turn (D1420, earthbend's return). */
+  readonly lasting?: true;
+  /** A death watch that also fires when `subject` is exiled from the battlefield (D1420). */
+  readonly orExiled?: true;
 }
 
 /** Steps in which a player may cast a sorcery-speed spell (their own main phase, empty stack). */
@@ -316,7 +320,7 @@ export interface StackObject {
   /** Which of the source's abilities, for activated and triggered objects. */
   readonly abilityIndex?: number;
   /** An engine-known delayed ability (D696); see `DelayedTrigger.builtin`. */
-  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one';
+  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one' | 'return-tapped';
   /**
    * Where this triggered ability was **defined**, when the permanent that has it did not print it.
    *

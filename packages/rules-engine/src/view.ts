@@ -710,7 +710,9 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
     stack,
     later: state.delayed.map((entry) => ({
       description: entry.description,
-      stepLabel: entry.onDeath === true ? 'When it dies this turn' : STEP_LABELS[entry.step],
+      stepLabel: entry.onDeath === true
+        ? (entry.orExiled === true ? 'When it dies or is exiled' : entry.lasting === true ? 'When it dies' : 'When it dies this turn')
+        : STEP_LABELS[entry.step],
     })),
     pools: state.pools,
     boundMana: state.boundMana ?? {},

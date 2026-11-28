@@ -2521,8 +2521,10 @@ export function scheduleDelayed(
     readonly of: 'you' | 'any';
     readonly subject?: string;
     readonly description: string;
-    readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one';
+    readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one' | 'return-tapped';
     readonly onDeath?: true;
+    readonly lasting?: true;
+    readonly orExiled?: true;
   },
 ): GameState {
   const seq = state.autoSeq + 1;
@@ -3150,6 +3152,29 @@ export function createAttachedToken(state: GameState, seat: SeatIndex, card: Car
     for (const part of aura.effect.alsoParts ?? []) next = staticEffect(next, id, seat, effect.scope, part);
   }
   return next;
+}
+
+/**
+ * Earthbend N (D1420), the reminder text every card prints: "Target land you control becomes a 0/0
+ * creature with haste that's still a land. Put N +1/+1 counters on it. When it dies or is exiled,
+ * return it to the battlefield tapped."
+ *
+ * The animation is awaken's (D932): a permanent effect whose source is the land itself, so it ends
+ * when the land leaves. The return is a death watch on the land (D1222) that lasts for the rest of
+ * the game and also fires on exile from the battlefield. It resolves as the builtin `return-tapped`.
+ */
+export const EARTHBEND_RETURN = 'When it dies or is exiled, return it to the battlefield tapped';
+export function earthbend(state: GameState, land: string, controller: SeatIndex, source: string, n: number): GameState {
+  const inst = state.instances[land];
+  if (inst === undefined || inst.zone !== 'battlefield') return state;
+  let next = pump(state, [land], land, controller, {
+    addTypes: ['Creature'], setPower: 0, setToughness: 0, keywords: ['haste'], duration: 'permanent',
+  });
+  if (n > 0) next = addCounters(next, land, '+1/+1', n);
+  return scheduleDelayed(next, {
+    source, controller, abilityIndex: -1, step: 'cleanup', of: 'any', subject: land,
+    description: EARTHBEND_RETURN, builtin: 'return-tapped', onDeath: true, lasting: true, orExiled: true,
+  });
 }
 
 /**
