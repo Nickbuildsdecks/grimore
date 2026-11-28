@@ -52302,3 +52302,32 @@ Faults injected by hand: 5, all caught.
 The scripts tests, compile tests and pins: 6740 of 6740 pass. Test typecheck clean.
 
 Coverage: 17,869 of 31,900 cards (+2 over D1407's 17,867), 41,151 of 59,888 lines (+3).
+
+## D1409 — "Whenever ~ attacks while …": Ferocious attackers
+
+"Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater,
+you gain 2 life" (Ravening Warg). D1148 read "Whenever you attack while …" as the intervening "if"
+it is closest to. A single attacker's "while" wasn't read.
+
+**The reading.** "Whenever ~ (or this creature) attacks while <condition>" is now read as "Whenever ~
+attacks, if <condition>", with D1148's known difference. The printed "while" is checked only as the
+ability triggers (CR 603.2), and an intervening "if" is checked again as it resolves (CR 603.4). The
+two differ only when the condition stops holding before the trigger resolves, and then this does
+nothing where the card would still act. "While saddled" stays with D776's reader, which reads it as
+the state it is.
+
+Read whole now: Ravening Warg, Nighthowl Pursuer, Ruby, Daring Tracker, Courageous Goblin and
+Wilderland Scrounger. Wargling's line is still unread.
+
+**Tests.** 2 engine tests:
+- The fixtures read whole, as one attack trigger.
+- Attacking beside a 4/4 gains 2 life, and beside a 3/3 Hill Giant gains none.
+
+Faults injected by hand: 2, both caught.
+- The rewrite not made: caught.
+- The condition dropped: caught.
+
+D776's saddled tests pass alongside. The scripts tests, compile tests and pins: 6742 of 6742 pass.
+Test typecheck clean.
+
+Coverage: 17,879 of 31,900 cards (+10 over D1408's 17,869), 41,162 of 59,888 lines (+11).
