@@ -69296,3 +69296,44 @@ The scripts tests, compile tests and pins: 6686 of 6686 pass. Web tests: 284 of 
 typecheck and web typecheck clean.
 
 Coverage: 17,813 of 31,900 cards (+1 over D1396's 17,812), 41,082 of 59,888 lines (+1).
+
+## D1398 — Exile a creature you control as a cost: Food Chain
+
+"Exile a creature you control: Add X mana of any one color, where X is 1 plus the exiled creature's
+mana value. Spend this mana only to cast creature spells." That is Food Chain, a staple on the
+second staples list. D1397 made a pressed restricted mana ability float its mana marked; what was
+left was the cost and the amount.
+
+**The cost.** `AbilityCost.exileInsteadOfSacrifice`: "Exile a creature you control", "… another
+creature you control" and "… an artifact you control" set `sacrifice` as the matching "Sacrifice …"
+does, so the choice and its options are the sacrifice's, and the flag says the chosen permanent is
+exiled. Paying it moves the permanent to exile: it doesn't die, so no death trigger sees it. Its
+size is read as it leaves, as for a sacrifice. The log says "exiles" rather than "sacrifices".
+
+**The amount.** `AbilityDef.producesPerSacrificedPlus`: D1342's `producesPerSacrificed`, plus this
+many more. "Add X mana of any one color, where X is (1 plus) the exiled/sacrificed creature's
+power/mana value" is read as one row per colour, each with the line's spending restriction.
+
+Read whole now: Food Chain and City of Shadows. The Soul Stone's line reads its cost but not
+"Harness".
+
+**Tests.** 5 engine tests:
+- The fixtures read whole, as five colour rows that exile, with the +1; a City of Shadows-style line
+  reads whole.
+- The Hill Giant goes to exile, not the graveyard, and a "whenever another creature you control
+  dies" trigger doesn't gain life.
+- Exiling a mana value 4 creature makes five of the chosen colour, marked, none free.
+- With one Forest, the green pays for a six-mana creature and is spent.
+- An instant is paid by the Forest and the five marked stay.
+
+Faults injected by hand: 5, of which 4 caught.
+- Sacrificed rather than exiled: caught.
+- The +1 dropped: caught.
+- The restriction dropped from the rows: caught.
+- The flag not set by the cost reader: caught.
+- A compile.ts route for the line: **not caught**, because the line reads without it, so that edit
+  was removed.
+
+The scripts tests, compile tests and pins: 6691 of 6691 pass. Test typecheck clean.
+
+Coverage: 17,816 of 31,900 cards (+3 over D1397's 17,813), 41,085 of 59,888 lines (+3).
