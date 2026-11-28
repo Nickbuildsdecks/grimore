@@ -70472,3 +70472,39 @@ Faults injected by hand: 5, all caught, each restored from a backup.
 The scripts, compile, pin, automation and playout tests: 7046 of 7046 pass. Test typecheck clean.
 
 Coverage: 18,024 of 31,900 cards (+25 over D1423's 17,999), 41,375 of 59,888 lines (+32).
+
+## D1425 — Four more conditions: fewer than N cards in hand, deaths this turn, an empty board, an empty graveyard
+
+Four condition phrasings, read by the static reader and through it by intervening ifs and spell
+conditions:
+- **"You have fewer than three cards in hand"**: `controller-hand` with at most one fewer.
+- **"Two or more creatures died this turn"**, anyone's: a new kind, `creatures-died`, read off
+  the existing `creaturesDiedThisTurn`.
+- **"No opponent controls a creature"** (or artifact, enchantment, land, planeswalker): the
+  opponent's half of `board-has`, negated with the existing `not`.
+- **"There are no cards in your graveyard"**: the graveyard count of at least one, negated.
+
+17 legal cards print one of these. Of them, these read whole on this build: Bloodline Recollector,
+Darklight Phoenix, Gorilla Titan, Inga Rune-Eyes, Kuon, Ogre Ascendant, Lagomos, Hand of Hatred and
+Vexing Beetle. Some may have read before through other wording. The coverage line below is the
+measured difference.
+
+**A pin moved.** compile.test.ts (D564) listed "if two or more creatures died this turn" as a
+condition to leave unread, written when no death count was kept. It reads now, deliberately, and
+moved to that table's read rows.
+
+**Tests.** 5 engine tests:
+- The fixtures read whole.
+- Two cards in hand turns the bonus on and three turns it off. The tests count the draw step's card.
+- One death leaves it off and two turn it on.
+- An opponent's creature turns it off.
+- A card in the graveyard turns it off.
+
+Faults injected by hand: 3, all caught, each restored from a backup.
+- "Fewer than" off by one.
+- Deaths compared with "more than".
+- The negation dropped from "no opponent controls".
+
+The scripts, compile, pin, automation and playout tests: 7051 of 7051 pass. Test typecheck clean.
+
+Coverage: 18,031 of 31,900 cards (+7 over D1424's 18,024), 41,382 of 59,888 lines (+7).
