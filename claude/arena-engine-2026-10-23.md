@@ -52642,3 +52642,72 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6774 of 6774 pass. Test typecheck clean.
 
 Coverage: 17,935 of 31,900 cards (+7 over D1416's 17,928), 41,248 of 59,888 lines (+13).
+
+## D1418 — Role tokens: Monstrous Rage, Royal Treatment, Syr Armont, Embereth Veteran
+
+"Create a Monster Role token attached to target creature you control." Nothing read Roles before
+this change. 41 cards in the corpus print one, and 25 of the one-line-short cards were short on a
+Role line.
+
+**The Roles.** `ROLE_TOKENS` holds seven Aura tokens with "enchant creature": Cursed, Monster, Royal,
+Sorcerer, Virtuous, Wicked and Young Hero. Each one's text is quoted from the reminder text the
+cards print, and each compiles whole as an Aura (tested). Two wordings are adjusted:
+- The Cursed Role's "Enchanted creature is 1/1" needed a new Aura reader for base power and
+  toughness.
+- The Wicked Role's "When this Aura is put into a graveyard" is written "from the battlefield",
+  which reads. A token only ever reaches a graveyard from the battlefield.
+
+Huntsman and Questing are left out. The corpus has the Huntsman Role only on digital cards, and the
+Questing Role grants a named card's abilities.
+
+**Created attached.** The new `createAttachedToken` in effects.ts makes the token, attaches it, and
+installs what the Aura grants, as an Aura spell's grants are installed as it resolves
+(`addAuraEffect`). Nothing is made when the host is gone. The reader, `roleTokenEffect`, takes one
+creature as printed ("another", "up to one", "you control" or not). "Attached to it" and "attached
+to that creature" read through the referent swap. Every Role but the Cursed one is a friendly
+target.
+
+**The Role rule.** A new state-based check: when one player controls more than one Role attached
+to a permanent, the newest stays and the others go to the graveyard. "Newest" is the last in that
+player's battlefield order. Another player's Role on the same creature stays.
+
+**"If its power is 6 or greater".** A new intervening if for Angelic Sell-Sword and the Young Hero
+Role's "if its toughness is 3 or less". It reads the trigger's own creature, live, and only after
+a head about the card itself ("Whenever ~ attacks", "Whenever this creature attacks"). After
+"Whenever enchanted creature attacks" (Writ of Passage), "its" is another creature, so that line
+stays unread (tested).
+
+Read whole now: Angelic Sell-Sword, Charmed Clothier, Ellivere of the Wild Court, Embereth Veteran,
+Eriette's Whisper, Giant Inheritance, Living Lectern, Merry Bards, Monstrous Rage, Protective
+Parents, Redtooth Genealogist, Royal Treatment, Shatter the Oath, Spellbook Vendor, Spiteful
+Hexmage, Splashy Spellcaster, Syr Armont, the Redeemer and The Witch's Vanity.
+
+Still unread:
+- Cursed Courtier and Unassuming Sage. Their "attached to it" means the card itself, which this
+  reader can't tell apart from an earlier target.
+- Return Triumphant, Become Brutes, Curse of the Werefox, Twisted Sewer-Witch and Questing
+  Cosplayer, on other sentences.
+
+**Tests.** 11 engine tests:
+- Every Role and every fixture reads whole.
+- A Monster Role on Bears under +2/+0: 5/3 with trample.
+- A second Role of yours replaces the first.
+- Another player's Role stays.
+- The Cursed Role makes a 4/4 a 1/1 and keeps its flying.
+- No token is made for a creature that is gone.
+- The Young Hero Role puts a counter on a 2/2 attacker, and the Role goes when the creature dies.
+- The Young Hero Role adds no counter at toughness 4.
+- A replaced Wicked Role drains the opponent for 1.
+- "Its" after "enchanted creature attacks" stays unread.
+- Angelic Sell-Sword draws only at power 6 or more.
+
+Faults injected by hand: 5, all caught, each run alone and restored from a snapshot.
+- The Role rule removed.
+- The Role rule keeping the oldest instead of the newest.
+- Roles pooled across players.
+- The Aura's grant never installed.
+- The "about the card itself" guard removed.
+
+The scripts tests, compile tests and pins: 6785 of 6785 pass. Test typecheck clean.
+
+Coverage: 17,961 of 31,900 cards (+26 over D1417's 17,935), 41,282 of 59,888 lines (+34).
