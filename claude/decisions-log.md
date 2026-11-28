@@ -69689,3 +69689,43 @@ test.
 The scripts tests, compile tests and pins: 6732 of 6732 pass. Test typecheck clean.
 
 Coverage: 17,859 of 31,900 cards (+8 over D1405's 17,851), 41,140 of 59,888 lines (+8).
+
+## D1407 — An attachment's bonus while its controller controls something: the Runemarks
+
+"Enchanted creature has vigilance as long as you control a black or green permanent." D814 read an
+Aura's bonus that depends on its host ("as long as enchanted creature is red"). A condition about
+the controller, or the attachment itself, wasn't read in either word order.
+
+**The reading.** `controllerConditional` reads "<host> creature gets/has … as long as <condition>"
+and "As long as <condition>, <host> creature …".
+- The condition is read by `staticCondition` and carried as the bonus part's `while`. Each part is
+  its own static effect (`staticEffect`), so the condition is asked with the attachment as source
+  and its controller as controller.
+- A condition about the host ("as long as it's a Human") is left to D814's reader.
+- A line of this shape is no longer taken as the attachment's plain bonus line, where it failed and
+  stopped the conditional reader from being asked.
+- Only a size or a keyword, as in D814. A grant still refuses the line, which is why Caduceus,
+  Staff of Hermes stays unread.
+
+Read whole now: Abzan, Jeskai, Mardu, Sultai and Temur Runemark, and Shardmage's Rescue ("As long as
+~ entered this turn, enchanted creature has hexproof"). Winter's Rest ("doesn't untap") is still
+unread.
+
+**Tests.** 4 engine tests:
+- Four fixtures read whole.
+- A Runemark on a white creature gives +2/+2 and vigilance beside a green creature, and +2/+2 only
+  with no black or green permanent. A Forest is colourless, and the first version of this test
+  missed that.
+- Condition first: with a Forest, +1/+1 and trample, and without one, nothing.
+- An Aura whose only bonus line is the conditional one gives flying with a Forest and none without.
+
+Faults injected by hand: 4, of which 3 caught.
+- The condition dropped from the part: caught.
+- The plain-line exclusion removed: caught, once the lone-line fixture was added.
+- The condition-first form not read: caught.
+- The host-condition guard removed: **not caught** by the whole suite. `staticCondition` reads no
+  "it's a …", so the guard is a second check.
+
+The scripts tests, compile tests and pins: 6736 of 6736 pass. Test typecheck clean.
+
+Coverage: 17,867 of 31,900 cards (+8 over D1406's 17,859), 41,148 of 59,888 lines (+8).
