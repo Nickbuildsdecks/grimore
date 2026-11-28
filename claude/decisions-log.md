@@ -70576,3 +70576,45 @@ Faults injected by hand: 2, both caught, each restored from a backup.
 The scripts, compile, pin, automation, playout and mana tests: 7115 of 7115 pass. Test typecheck clean.
 
 Coverage: 18,035 of 31,900 cards (+2 over D1426's 18,033), 41,387 of 59,888 lines (+3).
+
+## D1428 — Clone exceptions: a printed size, a quoted ability, a triggered keyword
+
+"You may have Phantasmal Image enter as a copy of any creature on the battlefield, except it's an
+Illusion in addition to its other types and it has 'When this creature becomes the target of a
+spell or ability, sacrifice it.'" D594's clone reader took three exceptions: added types, "isn't
+legendary" and keywords. It refused everything else. Three more now, each written into the copy's
+derived definition (`TokenCopyProfile`) as the others are:
+- **"It's 7/7"** (Quicksilver Gargantuan): a printed size, as eternalize's 4/4 is.
+- **A quoted ability** (Phantasmal Image, Mercurial Pretender, Copycrook): a line added to the
+  copy's text. It's accepted only when this file reads that line on its own; anything else still
+  refuses the clone, so a copy never carries a line nothing runs.
+- **A keyword that is a triggered ability** (Dack's Duplicate's "haste and dethrone"): written as
+  its own line, read only if it reads as one.
+
+Also "in addition to its other creature types" (Sakashima's Student). A line that ends `."` now
+matches, which the quoted abilities need.
+
+Of the 60 legal cards printing "enter as a copy of", 25 read whole on this build, Clone and
+Phyrexian Metamorph among them. Still unread:
+- Machine God's Effigy: "it's an artifact" replaces types.
+- Quoted lines this file doesn't read (Gigantoplasm, Evil Twin, Progenitor Mimic).
+- Counters on entering (Spark Double, Altered Ego).
+- A graveyard as the source (Body Double).
+
+**Tests.** 4 engine tests:
+- The fixtures read whole, and a clone whose quoted line doesn't read stays unread.
+- The Gargantuan copying Grizzly Bears is a 7/7 Grizzly Bears.
+- The Image is an Illusion and is sacrificed when its controller's own spell targets it.
+- The Duplicate has haste and carries dethrone's trigger.
+
+The D594 clone tests pass unchanged.
+
+Faults injected by hand: 4, all caught, each restored from a backup.
+- The size dropped.
+- The quoted line accepted without reading it.
+- Quoted lines never written.
+- The triggered keyword's line never written.
+
+The scripts, compile, pin, automation, playout and mana tests: 7119 of 7119 pass. Test typecheck clean.
+
+Coverage: 18,042 of 31,900 cards (+7 over D1427's 18,035), 41,394 of 59,888 lines (+7).
