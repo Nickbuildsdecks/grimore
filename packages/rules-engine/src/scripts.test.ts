@@ -53146,6 +53146,52 @@ describe('"up to one target" as an optional target (D1415)', () => {
   });
 });
 
+describe('distribute +1/+1 counters among targets: Blessings of Nature, Verdurous Gearhulk (D1416)', () => {
+  const BLESSINGS = { name: 'Test Blessings', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Distribute four +1/+1 counters among any number of target creatures.' };
+  const GEARHULK = { name: 'Test Gearhulk', type_line: 'Artifact Creature — Construct', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: 'When Test Gearhulk enters, distribute four +1/+1 counters among any number of target creatures.' };
+  const ROWS = [BLESSINGS, GEARHULK];
+  const deck = customDeck({ id: 'd1416', name: 'Blessings', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const board = (hand: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1416', 1: 'd1416' }, deckSpecs: { d1416: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: ['Grizzly Bears', 'Grizzly Bears'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const counters = (s: GameState, id: string): number => s.instances[id]!.counters['+1/+1'] ?? 0;
+
+  it('reads whole, as a divided friendly target', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(BLESSINGS as never);
+    expect(read.ok && read.script?.targets?.[0]).toMatchObject({ divided: 4, friendly: true, count: 4 });
+  });
+
+  it('three on one Bears and one on the other', () => {
+    let s = board('Test Blessings');
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blessings'),
+      targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }], division: [3, 1] } as Action)), 20);
+    expect([counters(s, a!), counters(s, b!)]).toEqual([3, 1]);
+  });
+
+  it('a division that does not add up to four is refused', () => {
+    const s = board('Test Blessings');
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blessings'),
+      targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }], division: [2, 1] } as Action)).toThrow();
+  });
+
+  it("the bot's trigger puts all four on its own creatures, none on the opponent's", () => {
+    let s = board('Test Gearhulk');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gearhulk') } as Action));
+    for (let i = 0; i < 6 && s.pendingChoice !== null; i++) s = passBoth(apply(s, botAction(s, s.pendingChoice!.seat)!));
+    s = drain(s, 20);
+    const mine = ids(s, 0, 'battlefield').reduce((n, id) => n + counters(s, id), 0);
+    const theirs = ids(s, 1, 'battlefield').reduce((n, id) => n + counters(s, id), 0);
+    expect([mine, theirs]).toEqual([4, 0]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

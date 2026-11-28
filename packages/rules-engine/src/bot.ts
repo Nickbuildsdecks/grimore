@@ -2330,6 +2330,18 @@ function dividedAimings(
   state: GameState, seat: SeatIndex, spec: LegalPlay['targetSpecs'][number] | undefined, candidates: readonly Target[], amount: number,
 ): Aiming[] {
   const most = Math.min(Math.max(1, spec?.count ?? 1), amount);
+  /*
+    A division that helps (D1416, "distribute four +1/+1 counters"): among this seat's own creatures
+    only, all on the best, or one each as wide as it goes. `dividedPick` then takes the first.
+  */
+  if (spec?.friendly === true) {
+    const own = candidates.filter((t) => t.kind === 'card' && state.instances[t.id]?.zoneSeat === seat);
+    if (own.length === 0) return [];
+    const helped: Aiming[] = [{ targets: [own[0]!], division: [amount] }];
+    const wideOwn = own.slice(0, most);
+    if (wideOwn.length > 1) helped.push({ targets: wideOwn, division: wideOwn.map((_, i) => (i === wideOwn.length - 1 ? amount - (wideOwn.length - 1) : 1)) });
+    return helped;
+  }
   const foes = foesOf(state, seat);
   const ranked = [...candidates]
     .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));

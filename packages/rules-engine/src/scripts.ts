@@ -27795,6 +27795,32 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    "Distribute four +1/+1 counters among any number of target creatures" (D1416, Blessings of
+    Nature, Ajani's Presence): D749's division with counters for damage. Each target gets at least
+    one; the targets are the caster's to help, so the bot divides among its own creatures.
+  */
+  const counterSpread = /^distribute (\w+) \+1\/\+1 counters among (any number of|[a-z, ]+?) (target .+?)$/i.exec(clause.trim().replace(/\.\s*$/, ''));
+  if (counterSpread !== null) {
+    const amount = countFrom(counterSpread[1]!);
+    if (amount !== null && amount >= 2) {
+      let count: number | null = amount;
+      if (!/^any number of$/i.test(counterSpread[2]!)) {
+        const counts = counterSpread[2]!.split(/\s*(?:,|\bor\b)\s*/).map((word) => word.trim()).filter((word) => word !== '').map((word) => countFrom(word));
+        count = counts.length === 0 || counts.some((n) => n === null) ? null : Math.max(...(counts as number[]));
+      }
+      const spec = targetSpecFrom(counterSpread[3]!.replace(/\bcreatures\b/i, 'creature'), true);
+      if (count !== null && count >= 2 && spec !== null && spec.kind === 'creature') {
+        return {
+          targets: [{ ...spec, count: Math.min(count, amount), optional: true, divided: amount, friendly: true, ...(/^any number of$/i.test(counterSpread[2]!) ? { botTakes: 1 } : {}) }],
+          effect: (c) => dividedAmong(c).reduce(
+            (state, { target, amount: n }) => (target.kind === 'card' ? addCounters(state, target.id, '+1/+1', n) : state),
+            c.state,
+          ),
+        };
+      }
+    }
+  }
+  /*
     A player and their creatures (D1059): "Flame Wave deals 4 damage to target player or planeswalker
     and each creature that player or that planeswalker's controller controls", "Chandra's Fury deals
     4 damage to target player or planeswalker and 1 damage to each creature …", Lavalanche's X.

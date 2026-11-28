@@ -331,3 +331,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1412 pushed in 9646790. D1413 tap six to ten untapped creatures (fromCardData tapOthersCost), draw X lose X (scripts.ts).
 - D1413 pushed in f488a05. D1414 graveyard to the bottom in a random order, Endurance: scripts.ts.
 - D1414 pushed in da906ec. D1415 'up to one target' as optional (readEffect fallback over readEffectCore; exile-until-it-leaves shape): scripts.ts.
+- D1415 pushed in b5005c5. D1416 distribute +1/+1 counters among targets (scripts.ts), friendly division in the bot (dividedAimings).
