@@ -69337,3 +69337,47 @@ Faults injected by hand: 5, of which 4 caught.
 The scripts tests, compile tests and pins: 6691 of 6691 pass. Test typecheck clean.
 
 Coverage: 17,816 of 31,900 cards (+3 over D1397's 17,813), 41,085 of 59,888 lines (+3).
+
+## D1399 — Colour words in a spending restriction: Eldrazi Temple
+
+"{T}: Add {C}{C}. Spend this mana only to cast colorless Eldrazi spells or activate abilities of
+colorless Eldrazi." D595's restriction reader read only type words against a type line, so a colour
+word refused the line and Eldrazi Temple's second ability stayed unread.
+
+**What is paid for.** `PaymentFor.spellColors` and `PaymentFor.abilityColors` carry the spell's
+colours and the ability's source's colours, as they are now. They're filled where a spell or an
+ability is offered and where it is paid for. If they're absent, a restriction that names a colour
+refuses.
+
+**The words.** "colorless" (no colours), "multicolored" (two or more) and "monocolored" (exactly one)
+are each a test beside the type and subtype words, so "colorless Eldrazi" needs both.
+"Colorless" is read before a plural "s" is taken off. "An ability of a colorless permanent" reads
+"permanent" as saying nothing more. "Monocolored spells of that color" is still unread: the colour
+of the mana made is not read.
+
+Read whole now: Eldrazi Temple and Pillar of the Paruns. Shrine of the Forsaken Gods reads its
+restriction but not its "Activate only if you control seven or more lands".
+
+Three pins used "a multicolored spell" as an example of an unread restriction: the Pillar row and
+the D497 row in compile.test.ts, and D595's in scripts.test.ts. They now use "monocolored spells
+of that color".
+
+**Tests.** 5 engine tests:
+- The fixtures read whole, and four colour restrictions parse.
+- The colour words test the colours given, and refuse without them.
+- A colorless Eldrazi costing four is cast with the Temple and two Forests.
+- Neither a green Eldrazi nor a colorless Golem can be cast with them.
+- A colorless Eldrazi's {2} ability is paid by the Temple alone, and a blue Eldrazi's isn't offered.
+
+Faults injected by hand: 7, all caught. The sixth wasn't caught until the ability test was added.
+- "colorless" always true: caught.
+- The spell's colours not given when offered: caught.
+- The spell's colours not given when paid: caught.
+- The colours not passed to the test: caught.
+- "permanent" not skipped: caught.
+- The ability's colours not given when offered: caught, by the ability test.
+- The ability's colours not given when paid: caught.
+
+The scripts tests, compile tests and pins: 6696 of 6696 pass. Test typecheck clean.
+
+Coverage: 17,820 of 31,900 cards (+4 over D1398's 17,816), 41,089 of 59,888 lines (+4).
