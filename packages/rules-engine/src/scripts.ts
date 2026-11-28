@@ -14176,6 +14176,30 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     The order is the printed order and the hand-written card's: gain, then draw. It matters on an
     empty library — a player who gains the life and then cannot draw has still gained the life.
   */
+  /*
+    "You draw X cards and you lose X life, where X is …" (D1414): Painful Truths, Graveborn Muse,
+    Champion of Dusk, Sanguimancy, and "Target player draws X cards and loses X life" (Damnable Pact,
+    Eldritch Pact). Drawn first, then lost, as printed. With no "where", X is the spell's own.
+  */
+  {
+    const where = /^(.*?),\s*where X is (.+)$/i.exec(text);
+    const pact = /^(you|target player|target opponent) draws? X cards and (?:you |that player |they )?loses? X life$/i.exec((where?.[1] ?? text).trim());
+    if (pact !== null) {
+      const counted = where === null ? (c: EffectContext) => c.x : whereXCount(where[2]!, name);
+      const spec = /^you$/i.test(pact[1]!) ? null : targetSpecFrom(pact[1]!, false);
+      if (counted !== null && (spec !== null || /^you$/i.test(pact[1]!))) {
+        return {
+          ...(spec === null ? {} : { targets: [spec] }),
+          effect: (c) => {
+            const seat = spec === null ? c.controller : firstPlayerTarget(c);
+            if (seat === null) return c.state;
+            const n = Math.max(0, counted(c));
+            return loseLife(draw(c.state, seat, n), seat, n);
+          },
+        };
+      }
+    }
+  }
   const announced = /^(.*?),\s*where X is (.+)$/i.exec(text);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
@@ -38122,7 +38146,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       "Tap an untapped creature you control", "Tap two untapped artifacts you control", "Tap an
       untapped Ally you control" (D610): see `AbilityCost.tapUntapped`. One per cost.
     */
-    if (/^Tap (an|one|another|two|three|four|five) untapped /.test(component)) {
+    if (/^Tap (an|one|another|two|three|four|five|six|seven|eight|nine|ten) untapped /.test(component)) {
       const tapOthers = tapOthersCost(component);
       if (tapOthers === null || tapsOthers !== null) return null;
       tapsOthers = tapOthers;

@@ -496,9 +496,11 @@ const COST_COUNTS: Readonly<Record<string, number>> = { an: 1, a: 1, one: 1, ano
  * `null`. Shared by the mana-line parser here and the activated-ability reader in `scripts.ts`.
  */
 export function tapOthersCost(component: string): NonNullable<AbilityDef['cost']['tapUntapped']> | null {
-  const m = /^Tap (an|one|another|two|three|four|five) untapped (.+?) you control$/.exec(component.trim());
+  // Up to ten (D1413): Lathril's "Tap ten untapped Elves you control", Gilt-Leaf Archdruid's seven Druids.
+  const m = /^Tap (an|one|another|two|three|four|five|six|seven|eight|nine|ten) untapped (.+?) you control$/.exec(component.trim());
   if (m === null) return null;
-  const count = COST_COUNTS[m[1]!.toLowerCase()];
+  // Only here: the other cost readers that share `COST_COUNTS` print nothing past five.
+  const count = COST_COUNTS[m[1]!.toLowerCase()] ?? ({ six: 6, seven: 7, eight: 8, nine: 9, ten: 10 } as Record<string, number>)[m[1]!.toLowerCase()];
   if (count === undefined) return null;
   const other = m[1]!.toLowerCase() === 'another' ? { other: true as const } : {};
   const word = m[2]!;

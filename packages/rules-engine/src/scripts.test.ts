@@ -53005,6 +53005,54 @@ describe('no more than N creatures can attack or block each combat: Silent Arbit
   });
 });
 
+describe('tapping seven untapped Elves, and draw X lose X: Lathril, Painful Truths, Damnable Pact (D1413)', () => {
+  const ELDER = { name: 'Test Elder', type_line: 'Creature — Elf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: '{T}, Tap seven untapped Elves you control: You gain 7 life.' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const MURMURS = { name: 'Test Murmurs', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    oracle_text: 'You draw X cards and you lose X life, where X is the number of creatures you control.' };
+  const PACT = { name: 'Test Pact', type_line: 'Sorcery', mana_cost: '{X}{B}', cmc: 1, colors: ['B'], layout: 'normal',
+    oracle_text: 'Target player draws X cards and loses X life.' };
+  const ROWS = [ELDER, ELF, MURMURS, PACT];
+  const deck = customDeck({ id: 'd1413', name: 'Pact', entries: [...ROWS.map((r) => ({ name: r.name, count: r === ELF ? 10 : 4 })), { name: 'Swamp', count: 38 }], data: ROWS as never[] });
+  const board = (battlefield: string[], hands: string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1413', 1: 'd1413' }, deckSpecs: { d1413: deck.deck }, battlefield: { 0: battlefield }, hands: { 0: hands }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const elves = (n: number) => Array.from({ length: n }, () => 'Test Elf');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const elder = compileCard(ELDER as never);
+    expect(elder.ok && elder.script?.abilities?.[0]?.cost.tapUntapped?.count).toBe(7);
+  });
+
+  it('with seven other Elves the Elder is offered; with six it is not', () => {
+    const enough = board(['Test Elder', ...elves(7)]);
+    const elder = find(enough, 0, 'battlefield', 'Test Elder');
+    expect(legalActions(enough, 0).plays.some((p) => p.card === elder && p.kind === 'activate')).toBe(true);
+    const short = board(['Test Elder', ...elves(6)]);
+    expect(legalActions(short, 0).plays.some((p) => p.card === find(short, 0, 'battlefield', 'Test Elder') && p.kind === 'activate')).toBe(false);
+  });
+
+  it('two creatures: the Murmurs draw two and lose two', () => {
+    let s = board(['Test Elf', 'Test Elf'], ['Test Murmurs']);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Murmurs') } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+    expect(life(s, 0)).toBe(18);
+  });
+
+  it('the Pact for X=3 at the opponent: they draw three and lose three', () => {
+    let s = board(['Swamp', 'Swamp', 'Swamp', 'Swamp'], ['Test Pact']);
+    const theirs = ids(s, 1, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pact'), x: 3, targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
+    expect(ids(s, 1, 'hand').length).toBe(theirs + 3);
+    expect(life(s, 1)).toBe(17);
+    expect(life(s, 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
