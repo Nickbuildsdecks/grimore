@@ -2828,7 +2828,22 @@ function layerFiveColours(
 export type CreatureKindWord = 'artifact' | 'legendary' | 'land' | 'enchantment' | 'colorless' | 'multicolored'
   | 'monocolored' | 'untapped' | 'tapped' | 'nontoken' | 'token' | 'nonartifact' | 'nonlegendary' | 'snow'
   // A creature at all (D1365): an Aura that enchants any permanent and helps only while it is one.
-  | 'creature';
+  | 'creature'
+  // "Enchanted creatures you control", "equipped creatures you control" (D1411): an Aura or an
+  // Equipment attached to it, read off the attachment's printed type line.
+  | 'enchanted' | 'equipped';
+
+/**
+ * Whether an Aura or an Equipment is attached to this permanent (D1411), by the attachment's printed
+ * subtype: asking its live characteristics here would ask this very question again.
+ */
+function hasAttached(state: GameState, id: string, subtype: 'aura' | 'equipment'): boolean {
+  for (const other of Object.values(state.instances)) {
+    if (other.attachedTo !== id || other.zone !== 'battlefield') continue;
+    if (hasSubtype(parseTypeLine(state.cardDefs[other.defKey]?.typeLine), subtype)) return true;
+  }
+  return false;
+}
 
 /** Whether a creature is every word of `onlyKind` (D735). */
 function isEveryKind(
@@ -2850,6 +2865,8 @@ function isEveryKind(
       case 'multicolored': return layerFiveColours(state, instance, creature, typeLine).length > 1;
       case 'monocolored': return layerFiveColours(state, instance, creature, typeLine).length === 1;
       case 'creature': return creature;
+      case 'enchanted': return hasAttached(state, instance.id, 'aura');
+      case 'equipped': return hasAttached(state, instance.id, 'equipment');
       default: return false;
     }
   });

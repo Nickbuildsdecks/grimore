@@ -40468,7 +40468,8 @@ function singularCreatureType(word: string): string | null {
  * line.
  */
 /** The colour and kind words a group static may name its creatures by (D735). See `onlyKind`. */
-const KIND_WORDS = 'white|blue|black|red|green|colorless|multicolored|monocolored|artifact|legendary|land|enchantment|untapped|tapped|nontoken|nonartifact|nonlegendary|snow';
+// And "enchanted", "equipped" (D1411): Greater Auramancy's "Enchanted creatures you control have shroud".
+const KIND_WORDS = 'white|blue|black|red|green|colorless|multicolored|monocolored|artifact|legendary|land|enchantment|untapped|tapped|nontoken|nonartifact|nonlegendary|snow|enchanted|equipped';
 
 function groupStaticFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');

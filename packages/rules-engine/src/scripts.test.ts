@@ -52889,6 +52889,45 @@ describe('a trigger on a creature of the chosen type: Kindred Discovery (D1410)'
   });
 });
 
+describe('enchanted and equipped creatures you control: Greater Auramancy (D1411)', () => {
+  const AURAMANCY = { name: 'Test Auramancy', type_line: 'Enchantment', mana_cost: '{1}{W}{W}', cmc: 3, colors: ['W'], layout: 'normal',
+    oracle_text: 'Other enchantments you control have shroud.\nEnchanted creatures you control have shroud.' };
+  const OUTFITTER = { name: 'Test Outfitter', type_line: 'Creature — Human', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Equipped creatures you control get +1/+1.' };
+  const SALVE = { name: 'Test Charm', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+0.' };
+  const BLADE = { name: 'Test Blade', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Equip {1}' };
+  const ROWS = [AURAMANCY, OUTFITTER, SALVE, BLADE];
+  const deck = customDeck({ id: 'd1411', name: 'Auramancy', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Plains', count: 46 }], data: ROWS as never[] });
+  const bears = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the enchanted Bears have shroud; the other Bears do not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1411', 1: 'd1411' }, deckSpecs: { d1411: deck.deck }, hands: { 0: ['Test Charm'] },
+      battlefield: { 0: ['Test Auramancy', 'Grizzly Bears', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const [first, second] = bears(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Charm'), targets: [{ kind: 'card', id: first! }] } as Action)), 20);
+    expect(characteristicsOf(s, s.instances[first!]!).keywords.has('shroud')).toBe(true);
+    expect(characteristicsOf(s, s.instances[second!]!).keywords.has('shroud')).toBe(false);
+  });
+
+  it('the equipped Bears get +1/+1; the other Bears do not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1411', 1: 'd1411' }, deckSpecs: { d1411: deck.deck },
+      battlefield: { 0: ['Test Outfitter', 'Test Blade', 'Grizzly Bears', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const [first, second] = bears(s);
+    s = equipTo(s, find(s, 0, 'battlefield', 'Test Blade'), first!, 0, {});
+    expect(characteristicsOf(s, s.instances[first!]!).power).toBe(3);
+    expect(characteristicsOf(s, s.instances[second!]!).power).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

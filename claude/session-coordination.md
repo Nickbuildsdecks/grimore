@@ -326,3 +326,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1407 pushed in 4bde459. D1408 conditional cast-as-though-flash (CardScript.flashWhile): scriptTypes, scripts.ts, legalActions, autoActions, exemption in scripts.test.ts.
 - D1408 pushed in dd064cd. D1409 'whenever ~ attacks while' read as intervening if (interveningIfFromLine): scripts.ts.
 - D1409 pushed in 8aa46ac, checkpoint 91cc0ae. D1410 triggers on a creature of the chosen type (lineScriptForWhole chosenKind): scripts.ts.
+- D1410 pushed in 9d5c2ae. D1411 'enchanted'/'equipped' creature kind words: characteristics (hasAttached, CreatureKindWord), scripts.ts (KIND_WORDS).
