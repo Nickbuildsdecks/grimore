@@ -51704,3 +51704,33 @@ The scripts tests, compile tests and pins: 6674 of 6674 pass. Test typecheck and
 clean.
 
 Coverage: 17,806 of 31,900 cards (+0 over D1393's 17,806), 41,062 of 59,888 lines (+0).
+
+## D1395 — "This Saga", and a Saga's modal chapter
+
+Two more pieces of D1392's Sagas:
+- **"This Saga"** is a self-reference now: "III — This Saga deals X damage to target opponent"
+  (Armor Wars and four more). `SELF_TYPE_WORDS` is the one list every reader builds "this X"
+  from, so adding the word reads it everywhere.
+- **A modal chapter**, "I, II — Choose one —" and its bullet lines (Life of Toshiro Umezawa). It
+  is read as the modal trigger (D757) with an entry prologue and put on the chapter numbers, as a
+  chapter of one sentence is. The mode is chosen as the chapter ability goes on the stack.
+
+39 of the 220 legal Sagas read whole, and 330 of 575 chapter lines. Read ahead (10 Sagas) is next
+in line: a number chosen as the Saga enters, which is the lore counters it starts with.
+
+The compile pin that a type the list doesn't name stays unread used "this Saga" as its example. It now
+uses "this Contraption", with the reason noted beside it.
+
+**Tests.** 2 engine tests:
+- A fixture Saga reads whole, with chapters 1, 2 and 3.
+- Played out: "This Saga deals 2 damage to each opponent" as it enters, then the modal chapter
+  asks which mode and gains the 5 life chosen.
+
+Faults injected by hand: 3, all caught.
+- "Saga" not on the list.
+- No modal chapter.
+- The chapters all numbered II.
+
+The scripts tests, compile tests and pins: 6676 of 6676 pass. Test typecheck clean.
+
+Coverage: 17,810 of 31,900 cards (+4 over D1394's 17,806), 41,071 of 59,888 lines (+9).
