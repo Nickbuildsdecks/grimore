@@ -51674,3 +51674,33 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6673 of 6673 pass. Test typecheck clean.
 
 Coverage: 17,806 of 31,900 cards (+7 over D1392's 17,799), 41,062 of 59,888 lines (+28).
+
+## D1394 — A modal spell cast for an alternative cost is offered once per mode
+
+Sweep 105001 (build a34b730, D1384) finished 99 of 100 games. Seed 105085 threw "choose a mode for
+Thunderbolt". The bot had cast Thunderbolt from the top of its library with Bolas's Citadel's life
+payment, which is the play `legalActions` offered, and the engine refused it for having no mode. It
+is the standing "never offers a play it then refuses" invariant.
+
+**The fault.** A modal spell's printed cast is offered once per legal combination of modes, each
+row carrying its `modes` and the modes' targets. The alternative-cost rows (Citadel's life,
+pitch, evoke, dash, prototype, awaken, overload and the rest) were built from the card's top-level
+target specs, and a modal spell has none. So a modal spell offered through any of them had no mode,
+and the engine refused the cast as a mode was required.
+
+**The fix.** The alternative-cost loop now expands the modes the same way: one row per
+combination, carrying `modes`, the chosen modes' targets (with awaken's land after them), and the
+modes in the description. A combination whose targets can't be filled isn't offered.
+
+Seed 105085 replayed on the a34b730 build with this fix: it finishes on turn 94.
+
+**Tests.** 1 engine test:
+- With Bolas's Citadel and a modal instant on top of the library, every Citadel play for it
+  carries its modes, and the cast with the player mode deals 3 to the opponent and costs 2 life.
+
+Faults injected by hand: 1, caught: the modes not expanded.
+
+The scripts tests, compile tests and pins: 6674 of 6674 pass. Test typecheck and web typecheck
+clean.
+
+Coverage: 17,806 of 31,900 cards (+0 over D1393's 17,806), 41,062 of 59,888 lines (+0).
