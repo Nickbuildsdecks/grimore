@@ -53084,6 +53084,68 @@ describe('a graveyard put under the library in a random order: Endurance (D1414)
   });
 });
 
+describe('"up to one target" as an optional target (D1415)', () => {
+  // Conjurer's Bauble's line, as a sorcery: read only through the "up to one target" fallback.
+  const SHATTER = { name: 'Test Shatter', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Put up to one target card from your graveyard on the bottom of your library. Draw a card.' };
+  // Salvation Engine's, on an entry trigger.
+  const SMITH = { name: 'Test Smith', type_line: 'Creature — Dwarf', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'When Test Smith enters, return up to one target artifact card from your graveyard to the battlefield.' };
+  const STALKER = { name: 'Test Stalker', type_line: 'Creature — Human Assassin', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'When this creature enters, exile up to one target creature an opponent controls until this creature leaves the battlefield.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const ROWS = [SHATTER, SMITH, STALKER, ROCK];
+  const deck = customDeck({ id: 'd1415', name: 'UpTo', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const board = (hands: string[], mine: string[], theirs: string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1415', 1: 'd1415' }, deckSpecs: { d1415: deck.deck }, hands: { 0: hands }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, each with an optional target', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const shatter = compileCard(SHATTER as never);
+    expect(shatter.ok && shatter.script?.targets?.[0]?.optional).toBe(true);
+    const stalker = compileCard(STALKER as never);
+    expect(stalker.ok && stalker.script?.triggers?.[0]?.targets?.[0]?.optional).toBe(true);
+  });
+
+  it('cast with no target, the spell still draws; with one, the card goes under the library too', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1415', 1: 'd1415' }, deckSpecs: { d1415: deck.deck }, hands: { 0: ['Test Shatter', 'Test Shatter'] },
+      graveyard: { 0: ['Test Rock'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const hand = ids(s, 0, 'hand').length;
+    const [first, second] = ids(s, 0, 'hand').filter((id) => nameOf(s, id) === 'Test Shatter');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: first!, targets: [] } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+    const rock = find(s, 0, 'graveyard', 'Test Rock');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: second!, targets: [{ kind: 'card', id: rock }] } as Action)), 20);
+    expect(s.instances[rock]!.zone).toBe('library');
+    expect(ids(s, 0, 'library').at(-1)).toBe(rock);
+  });
+
+  it('a trigger with nothing to aim at still resolves, and does nothing', () => {
+    let s = board(['Test Smith'], [], []);
+    const smith = find(s, 0, 'hand', 'Test Smith');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: smith } as Action)), 20);
+    for (let i = 0; i < 4 && s.pendingChoice !== null; i++) s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [] } as Action)), 20);
+    expect(s.instances[smith]!.zone).toBe('battlefield');
+    expect(s.stackOrder.length).toBe(0);
+  });
+
+  it('the Stalker exiles the Bears until it leaves, and they come back', () => {
+    let s = board(['Test Stalker'], [], ['Grizzly Bears']);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const stalker = find(s, 0, 'hand', 'Test Stalker');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: stalker } as Action));
+    for (let i = 0; i < 4 && s.pendingChoice !== null; i++) s = passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }] } as Action));
+    s = drain(s, 20);
+    expect(s.instances[bears]!.zone).toBe('exile');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: stalker, toZone: 'graveyard' } as Action), 20);
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

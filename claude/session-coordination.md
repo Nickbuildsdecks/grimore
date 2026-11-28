@@ -330,3 +330,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1411 pushed in baf2eb8. D1412 attack and block limits (CardScript.attackLimit/attackYouLimit/blockLimit): scriptTypes, combat (attackLimitIssue, blockLimitIssue, withinAttackLimit), autoActions, bot, scripts.ts, exemptions in scripts.test.ts.
 - D1412 pushed in 9646790. D1413 tap six to ten untapped creatures (fromCardData tapOthersCost), draw X lose X (scripts.ts).
 - D1413 pushed in f488a05. D1414 graveyard to the bottom in a random order, Endurance: scripts.ts.
+- D1414 pushed in da906ec. D1415 'up to one target' as optional (readEffect fallback over readEffectCore; exile-until-it-leaves shape): scripts.ts.

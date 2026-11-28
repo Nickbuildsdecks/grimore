@@ -19492,7 +19492,8 @@ function exileUntilLeavesShapeFor(
   // "You may exile" (D575) is the same pair with a question in front of the first half: Angel of
   // Sanctions and Suspension Field print it. Group 1 is the "may", 2 the target, 3 the duration.
   const exiling = new RegExp(
-    `^When ${self} ${ENTERS}, (you may )?(?:for each opponent, exile up to one (target .+?) that player controls|exile (target .+?|another target .+?))`
+    // And "exile up to one target …" (D1415, Liminal Hold, Prayer of Binding): group 3, an optional target.
+    `^When ${self} ${ENTERS}, (you may )?(?:for each opponent, exile up to one (target .+?) that player controls|exile (up to one )?(target .+?|another target .+?))`
     + `(\\s+until ${self} leaves the battlefield)?\\.?$`,
     'i',
   );
@@ -19510,12 +19511,12 @@ function exileUntilLeavesShapeFor(
     controls, any number of them, no two with one controller.
   */
   const perOpponent = matched[2] !== undefined;
-  const single = targetSpecFrom(perOpponent ? `${matched[2]!} an opponent controls` : matched[3]!, false);
+  const single = targetSpecFrom(perOpponent ? `${matched[2]!} an opponent controls` : matched[4]!, false);
   if (single === null || !pointsAtAPermanent(single)) return null;
   const spec: TargetSpec = perOpponent
     ? { ...single, count: ANY_NUMBER_OF_TARGETS, optional: true, differentControllers: true, botWhileSameSide: true,
       description: `up to one ${matched[2]!} each opponent controls` }
-    : single;
+    : matched[3] !== undefined ? { ...single, optional: true } : single;
 
   // The return, either inside the `until` clause or as its own printed line.
   const returning = lines.find((other) => new RegExp(
@@ -19523,7 +19524,7 @@ function exileUntilLeavesShapeFor(
     + ` under its owner's control\\.?$`,
     'i',
   ).test(plain(other).trim()));
-  if (matched[4] === undefined && returning === undefined) return null;
+  if (matched[5] === undefined && returning === undefined) return null;
 
   const { name: _ignored, ...pair } = exileUntilItLeaves(def.name, spec, matched[1] !== undefined);
   // See the docblock: a creature exiled by a card with no body of its own. Both tests matter —
@@ -30931,7 +30932,36 @@ function abilityCopyEffect(clause: string): ReadEffect | null {
   };
 }
 
+/**
+ * A clause, read (`readEffectCore`), and failing that (D1415) read with its one "up to one target"
+ * as "target": "When ~ enters, exile up to one target creature an opponent controls until ~ leaves
+ * the battlefield", "return up to one target creature card from your graveyard to your hand",
+ * "destroy up to one target artifact". The target is then optional (CR 115.7: "up to one" may be
+ * none), and a clause whose target was not chosen does nothing.
+ *
+ * Only a clause with exactly one "up to one target" whose plain reading has exactly one target, so
+ * the target made optional is the one the words named. Any reader that already reads the "up to
+ * one" form (the fights, suspect, goad, a card from a graveyard) answers first.
+ */
 function readEffect(
+  clause: string, name: string, where: SubjectZone | null,
+): ReadEffect | null {
+  const read = readEffectCore(clause, name, where);
+  if (read !== null) return read;
+  const upTo = clause.match(/\bup to one target\b/gi) ?? [];
+  if (upTo.length !== 1) return null;
+  const inner = readEffectCore(clause.replace(/\bup to one target\b/i, 'target'), name, where);
+  if (inner === null || (inner.targets ?? []).length !== 1 || inner.targets![0]!.optional === true) return null;
+  const chosen = (c: EffectContext): boolean => c.targets.length > 0;
+  return {
+    ...inner,
+    targets: [{ ...inner.targets![0]!, optional: true }],
+    effect: (c) => (chosen(c) ? inner.effect(c) : c.state),
+    ...(inner.immediate === undefined ? {} : { immediate: (c: EffectContext) => (chosen(c) ? inner.immediate!(c) : c.state) }),
+  };
+}
+
+function readEffectCore(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
   /*
