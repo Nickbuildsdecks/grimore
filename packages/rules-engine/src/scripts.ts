@@ -15310,6 +15310,26 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    "Up to one target player puts all the cards from their graveyard on the bottom of their library
+    in a random order" (D1414, Endurance): the graveyard goes under the library as one random pile
+    (`bottomPile`), with no shuffle of the library above it. "Up to one" is an optional target, so
+    choosing nobody does nothing.
+  */
+  const buried = /^(up to one target player|target player|target opponent) puts? all (?:the )?cards from their graveyard on the bottom of their library in a random order$/i.exec(text);
+  if (buried !== null) {
+    const upTo = /^up to one /i.test(buried[1]!);
+    const base = targetSpecFrom(upTo ? 'target player' : buried[1]!, false);
+    if (base !== null) {
+      return {
+        targets: [upTo ? { ...base, optional: true } : base],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : bottomPile(c.state, listAt(c.state, zoneKey(seat, 'graveyard')));
+        },
+      };
+    }
+  }
   const wheel = /^each player discards their hand(?:, then draws ([\w]+) cards)?$/i.exec(text);
   if (wheel !== null) {
     const n = wheel[1] === undefined ? 0 : countFrom(wheel[1]);

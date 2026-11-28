@@ -53053,6 +53053,37 @@ describe('tapping seven untapped Elves, and draw X lose X: Lathril, Painful Trut
   });
 });
 
+describe('a graveyard put under the library in a random order: Endurance (D1414)', () => {
+  const ENDURANCE = { name: 'Test Endurance', type_line: 'Creature — Elemental Incarnation', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '4',
+    oracle_text: 'When Test Endurance enters, up to one target player puts all the cards from their graveyard on the bottom of their library in a random order.' };
+  const deck = customDeck({ id: 'd1414', name: 'Endurance', entries: [{ name: 'Test Endurance', count: 2 }, { name: 'Grizzly Bears', count: 10 }, { name: 'Forest', count: 48 }], data: [ENDURANCE] as never[] });
+
+  it('reads whole, with an optional player target', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ENDURANCE as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.triggers?.[0]?.targets?.[0]).toMatchObject({ kind: 'player', optional: true });
+  });
+
+  it("the opponent's graveyard goes to the bottom of their library, and the top is untouched", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1414', 1: 'd1414' }, deckSpecs: { d1414: deck.deck }, hands: { 0: ['Test Endurance'] },
+      graveyard: { 1: ['Grizzly Bears', 'Grizzly Bears', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const yard = ids(s, 1, 'graveyard');
+    const top = ids(s, 1, 'library')[0];
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Endurance') } as Action));
+    for (let i = 0; i < 6 && s.pendingChoice !== null; i++) {
+      s = passBoth(apply(s, { type: 'auto:choose', by: s.pendingChoice!.seat, targets: [{ kind: 'player', seat: 1 }] } as Action));
+    }
+    s = drain(s, 20);
+    expect(ids(s, 1, 'graveyard')).toEqual([]);
+    const library = ids(s, 1, 'library');
+    expect(new Set(library.slice(-3))).toEqual(new Set(yard));
+    expect(library[0]).toBe(top);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
