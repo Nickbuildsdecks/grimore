@@ -3606,6 +3606,14 @@ export interface CardScript {
    * printed type line of the card in the graveyard), cast for its printed cost at its normal timing,
    * on its controller's own turn. Recorded in `GameState.yardCastsUsed`.
    */
+  /**
+   * "You may cast ~ from your graveyard" (D1405): Skaab Ruinator, Their Number Is Legion, and with a
+   * condition Gravecrawler ("as long as you control a Zombie") and Marang River Prowler. The card is
+   * its own permission: cast from its owner's graveyard for its printed cost at its normal timing,
+   * as often as it gets there, while `while` holds (a static's condition, asked with the card as
+   * its source and its owner as controller). See `yardPermission`.
+   */
+  readonly castsSelfFromGraveyard?: { readonly while?: NonNullable<PumpOptions['while']> };
   readonly castsFromGraveyard?: {
     readonly fits: (state: GameState, id: string, seat: SeatIndex) => boolean;
     /**

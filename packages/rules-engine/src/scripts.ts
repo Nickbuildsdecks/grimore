@@ -42271,6 +42271,13 @@ function lineScriptForPrinted(line: string, name: string): Partial<CardScript> |
 }
 
 function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
+  // "You may cast ~ from your graveyard (as long as …)" (D1405): see `CardScript.castsSelfFromGraveyard`.
+  const selfYard = new RegExp(`^You may cast (?:${selfRef(name)}|this card) from your graveyard(?:,? (?:as long as|if) (.+?))?\\.?$`, 'i').exec(plain(line).trim());
+  if (selfYard !== null) {
+    if (selfYard[1] === undefined) return { castsSelfFromGraveyard: {} };
+    const condition = staticCondition(selfYard[1], name);
+    return condition === null ? null : { castsSelfFromGraveyard: { while: condition } };
+  }
   /*
     "When ~ enters and whenever you cast a spell with mana value 5 or greater, draw a card" (D882, Up the
     Beanstalk): two triggers with one effect. Each half read as its own line; both must be triggers

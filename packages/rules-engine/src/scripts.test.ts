@@ -8126,6 +8126,9 @@ describe('deck coverage', () => {
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
+      // D1405: Gravecrawler, Skaab Ruinator; no pool deck plays one. Driven at runtime by "a card that
+      // may be cast from its own graveyard: Gravecrawler (D1405)".
+      'script castsSelfFromGraveyard',
       // D1251: Snuff Out and the Bringers; no pool deck plays one. Driven at runtime by "A printed
       // alternative of mana or life: Snuff Out, the Bringers (D1251)".
       'script altCost',
@@ -52618,6 +52621,55 @@ describe('Exile ~ from your hand as a cost: the Spirit Guides (D1404)', () => {
     const guide = find(s, 0, 'battlefield', 'Test Guide');
     expect(legalActions(s, 0).plays.some((p) => p.card === guide && p.kind === 'activate')).toBe(false);
     expect(() => apply(s, { type: 'auto:activate', by: 0, card: guide, abilityIndex: 0 } as Action)).toThrow();
+  });
+});
+
+describe('a card that may be cast from its own graveyard: Gravecrawler (D1405)', () => {
+  const CRAWLER = { name: 'Test Crawler', type_line: 'Creature — Zombie Rat', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '2', toughness: '1',
+    oracle_text: 'Test Crawler can\'t block.\nYou may cast Test Crawler from your graveyard as long as you control a Zombie.' };
+  const GHOUL = { name: 'Test Ghoul', type_line: 'Creature — Zombie', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'You may cast this card from your graveyard.' };
+  const DOOM = { name: 'Test Doom', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' };
+  const ROWS = [CRAWLER, GHOUL, DOOM];
+  const deck = customDeck({ id: 'd1405', name: 'Crawler', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 50 }], data: ROWS as never[] });
+  const board = (battlefield: string[], graveyard: string[], hands: string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1405', 1: 'd1405' }, deckSpecs: { d1405: deck.deck }, battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', ...battlefield] },
+    graveyard: { 0: graveyard }, hands: { 0: hands }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castable = (s: GameState, id: string): boolean => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === id);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const unknown = compileCard({ ...GHOUL, oracle_text: 'You may cast this card from your graveyard as long as an opponent is poisoned.' } as never);
+    expect(unknown.ok && unknown.unread.length).toBe(1);
+  });
+
+  it('with a Zombie on the battlefield the Crawler is cast from the graveyard; with none it is not offered', () => {
+    let s = board(['Test Ghoul'], ['Test Crawler']);
+    const crawler = find(s, 0, 'graveyard', 'Test Crawler');
+    expect(castable(s, crawler)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: crawler, yardBy: crawler } as Action)), 20);
+    expect(s.instances[crawler]!.zone).toBe('battlefield');
+    const bare = board(['Grizzly Bears'], ['Test Crawler']);
+    expect(castable(bare, find(bare, 0, 'graveyard', 'Test Crawler'))).toBe(false);
+  });
+
+  it('with no condition the Ghoul comes back, and again the same turn: the permission is not once a turn', () => {
+    let s = board([], ['Test Ghoul'], ['Test Doom']);
+    const ghoul = find(s, 0, 'graveyard', 'Test Ghoul');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: ghoul, yardBy: ghoul } as Action)), 20);
+    expect(s.instances[ghoul]!.zone).toBe('battlefield');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: ghoul }] } as Action)), 20);
+    expect(s.instances[ghoul]!.zone).toBe('graveyard');
+    expect(castable(s, ghoul)).toBe(true);
+  });
+
+  it('a card in an opponent\'s graveyard is not theirs to cast this way', () => {
+    const s = advanceTo(arena({ decks: { 0: 'd1405', 1: 'd1405' }, deckSpecs: { d1405: deck.deck }, battlefield: { 0: ['Swamp', 'Swamp'] }, graveyard: { 1: ['Test Ghoul'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const theirs = find(s, 1, 'graveyard', 'Test Ghoul');
+    expect(castable(s, theirs)).toBe(false);
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: theirs, yardBy: theirs } as Action)).toThrow();
   });
 });
 

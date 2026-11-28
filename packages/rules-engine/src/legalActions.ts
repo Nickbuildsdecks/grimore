@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { commanderTaxFor, listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, landTypesSet, cardHasSubtype, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef, type TypeLine,
+  allAbilitiesLost, landTypesSet, cardHasSubtype, characteristicsOf, commanderIdentity, conditionHolds, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef, type TypeLine,
 } from './characteristics.js';
 import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -866,6 +866,13 @@ function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readon
  * turn, on the seat's own turn, the card in the seat's own graveyard.
  */
 export function yardPermission(state: GameState, seat: SeatIndex, id: string): string | null {
+  // The card's own "You may cast ~ from your graveyard" (D1405): it is its own permit, at any turn
+  // its timing allows, and not once a turn. See `CardScript.castsSelfFromGraveyard`.
+  const own = state.instances[id];
+  if (own !== undefined && own.zone === 'graveyard' && own.zoneSeat === seat) {
+    const self = scriptForCard(state.cardDefs[own.defKey])?.castsSelfFromGraveyard;
+    if (self !== undefined && (self.while === undefined || conditionHolds(state, self.while, seat, id))) return id;
+  }
   if (state.activeSeat !== seat) return null;
   const inst = state.instances[id];
   if (inst === undefined || inst.zone !== 'graveyard' || inst.zoneSeat !== seat) return null;
