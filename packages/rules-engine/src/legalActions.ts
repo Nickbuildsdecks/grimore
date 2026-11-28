@@ -2596,6 +2596,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const costShown = offered ? state.pendingOfferedCast?.cost ?? ''
       // A plotted card is cast without paying its mana cost (D922), and so is Mind's Desire's (D1344).
       : plottedCast || (impulse && inst.playFromExile?.free === true) ? ''
+      // Airbend's "for {2} rather than its mana cost" (D1422).
+      : impulse && inst.playFromExile?.cost !== undefined ? inst.playFromExile.cost
       : flashback ? flashbackCostOf(state, id) ?? ''
         // Escape replaces the printed cost like flashback and foretell, which is why it is in the
         // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of

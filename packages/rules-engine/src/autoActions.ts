@@ -261,6 +261,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     && inst.playFromExile.through === 'plotted';
   // And a card it may be played for nothing (D1344): Mind's Desire, Urza.
   const freeFromExile = inst.zone === 'exile' && inst.playFromExile?.by === action.by && inst.playFromExile.free === true;
+  // And one it may be cast for a printed cost instead (D1422, airbend's {2}).
+  const exileCost = inst.zone === 'exile' && inst.playFromExile?.by === action.by ? inst.playFromExile.cost : undefined;
   // A warped card (D931): from exile on a later turn than the one it was warped on.
   if (inst.zone === 'exile' && inst.playFromExile?.by === action.by && inst.playFromExile.through === 'warped'
     && state.turn <= inst.playFromExile.grantedTurn) {
@@ -928,6 +930,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                   // A printed mana alternative (D1251): the Bringers' five colours, or nothing for life.
                   : altCast ? script?.altCost?.mana ?? '{0}'
                   : commanderFree || pitchCast || plotCast || freeFromExile || payLifeFromTop ? '{0}'
+                  : exileCost !== undefined ? exileCost
                   : kicked ? `${def?.manaCost ?? ''}${kickerCost}`
                   // And buyback, which adds on top exactly as the kicker does — what differs
                   // between them is what the mana buys, not how it is paid.

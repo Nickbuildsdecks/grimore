@@ -425,6 +425,11 @@ export interface CardInstance {
      * Vault. Played for nothing, at its own timing, until the deadline.
      */
     readonly free?: true;
+    /**
+     * "… for {2} rather than its mana cost" (D1422, airbend): an alternative cost, the whole of what
+     * the spell costs in mana while it is cast from exile under this permission.
+     */
+    readonly cost?: string;
   };
   /**
    * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the

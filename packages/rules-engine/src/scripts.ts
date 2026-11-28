@@ -15396,6 +15396,8 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   if (role !== null) return role;
   const bent = earthbendEffect(text, name);
   if (bent !== null) return bent;
+  const blown = airbendEffect(text);
+  if (blown !== null) return blown;
   const token = tokenEffect(text, name);
   if (token !== null) return token;
   /*
@@ -23902,6 +23904,32 @@ function earthbendEffect(text: string, name: string): ReadEffect | null {
       const land = firstCardTarget(c);
       return land === null ? c.state : earthbend(c.state, land, c.controller, c.source, amount(c));
     },
+  };
+}
+
+/**
+ * Airbend (D1422), the reminder text every card prints: "Exile it. While it's exiled, its owner may
+ * cast it for {2} rather than its mana cost." Each permanent targeted is exiled, and its owner gets
+ * D583's permission with no deadline, cast only, at {2}. A token exiled has ceased to exist. A
+ * spell is not read as a target here ("airbend up to one other target creature or spell").
+ */
+function airbendEffect(text: string): ReadEffect | null {
+  const blown = /^airbend ((?:up to one |any number of )?(?:other |another )?target .+)$/i.exec(plain(text).trim().replace(/\.$/, ''));
+  if (blown === null || /\bspell\b/i.test(blown[1]!)) return null;
+  const spec = targetSpecFrom(blown[1]!.replace(/\bpermanents\b/i, 'permanent'), false);
+  if (spec === null || (spec.kind !== 'creature' && spec.kind !== 'permanent')) return null;
+  return {
+    targets: [spec],
+    effect: (c) => c.targets.reduce((state, target) => {
+      if (target.kind !== 'card') return state;
+      const inst = state.instances[target.id];
+      if (inst === undefined || inst.zone !== 'battlefield') return state;
+      const exiled = exileCard(state, inst.id);
+      if (exiled.instances[inst.id]?.zone !== 'exile') return exiled;
+      return withInstance(exiled, inst.id, {
+        playFromExile: { by: inst.owner, grantedTurn: state.turn, through: 'while-exiled', castOnly: true, cost: '{2}' },
+      });
+    }, c.state),
   };
 }
 

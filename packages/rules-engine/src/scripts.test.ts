@@ -53586,6 +53586,61 @@ describe('waterbend: artifacts and creatures tapped to help pay (D1421)', () => 
   });
 });
 
+describe('airbend: exiled, and its owner may cast it for {2} (D1422)', () => {
+  const LESSON = { name: 'Test Air Lesson', type_line: 'Instant — Lesson', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: "Airbend target nonland permanent. (Exile it. While it's exiled, its owner may cast it for {2} rather than its mana cost.)" };
+  const GLIDER = { name: 'Test Glider', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: 'When this Equipment enters, airbend up to one target creature.' };
+  const BIG = { name: 'Test Colossus', type_line: 'Creature — Giant', mana_cost: '{6}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '7', toughness: '7', oracle_text: '' };
+  const ROWS = [LESSON, GLIDER, BIG];
+  const deck = customDeck({ id: 'd1422', name: 'Air', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 54 }], data: ROWS as never[] });
+  const board = (theirs: readonly string[], theirLands = 0): GameState => advanceTo(arena({
+    decks: { 0: 'd1422', 1: 'd1422' }, deckSpecs: { d1422: deck.deck }, hands: { 0: ['Test Air Lesson', 'Test Glider'] },
+    battlefield: { 0: ['Forest'], 1: [...theirs, ...Array.from({ length: theirLands }, () => 'Forest')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const blow = (s: GameState, target: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Air Lesson'), targets: [{ kind: 'card', id: target }],
+  } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // Not a spell as a target, which this reader does not exile.
+    const spell = compileCard({ ...GLIDER, name: 'Test Spell Air', oracle_text: 'When this Equipment enters, airbend up to one other target creature or spell.' } as never);
+    expect(spell.ok && spell.unread.length).toBe(1);
+  });
+
+  it('the Colossus goes to exile, its owner may cast it for {2}, and no one else may', () => {
+    let s = board(['Test Colossus'], 2);
+    const colossus = find(s, 1, 'battlefield', 'Test Colossus');
+    s = blow(s, colossus);
+    expect(s.instances[colossus]!.zone).toBe('exile');
+    expect(s.instances[colossus]!.playFromExile).toMatchObject({ by: 1, through: 'while-exiled', cost: '{2}' });
+    expect(legalActions(s, 0).plays.some((p) => p.card === colossus)).toBe(false);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    const offer = legalActions(s, 1).plays.find((p) => p.card === colossus && p.kind === 'cast');
+    expect(offer).toMatchObject({ manaCost: '{2}' });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: colossus } as Action)), 20);
+    expect(s.instances[colossus]!.zone).toBe('battlefield');
+    expect(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Forest' && s.instances[id]!.tapped).length).toBe(2);
+  });
+
+  it('with one land its owner cannot pay the {2}', () => {
+    let s = board(['Test Colossus'], 1);
+    const colossus = find(s, 1, 'battlefield', 'Test Colossus');
+    s = advanceTo(nextTurn(blow(s, colossus)), 'precombat-main');
+    expect(legalActions(s, 1).plays.some((p) => p.card === colossus && p.kind === 'cast')).toBe(false);
+  });
+
+  it('a token airbent is gone', () => {
+    let s = board([]);
+    s = createToken(s, 1 as SeatIndex, SOLDIER_TOKEN as never);
+    const token = ids(s, 1, 'battlefield').find((id) => s.instances[id]!.isToken)!;
+    s = blow(s, token);
+    expect(s.instances[token]).toBeUndefined();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
