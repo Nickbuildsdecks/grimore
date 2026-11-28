@@ -52485,3 +52485,32 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6759 of 6759 pass. Test typecheck clean.
 
 Coverage: 17,902 of 31,900 cards (+11 over D1412's 17,891), 41,194 of 59,888 lines (+12).
+
+## D1414 — A graveyard put under the library in a random order: Endurance
+
+"When Endurance enters, up to one target player puts all the cards from their graveyard on the
+bottom of their library in a random order." Endurance is on the third staples list. D1215 read
+"shuffles their graveyard into their library". This sentence is different: the graveyard goes under
+the library, and the library above it isn't shuffled.
+
+**The reading.** "(Up to one) target player (or target opponent) puts all the cards from their
+graveyard on the bottom of their library in a random order" moves that player's graveyard as one
+random pile (`bottomPile`). "Up to one" is an optional player target, so choosing nobody does
+nothing. "Up to one target player" isn't read in general: only this sentence takes it (eight legal
+lines print it).
+
+Read whole now: Endurance.
+
+**Tests.** 2 engine tests:
+- It reads whole, with an optional player target.
+- Aimed at the opponent, their three graveyard cards are the bottom three of their library, their
+  graveyard is empty, and the top card of their library is the same one.
+
+Faults injected by hand: 3, all caught.
+- Nothing moved: caught.
+- The target not optional: caught.
+- The caster's graveyard moved instead: caught.
+
+The scripts tests, compile tests and pins: 6761 of 6761 pass. Test typecheck clean.
+
+Coverage: 17,903 of 31,900 cards (+1 over D1413's 17,902), 41,195 of 59,888 lines (+1).
