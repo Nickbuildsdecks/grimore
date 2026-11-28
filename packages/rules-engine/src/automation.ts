@@ -38,7 +38,7 @@ import {
 } from './combat.js';
 import {
   BLITZED,
-  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID,
+  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID, READ_AHEAD_CHAPTERS,
   SQUADDED,
   createToken,
   DASHED, EVOKED, EXILED_ON_LEAVING, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
@@ -7231,6 +7231,17 @@ function resolveObject(
         const answer = chosenOption(ctx);
         const chosen = answer === null ? undefined : chosenRecord(script.entersChoice, answer);
         if (chosen !== undefined) next = withInstance(next, inst.id, { chosen });
+      } else if (script?.entersChoice === 'read-ahead') {
+        /*
+          Read ahead (D1396): the chosen number of lore counters, and only that chapter triggers
+          (CR 714.3b). Chapter I is the ordinary arrival's first counter, so it is left to it.
+        */
+        const answer = chosenOption(ctx);
+        const n = answer === null ? 1 : READ_AHEAD_CHAPTERS.indexOf(answer as typeof READ_AHEAD_CHAPTERS[number]) + 1;
+        if (n > 1) {
+          next = addCounters(next, inst.id, 'lore', n);
+          next = raise(next, { kind: 'chapter', n }, next.instances[inst.id]?.zoneSeat ?? object.controller, inst.id);
+        }
       } else if (script?.entersChoice === 'tribute') {
         // Tribute (D1374): the opponent's answer, as it arrives; nothing when it was declined.
         if (chosenOption(ctx) === TRIBUTE_PAID) {

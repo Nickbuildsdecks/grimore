@@ -29,7 +29,7 @@ import { isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from '.
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
   BLITZED,
-  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID, TRIBUTE_DECLINED,
+  SURGED, ESCAPED, TRIBUTED, TRIBUTE_PAID, READ_AHEAD_CHAPTERS, TRIBUTE_DECLINED,
   SQUADDED,
   addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
@@ -3445,6 +3445,25 @@ export const RIOT: Partial<CardScript> = {
   decisions: [{
     who: 'controller', prompt: 'Riot — enter with a +1/+1 counter, or with haste?',
     options: [ENTERS_COUNTER_OPTION, RIOT_HASTE_OPTION],
+  }],
+};
+
+/**
+ * Read ahead (D1396, CR 714.3b): "As this Saga enters, choose a chapter and start with that many lore
+ * counters. Add one after your draw step. Skipped chapters don't trigger." The chapters are this
+ * card's, counted from its triggers as the question is asked, so the answers run from "Chapter I" to
+ * its last. The bot starts at the beginning.
+ */
+const READ_AHEAD: Partial<CardScript> = {
+  entersChoice: 'read-ahead',
+  decisions: [(state: GameState, source: string) => {
+    const triggers = scriptOfCard(state.cardDefs[state.instances[source]?.defKey ?? ''])?.triggers ?? [];
+    const last = Math.max(1, ...triggers.flatMap((t) => (Array.isArray(t.on) ? t.on : [t.on]))
+      .flatMap((on) => (on.kind === 'chapter' ? [on.n] : [])));
+    return {
+      who: 'controller' as const, prompt: 'Read ahead — start with which chapter?',
+      options: READ_AHEAD_CHAPTERS.slice(0, Math.min(last, READ_AHEAD_CHAPTERS.length)),
+    };
   }],
 };
 
@@ -12066,6 +12085,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.
   if (word === 'riot') return RIOT;
   if (word === 'unleash') return UNLEASH;
+  // Read ahead (D1396, CR 714.3b): see `entersChoice`.
+  if (word === 'read ahead') return READ_AHEAD;
 
   // ── The keywords that carry a mana cost ───────────────────────────────────────────────────────
   /*

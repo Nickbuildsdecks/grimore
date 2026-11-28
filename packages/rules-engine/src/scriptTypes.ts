@@ -3959,7 +3959,12 @@ export interface CardScript {
    * conditional static and lives in `statics`, where a counter from any source turns it on, which
    * is what the card says.
    */
-  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color' | 'card-name' | 'tribute';
+  /**
+   * `'read-ahead'` (D1396, CR 714.3b): a Saga whose controller chooses a chapter as it enters, the
+   * answer being "Chapter I" to its last. It starts with that many lore counters, and only that
+   * chapter triggers; the ones before it are skipped.
+   */
+  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color' | 'card-name' | 'tribute' | 'read-ahead';
   /**
    * Tribute N (D1374, CR 702.104a): "As this creature enters, an opponent of your choice may put N
    * +1/+1 counters on it." The number, with `entersChoice: 'tribute'` and the opponent's yes-or-no

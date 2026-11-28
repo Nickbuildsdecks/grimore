@@ -311,3 +311,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1392 pushed in d39907e. D1393 the Saga that returns transformed: scripts.ts (returnedTransformed in sagaChapterLine).
 - D1393 pushed in 4095f09. D1394 modal spells on alternative-cost rows (sweep 105001 seed 105085): legalActions.
 - D1394 pushed in d8340b1. D1395 this Saga and modal Saga chapters: characteristics (SELF_TYPE_WORDS), scripts.ts (modalTriggerFor), compile.test.ts pin.
+- D1395 pushed in fc76e6d. D1396 Read ahead: scriptTypes, effects (READ_AHEAD_CHAPTERS), scripts.ts, automation.

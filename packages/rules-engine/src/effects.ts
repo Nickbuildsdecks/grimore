@@ -1096,6 +1096,8 @@ export const ESCAPED = 'escaped';
 /** Tribute paid (D1374), for "When ~ enters, if tribute wasn't paid, …". See `CardScript.tribute`. */
 export const TRIBUTED = 'tributed';
 /** The answer that pays a tribute (D1374). */
+/** Read ahead's answers (D1396), the chapter a Saga starts with: see `CardScript.entersChoice`. */
+export const READ_AHEAD_CHAPTERS = ['Chapter I', 'Chapter II', 'Chapter III', 'Chapter IV', 'Chapter V', 'Chapter VI'] as const;
 export const TRIBUTE_PAID = 'Pay the tribute';
 export const TRIBUTE_DECLINED = 'Decline';
 

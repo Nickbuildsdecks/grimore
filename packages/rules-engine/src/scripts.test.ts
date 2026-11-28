@@ -52054,6 +52054,43 @@ describe('"This Saga", and a Saga\'s modal chapter (D1395)', () => {
   });
 });
 
+describe('Read ahead (D1396)', () => {
+  const TOME = { name: 'Test Tome', type_line: 'Enchantment — Saga', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+    oracle_text: "Read ahead (As this Saga enters, choose a chapter and start with that many lore counters. Add one after your draw step. Skipped chapters don't trigger.)\nI — You gain 1 life.\nII — You gain 2 life.\nIII — You gain 3 life." };
+  const deck = customDeck({ id: 'd1396', name: 'Tome', entries: [{ name: 'Test Tome', count: 2 }, { name: 'Plains', count: 58 }], data: [TOME] as never[] });
+  const cast = (chapter: string): { s: GameState; tome: string } => {
+    let s = advanceTo(arena({ decks: { 0: 'd1396', 1: 'd1396' }, deckSpecs: { d1396: deck.deck }, hands: { 0: ['Test Tome'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const tome = find(s, 0, 'hand', 'Test Tome');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: tome } as Action));
+    expect(s.pendingDecision?.options).toEqual(['Chapter I', 'Chapter II', 'Chapter III']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: chapter } as Action), 20);
+    return { s, tome };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(TOME as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('starting at chapter III: three lore counters, only chapter III, and then it is sacrificed', () => {
+    const { s, tome } = cast('Chapter III');
+    expect(life(s, 0)).toBe(23);
+    expect(s.instances[tome]!.zone).toBe('graveyard');
+  });
+
+  it('starting at chapter II skips chapter I', () => {
+    const { s, tome } = cast('Chapter II');
+    expect(life(s, 0)).toBe(22);
+    expect(s.instances[tome]!.counters['lore']).toBe(2);
+  });
+
+  it('starting at chapter I is the ordinary Saga', () => {
+    const { s, tome } = cast('Chapter I');
+    expect(life(s, 0)).toBe(21);
+    expect(s.instances[tome]!.counters['lore']).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
