@@ -52953,3 +52953,56 @@ Faults injected by hand: 2, both caught, each restored from a backup.
 The scripts, compile, pin, automation and playout tests: 7039 of 7039 pass. Test typecheck clean.
 
 Coverage: 17,999 of 31,900 cards (+7 over D1422's 17,992), 41,343 of 59,888 lines (+13).
+
+## D1424 — Two board conditions: the Djinn's most common colour, and what entered this turn
+
+**The most common colour.** "Goham Djinn gets -2/-2 as long as black is the most common color among
+all permanents or is tied for most common": the five Djinn. A new static condition,
+`most-common-colour`. It holds when that colour's count among all permanents is the highest, a tie
+included, and at least one. Counted off printed colours, as `conditionMet` counts printed artifact
+types: asking live colours there would ask this same effect while it is computed. An effect that
+changes a permanent's colour is therefore not counted, which is a stated deviation.
+
+**What entered this turn.** "As long as two or more nonland permanents entered the battlefield
+under your control this turn" (Armory Mice), "if you had a land enter the battlefield under your
+control this turn" (Groundswell), "an artifact entered …". The new `GameState.enteredThisTurn` counts
+each arrival as it is settled, by its characteristics as it arrived. Keys are seat and kind: land,
+nonland, creature, artifact. It is cleared with the rest of the turn's facts.
+
+The condition, `controller-entered`, is read by the static reader and through it by intervening
+ifs and spell conditions.
+
+Read whole now: the five Djinn (Goham, Halam, Ruham, Sulam, Zanam). Among the 59 legal cards
+printing an "entered under your control this turn" condition, these read whole on this build:
+- Akal Pakal, First Among Equals; Armory Mice; Ash, Party Crasher; Belligerent of the Ball;
+  Bespoke Battlegarb.
+- Fixer, Techno Terror; Gallant Pie-Wielder; Gargoyle Flock; Grand Ball Guest; Groundswell.
+- Malcator, Purity Overseer; Mysteries of the Deep; Rest for the Weary; Sentinel Sarah Lyons;
+  The Prydwen, Steel Flagship.
+- Thoughtweft Charge; Tomb Hex; Tuinvale Guide; Wandering Troubadour; Zhalfirin Decoy.
+
+Some of those may have read before on other wording. The coverage line below is the measured
+difference.
+
+Still unread: "another creature entered", which needs the card itself left out, and "shares a
+color with the most common color" (Tsabo's Assassin, Barrin's Unmaking, Heroic Defiance), a
+condition on a target.
+
+**Tests.** 7 engine tests:
+- Djinn: reads whole; alone among lands it shrinks to 3/4; tied with one green Bears it shrinks;
+  outnumbered by two it is 5/6.
+- Entered: the fixtures read whole.
+- A land drop and one Bears leave the Mice 1/1, a second Bears makes them 1/3, and the next turn
+  forgets it.
+- A Groundswell-like instant gives +4/+4 after a land drop and +2/+2 without one.
+
+Faults injected by hand: 5, all caught, each restored from a backup.
+- Ties not counted.
+- The "most" check dropped.
+- No counting.
+- A land counted as nonland.
+- No reset at the end of the turn.
+
+The scripts, compile, pin, automation and playout tests: 7046 of 7046 pass. Test typecheck clean.
+
+Coverage: 18,024 of 31,900 cards (+25 over D1423's 17,999), 41,375 of 59,888 lines (+32).
