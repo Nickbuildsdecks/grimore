@@ -42067,7 +42067,13 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
     603.4). The two differ only when the total drops below the threshold before the trigger
     resolves, and then this does nothing where the card would still act.
   */
-  const text = plain(withoutAbilityWord(line)).trim().replace(/^(Whenever you attack) while /i, '$1, if ');
+  /*
+    And "Whenever ~ attacks while you control a creature with power 4 or greater" (D1409, Ferocious:
+    Ravening Warg, Wargling, Nighthowl Pursuer, Ruby): the same reading, with the same difference,
+    for a single attacker. Not "while saddled", which `whileSaddled` reads as the state it is.
+  */
+  const text = plain(withoutAbilityWord(line)).trim().replace(/^(Whenever you attack) while /i, '$1, if ')
+    .replace(new RegExp(`^(Whenever (?:${selfRef(name)}|this creature) attacks) while (?!saddled\\b)`, 'i'), '$1, if ');
   /*
     A name with a comma in it (D1145): "Whenever the Ring tempts you, if you chose a creature other
     than Gandalf, Friend of the Shire as your Ring-bearer, draw a card", and "When Tymna, the Weaver

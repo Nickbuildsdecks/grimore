@@ -52817,6 +52817,33 @@ describe('cast as though it had flash while a condition holds: Hungering Yeti (D
   });
 });
 
+describe('"whenever ~ attacks while …": Ferocious attackers (D1409)', () => {
+  const WARG = { name: 'Test Warg', type_line: 'Creature — Wolf', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life.' };
+  const BRUTE = { name: 'Test Brute', type_line: 'Creature — Beast', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '4', toughness: '4', oracle_text: '' };
+  const ROWS = [WARG, BRUTE];
+  const deck = customDeck({ id: 'd1409', name: 'Warg', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Hill Giant', count: 4 }, { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const attack = (beside: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1409', 1: 'd1409' }, deckSpecs: { d1409: deck.deck }, battlefield: { 0: ['Test Warg', beside] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Warg'), defender: 1 }] } as Action);
+    return drain(s, 10);
+  };
+
+  it('reads whole, as one attack trigger', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(WARG as never);
+    expect(read.ok && read.script?.triggers?.length).toBe(1);
+  });
+
+  it('beside a 4/4 the attack gains 2 life; beside a 3/3 Hill Giant, none', () => {
+    expect(life(attack('Test Brute'), 0)).toBe(22);
+    expect(life(attack('Hill Giant'), 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
