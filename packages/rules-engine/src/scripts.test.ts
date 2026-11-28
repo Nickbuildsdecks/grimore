@@ -53397,6 +53397,50 @@ describe('Role tokens: Aura tokens created attached, one per controller on a cre
   });
 });
 
+describe('a Role on the card itself, or on what its trigger is about (D1419)', () => {
+  const COURTIER = { name: 'Test Courtier', type_line: 'Creature — Human Noble', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: 'Lifelink\nWhen Test Courtier enters, create a Cursed Role token attached to it. (Enchanted creature is 1/1.)' };
+  const PATRON = { name: 'Test Patron', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+    oracle_text: 'Whenever another creature you control enters, create a Monster Role token attached to it.' };
+  const SAGE = { name: 'Test Sage', type_line: 'Creature — Human Wizard', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'When Test Sage enters, you may pay {2}. If you do, create a Sorcerer Role token attached to it.' };
+  const ROWS = [COURTIER, PATRON, SAGE];
+  const deck = customDeck({ id: 'd1419', name: 'Own Roles', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 8 }, { name: 'Forest', count: 46 }], data: ROWS as never[] });
+  const board = (hand: readonly string[], mine: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1419', 1: 'd1419' }, deckSpecs: { d1419: deck.deck }, hands: { 0: [...hand] },
+    battlefield: { 0: [...mine], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const rolesOn = (s: GameState, host: string): string[] => Object.values(s.instances)
+    .filter((inst) => inst.zone === 'battlefield' && inst.attachedTo === host).map((inst) => s.cardDefs[inst.defKey]!.name);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // On a spell, with nothing before it, "it" is nothing this reader can name.
+    const lone = compileCard({ name: 'Test Lone Role', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Create a Monster Role token attached to it.' } as never);
+    expect(lone.ok && lone.unread.length).toBe(1);
+  });
+
+  it('the Courtier curses itself: a 1/1 with lifelink', () => {
+    let s = board(['Test Courtier']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Courtier') } as Action)), 20);
+    const courtier = find(s, 0, 'battlefield', 'Test Courtier');
+    expect(rolesOn(s, courtier)).toEqual(['Cursed Role']);
+    const ch = characteristicsOf(s, s.instances[courtier]!);
+    expect([ch.power, ch.toughness, ch.keywords.has('lifelink')]).toEqual([1, 1, true]);
+  });
+
+  it('"it" after another creature enters is that creature, not the enchantment', () => {
+    let s = board(['Grizzly Bears'], ['Test Patron', 'Forest', 'Forest']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action)), 20);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(rolesOn(s, bears)).toEqual(['Monster Role']);
+    expect(rolesOn(s, find(s, 0, 'battlefield', 'Test Patron'))).toEqual([]);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect([ch.power, ch.toughness, ch.keywords.has('trample')]).toEqual([3, 3, true]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

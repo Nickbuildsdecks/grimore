@@ -16786,6 +16786,26 @@ function selfEffect(
   }
 
   /*
+    A Role on the card itself, or on the permanent its trigger is about (D1419): "When Cursed
+    Courtier enters, create a Cursed Role token attached to it", Unassuming Sage's "If you do, …
+    attached to it". An "it" that names an earlier target is read before this, by the referent swap
+    (Monstrous Rage). Nothing is made when that permanent is gone or isn't a creature.
+  */
+  const selfRole = new RegExp(`^create an? (cursed|monster|royal|sorcerer|virtuous|wicked|young hero) role token attached to (?:(${self})|it)$`, 'i').exec(text.replace(/\.$/, ''));
+  if (selfRole !== null && (selfRole[2] !== undefined || where === 'battlefield')) {
+    const key = Object.keys(ROLE_TOKENS).find((k) => k.toLowerCase() === selfRole[1]!.toLowerCase())!;
+    const token = ROLE_TOKENS[key]!;
+    return {
+      effect: (c) => {
+        const host = itMeans(selfRole[2], c);
+        const inst = c.state.instances[host];
+        if (inst === undefined || inst.zone !== 'battlefield' || !characteristicsOf(c.state, inst).isCreature) return c.state;
+        return createAttachedToken(c.state, c.controller, token, host);
+      },
+    };
+  }
+
+  /*
     **"Sacrifice ~ unless you pay {M}"** — the upkeep tax, and echo's question on a card that does
     not print the keyword (D529).
 
