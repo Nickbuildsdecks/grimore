@@ -1,0 +1,360 @@
+Rhystic Study
+Smothering Tithe
+Cyclonic Rift
+Dockside Extortionist
+Esper Sentinel
+The One Ring
+Demonic Tutor
+Mana Crypt
+Sol Ring
+Arcane Signet
+Fierce Guardianship
+Deflecting Swat
+Jeska's Will
+Ancient Tomb
+Chrome Mox
+Mox Diamond
+Grim Monolith
+Lion's Eye Diamond
+Underworld Breach
+Necropotence
+Ad Nauseam
+Thassa's Oracle
+Tainted Pact
+Orcish Bowmasters
+Opposition Agent
+Drannith Magistrate
+Grand Abolisher
+Aven Mindcensor
+Notion Thief
+Narset, Parter of Veils
+Teferi's Protection
+Heroic Intervention
+Deadly Rollick
+Swords to Plowshares
+Path to Exile
+Anguished Unmaking
+Assassin's Trophy
+Toxic Deluge
+Farewell
+Blasphemous Act
+Vandalblast
+Austere Command
+Craterhoof Behemoth
+Finale of Devastation
+Natural Order
+Survival of the Fittest
+Sylvan Library
+Mystic Remora
+Dark Confidant
+Phyrexian Arena
+Wheel of Fortune
+Windfall
+Timetwister
+Ghostly Flicker
+Dramatic Reversal
+Isochron Scepter
+Kiki-Jiki, Mirror Breaker
+Zealous Conscripts
+Exquisite Blood
+Sanguine Bond
+Bolas's Citadel
+Aetherflux Reservoir
+Doubling Season
+Parallel Lives
+Anointed Procession
+Panharmonicon
+Purphoros, God of the Forge
+Impact Tremors
+Mystic Sanctuary
+Bojuka Bog
+Reliquary Tower
+Command Tower
+Exotic Orchard
+Path of Ancestry
+Rogue's Passage
+Strip Mine
+Wasteland
+Gaea's Cradle
+Cabal Coffers
+Urborg, Tomb of Yawgmoth
+Boseiju, Who Endures
+Otawara, Soaring City
+Field of the Dead
+Dark Depths
+Thespian's Stage
+Glacial Chasm
+Kodama's Reach
+Cultivate
+Three Visits
+Nature's Lore
+Farseek
+Rampant Growth
+Skyshroud Claim
+Birds of Paradise
+Llanowar Elves
+Elvish Mystic
+Fyndhorn Elves
+Delighted Halfling
+Avacyn's Pilgrim
+Ignoble Hierarch
+Noble Hierarch
+Mana Vault
+Lotus Petal
+Jeweled Lotus
+Fellwar Stone
+Mind Stone
+Thought Vessel
+Wayfarer's Bauble
+Commander's Sphere
+Lightning Greaves
+Swiftfoot Boots
+Skullclamp
+Beast Within
+Chaos Warp
+Generous Gift
+Krosan Grip
+Nature's Claim
+Pongify
+Rapid Hybridization
+Counterspell
+Swan Song
+Mana Drain
+Force of Will
+Force of Negation
+Pact of Negation
+Mental Misstep
+An Offer You Can't Refuse
+Dovin's Veto
+Arcane Denial
+Negate
+Mystic Confluence
+Brainstorm
+Ponder
+Preordain
+Gitaxian Probe
+Frantic Search
+Faithless Looting
+Gamble
+Imperial Seal
+Vampiric Tutor
+Enlightened Tutor
+Mystical Tutor
+Worldly Tutor
+Personal Tutor
+Diabolic Intent
+Grim Tutor
+Wishclaw Talisman
+Scheming Symmetry
+Dark Ritual
+Cabal Ritual
+Rite of Flame
+Seething Song
+Culling the Weak
+Simian Spirit Guide
+Elvish Spirit Guide
+Mox Opal
+Mox Amber
+Springleaf Drum
+Birgi, God of Storytelling
+Black Market Connections
+Guardian Project
+Beast Whisperer
+Tireless Provisioner
+Toski, Bearer of Secrets
+Ohran Frostfang
+Garruk's Uprising
+Return of the Wildspeaker
+Shamanic Revelation
+Harmonize
+Rishkar's Expertise
+Kindred Discovery
+Painful Truths
+Read the Bones
+Night's Whisper
+Sign in Blood
+Deadly Dispute
+Village Rites
+Ashnod's Altar
+Phyrexian Altar
+Carrion Feeder
+Blood Artist
+Zulaport Cutthroat
+Viscera Seer
+Yawgmoth, Thran Physician
+Grave Pact
+Dictate of Erebos
+Butcher of Malakir
+Teysa Karlov
+Mikaeus, the Unhallowed
+Walking Ballista
+Heliod, Sun-Crowned
+Animate Dead
+Reanimate
+Necromancy
+Entomb
+Buried Alive
+Living Death
+Dread Return
+Eternal Witness
+Regrowth
+Demonic Consultation
+Mana Confluence
+City of Brass
+Chromatic Lantern
+Coalition Relic
+Talisman of Dominance
+Dimir Signet
+Arcane Denial
+Archmage Emeritus
+Talrand, Sky Summoner
+Young Pyromancer
+Monastery Mentor
+Krenko, Mob Boss
+Goblin Chieftain
+Purphoros, God of the Forge
+Ruthless Technomancer
+Dauthi Voidwalker
+Tergrid, God of Fright
+Ragavan, Nimble Pilferer
+Jeska, Thrice Reborn
+Fury
+Solitude
+Grief
+Endurance
+Subtlety
+Ephemerate
+Restoration Angel
+Felidar Guardian
+Deadeye Navigator
+Peregrine Drake
+Palinchron
+Great Whale
+Cloudstone Curio
+Ashaya, Soul of the Wild
+Ancient Greenwarden
+Crucible of Worlds
+Ramunap Excavator
+Azusa, Lost but Seeking
+Oracle of Mul Daya
+Courser of Kruphix
+Exploration
+Burgeoning
+Dryad of the Ilysian Grove
+Lotus Cobra
+Tatyova, Benthic Druid
+Avenger of Zendikar
+Scute Swarm
+Field of the Dead
+Scapeshift
+Prismatic Vista
+Fabled Passage
+Evolving Wilds
+Terramorphic Expanse
+Ash Barrens
+Myriad Landscape
+Krosan Verge
+Dakmor Salvage
+Hedron Crab
+Sidisi, Brood Tyrant
+Mesmeric Orb
+Bloodghast
+Gravecrawler
+Rotlung Reanimator
+Sheoldred, the Apocalypse
+Sheoldred, Whispering One
+Elesh Norn, Grand Cenobite
+Elesh Norn, Mother of Machines
+Atraxa, Grand Unifier
+Atraxa, Praetors' Voice
+Avacyn, Angel of Hope
+Consecrated Sphinx
+Kinnan, Bonder Prodigy
+Urza, Lord High Artificer
+Najeela, the Blade-Blossom
+Godo, Bandit Warlord
+Helm of the Host
+Kenrith, the Returned King
+Korvold, Fae-Cursed King
+The Ur-Dragon
+Edgar Markov
+Miirym, Sentinel Wyrm
+Lathril, Blade of the Elves
+Prossh, Skyraider of Kher
+Meren of Clan Nel Toth
+Muldrotha, the Gravetide
+Chulane, Teller of Tales
+Yuriko, the Tiger's Shadow
+Tymna the Weaver
+Thrasios, Triton Hero
+Kraum, Ludevic's Opus
+Rograkh, Son of Rohgahh
+Silas Renn, Seeker Adept
+Winota, Joiner of Forces
+Magda, Brazen Outlaw
+Isshin, Two Heavens as One
+Aurelia, the Warleader
+Hellrider
+Anim Pakal, Thousandth Moon
+Old Gnawbone
+Lifecrafter's Bestiary
+Elemental Bond
+Garruk's Packleader
+Mirari's Wake
+Zendikar Resurgent
+Mana Reflection
+Nyxbloom Ancient
+Selvala, Heart of the Wilds
+Vorinclex, Monstrous Raider
+Toxrill, the Corrosive
+Massacre Wurm
+Black Sun's Zenith
+Damnation
+Wrath of God
+Cyclonic Rift
+Evacuation
+Aetherize
+Settle the Wreckage
+Comeuppance
+Fog
+Constant Mists
+Spore Frog
+Sterling Grove
+Greater Auramancy
+Sigarda, Host of Herons
+Sigarda's Aid
+Puresteel Paladin
+Sram, Senior Edificer
+Sythis, Harvest's Hand
+Argothian Enchantress
+Enchantress's Presence
+Mesa Enchantress
+Setessan Champion
+Eidolon of Blossoms
+Serra's Sanctum
+Replenish
+Starfield of Nyx
+Sphere of Safety
+Ghostly Prison
+Propaganda
+Norn's Annex
+Silent Arbiter
+Crawlspace
+Collector Ouphe
+Stony Silence
+Null Rod
+Cursed Totem
+Torpor Orb
+Hushbringer
+Rest in Peace
+Leyline of the Void
+Grafdigger's Cage
+Tormod's Crypt
+Relic of Progenitus
+Soul-Guide Lantern
+Bojuka Bog
+Scavenging Ooze
+Deathrite Shaman
+Lurrus of the Dream-Den
+Kaalia of the Vast
+Tiamat
