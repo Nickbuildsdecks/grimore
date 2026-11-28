@@ -52844,6 +52844,51 @@ describe('"whenever ~ attacks while …": Ferocious attackers (D1409)', () => {
   });
 });
 
+describe('a trigger on a creature of the chosen type: Kindred Discovery (D1410)', () => {
+  const DISCOVERY = { name: 'Test Discovery', type_line: 'Enchantment', mana_cost: '{3}{U}{U}', cmc: 5, colors: ['U'], layout: 'normal',
+    oracle_text: 'As Test Discovery enters, choose a creature type.\nWhenever a creature you control of the chosen type enters or attacks, draw a card.' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const GOBLIN = { name: 'Test Goblin', type_line: 'Creature — Goblin', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [DISCOVERY, ELF, GOBLIN];
+  const deck = customDeck({ id: 'd1410', name: 'Discovery', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1410', 1: 'd1410' }, deckSpecs: { d1410: deck.deck }, hands: { 0: ['Test Discovery', 'Test Elf', 'Test Goblin'] },
+      battlefield: { 0: ['Test Elf', 'Test Elf', 'Island', 'Island', 'Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // Cast, the type is asked as it resolves: Elf.
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Discovery') } as Action));
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Elf' } as Action);
+    return s;
+  };
+  const hand = (s: GameState): number => ids(s, 0, 'hand').length;
+
+  it('reads whole, as two triggers', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(DISCOVERY as never);
+    expect(read.ok && read.script?.triggers?.length).toBe(2);
+  });
+
+  it('an Elf entering draws a card; a Goblin entering does not', () => {
+    let s = table();
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Discovery')]!.chosen).toEqual({ type: 'Elf' });
+    const before = hand(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Goblin') } as Action)), 20);
+    expect(hand(s)).toBe(before - 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Elf') } as Action)), 20);
+    expect(hand(s)).toBe(before - 1);
+  });
+
+  it('an Elf attacking draws a card', () => {
+    let s = advanceTo(table(), 'declare-attackers');
+    const before = hand(s);
+    const elf = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Test Elf')!;
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: elf, defender: 1 }] } as Action), 10);
+    expect(hand(s)).toBe(before + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

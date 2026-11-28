@@ -42314,6 +42314,32 @@ function lineScriptForPrinted(line: string, name: string): Partial<CardScript> |
 
 function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
   /*
+    "Whenever a creature you control of the chosen type enters or attacks, draw a card" (D1410,
+    Kindred Discovery), Bloodline Pretender's "another … enters", Molten Echoes' "a nontoken …",
+    Species Specialist's "a creature of the chosen type dies". Read as the line without the type,
+    one trigger for each event, each asking that the creature it is about has the creature type its
+    source chose as it entered (`CardInstance.chosen`). The condition is an intervening one, asked
+    again as the trigger resolves: a creature that stopped being that type in between does nothing.
+  */
+  const chosenKind = /^(Whenever (?:a|another) (?:nontoken )?creature(?: you control)?) of the chosen type (enters or attacks|enters|attacks|dies), (.+)$/i.exec(plain(line).trim());
+  if (chosenKind !== null) {
+    const events = /^enters or attacks$/i.test(chosenKind[2]!) ? ['enters', 'attacks'] : [chosenKind[2]!];
+    const ofChosen = (c: EffectContext): boolean => {
+      const type = c.state.instances[c.source]?.chosen?.type;
+      const subject = c.subject === undefined ? undefined : c.state.instances[c.subject];
+      return type !== undefined && subject !== undefined && hasSubtype(characteristicsOf(c.state, subject).typeLine, type);
+    };
+    const triggers: TriggerDef[] = [];
+    for (const event of events) {
+      const read = lineScriptFor(`${chosenKind[1]!} ${event}, ${chosenKind[3]!}`, name);
+      if (read === null || Object.keys(read).some((key) => key !== 'triggers') || (read.triggers ?? []).length !== 1) return null;
+      const trigger = read.triggers![0]!;
+      const own = trigger.condition;
+      triggers.push({ ...trigger, condition: (c) => ofChosen(c) && (own === undefined || own(c)) });
+    }
+    return { triggers };
+  }
+  /*
     "You may cast ~ as though it had flash if you control a Faerie", "As long as you control a green
     or blue permanent, you may cast ~ as though it had flash", "If …, you may cast this spell as
     though it had flash" (D1408): see `CardScript.flashWhile`. The condition is a static's.
