@@ -2208,6 +2208,35 @@ function searchClause(text: string, name: string): ReadEffect | null {
     if its type was the answer (`askOnlyIfChosen`). The plain search's effect gets the cards found.
     The bot takes the type the library holds most of.
   */
+  /*
+    "Search your library for a Forest card and a Plains card, put them onto the battlefield tapped,
+    then shuffle" (D1427, Krosan Verge, Yasharn, Corpse Harvester's "a Zombie card and a Swamp
+    card"). Two library questions, one per kind, each read as the single search would ask it; the
+    plain search's effect then takes both cards. A card of both kinds (Savannah) is one card, found once.
+  */
+  const pair = /^search your library for (an? .+? card) and (an? .+? card), (.+)$/i.exec(text.trim());
+  if (pair !== null && /\bthem\b/i.test(pair[3]!)) {
+    const single = (what: string) => searchClause(`search your library for ${what}, ${pair[3]!.replace(/\bthem\b/gi, 'it')}`, name);
+    const first = single(pair[1]!);
+    const second = single(pair[2]!);
+    const both = searchClause(`search your library for up to two cards, ${pair[3]!}`, name);
+    const question = (read: ReadEffect | null): CardsDecisionSpec | null => {
+      const spec = read?.decisions?.length === 1 ? read.decisions[0] : undefined;
+      return read === null || read.targets !== undefined || spec === undefined || typeof spec === 'function'
+        || !isCardsDecision(spec) || spec.from !== 'library' ? null : spec;
+    };
+    const a = question(first);
+    const b = question(second);
+    if (a !== null && b !== null && both !== null && both.targets === undefined) {
+      return {
+        decisions: [a, b],
+        effect: (c) => {
+          const found = [...new Set([...chosenCards(c, 0), ...chosenCards(c, 1)])];
+          return both.effect({ ...c, decisions: [{ seat: c.controller, ids: found }] });
+        },
+      };
+    }
+  }
   const sharing = /^search your library for up to (two|three) basic land cards that share a land type, (.+)$/i.exec(text.trim());
   if (sharing !== null) {
     const inner = searchClause(`search your library for up to ${sharing[1]!} basic land cards, ${sharing[2]!}`, name);

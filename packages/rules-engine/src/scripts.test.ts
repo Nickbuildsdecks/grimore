@@ -53882,6 +53882,52 @@ describe('Mana Reflection and Nyxbloom Ancient: a tap makes twice or three times
   });
 });
 
+describe('a search for two kinds of card: Krosan Verge (D1427)', () => {
+  const VERGE = { name: 'Test Verge', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: 'Test Verge enters tapped.\n{T}: Add {C}.\n{2}, {T}, Sacrifice Test Verge: Search your library for a Forest card and a Plains card, put them onto the battlefield tapped, then shuffle.' };
+  const HARVESTER = { name: 'Test Harvester', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+    oracle_text: 'Search your library for a Zombie card and a Swamp card, reveal them, put them into your hand, then shuffle.' };
+  const ROWS = [VERGE, HARVESTER];
+  const deck = customDeck({ id: 'd1427', name: 'Verge', entries: [{ name: 'Test Verge', count: 2 }, { name: 'Test Harvester', count: 2 }, { name: 'Forest', count: 20 }, { name: 'Plains', count: 12 }, { name: 'Island', count: 12 }, { name: 'Swamp', count: 8 }, { name: 'Gravedigger', count: 4 }], data: ROWS as never[] });
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks for a Forest, then a Plains, and puts both onto the battlefield tapped', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1427', 1: 'd1427' }, deckSpecs: { d1427: deck.deck },
+      battlefield: { 0: ['Test Verge', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const verge = find(s, 0, 'battlefield', 'Test Verge');
+    const row = legalActions(s, 0).plays.find((p) => p.card === verge && p.kind === 'activate' && !p.isManaAbility)!;
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: verge, abilityIndex: row.abilityIndex! } as Action), 20);
+    expect((s.pendingDecision?.candidates ?? []).every((id) => named(s, id) === 'Forest')).toBe(true);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates[0]!] } as Action), 20);
+    expect((s.pendingDecision?.candidates ?? []).every((id) => named(s, id) === 'Plains')).toBe(true);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates[0]!] } as Action), 20);
+    const found = ids(s, 0, 'battlefield').filter((id) => ['Forest', 'Plains'].includes(named(s, id)));
+    expect(found.map((id) => named(s, id)).sort()).toEqual(['Forest', 'Plains']);
+    expect(found.every((id) => s.instances[id]!.tapped)).toBe(true);
+  });
+
+  it('the Harvester brings a Zombie and a Swamp to hand', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1427', 1: 'd1427' }, deckSpecs: { d1427: deck.deck }, hands: { 0: ['Test Harvester'] },
+      battlefield: { 0: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = namesIn(s, 0, 'hand');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Harvester') } as Action)), 20);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates.find((id) => named(s, id) === 'Gravedigger')!] } as Action), 20);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates.find((id) => named(s, id) === 'Swamp')!] } as Action), 20);
+    const after = namesIn(s, 0, 'hand');
+    expect(after.filter((n) => n === 'Gravedigger').length - before.filter((n) => n === 'Gravedigger').length).toBe(1);
+    expect(after.filter((n) => n === 'Swamp').length - before.filter((n) => n === 'Swamp').length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
