@@ -1108,7 +1108,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
   // A spell, by its live type line, so a restricted mana source may pay for it (D595).
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay, undefined,
-    { spell: characteristics.typeLine, commander: inst.isCommander === true }, sacrificed === null ? undefined : new Set([sacrificed]));
+    { spell: characteristics.typeLine, commander: inst.isCommander === true, spellColors: characteristics.colors }, sacrificed === null ? undefined : new Set([sacrificed]));
   let next = paid.state;
   // The permission is spent (D1287): one spell a turn through each permanent.
   if (yardBy !== undefined) {
@@ -1130,7 +1130,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     return (scriptForCard(state.cardDefs[source.defKey])?.abilities ?? []).some((row) => {
       const only = row.spendOnly;
       if (only?.uncounterable !== true || row.produces === undefined) return false;
-      if (!only.allows({ spell: characteristics.typeLine, commander: inst.isCommander === true })) return false;
+      if (!only.allows({ spell: characteristics.typeLine, commander: inst.isCommander === true, spellColors: characteristics.colors })) return false;
       if (only.chosenType === true && (source.chosen?.type === undefined || !hasSubtype(characteristics.typeLine, source.chosen.type))) return false;
       return pick.types.some((type) => row.produces!.includes(type));
     });
@@ -2442,7 +2442,7 @@ function activate(
     throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, zero or more');
   }
   const xPaid = paysX ? action.x ?? 0 : undefined;
-  const paid = payFrom(state, action.by, manaText, parseManaCost(manaText).x ? xPaid ?? 0 : 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
+  const paid = payFrom(state, action.by, manaText, parseManaCost(manaText).x ? xPaid ?? 0 : 0, 0, action.card, { abilityOf: ch.typeLine, abilityColors: ch.colors }, spent);
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.

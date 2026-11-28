@@ -10,6 +10,7 @@
  * decks either has a script or is a permanent that works without one, so a card cannot be added to
  * a deck and quietly do nothing.
  */
+import { spendRestriction } from './spending.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, it, expect } from 'vitest';
@@ -52220,6 +52221,78 @@ describe('Exile a creature you control as a cost, and mana as much as it was wor
   });
 });
 
+describe('colour words in a spending restriction: Eldrazi Temple (D1399)', () => {
+  const TEMPLE = { name: 'Test Temple', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{T}: Add {C}.\n{T}: Add {C}{C}. Spend this mana only to cast colorless Eldrazi spells or activate abilities of colorless Eldrazi.' };
+  const SPAWNER = { name: 'Test Spawner', type_line: 'Creature — Eldrazi', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', power: '4', toughness: '4', oracle_text: '' };
+  const DRONE = { name: 'Test Drone', type_line: 'Creature — Eldrazi Drone', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '4', toughness: '4', oracle_text: '' };
+  const GOLEM = { name: 'Test Golem', type_line: 'Artifact Creature — Golem', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', power: '4', toughness: '4', oracle_text: '' };
+  const PYLON = { name: 'Test Pylon', type_line: 'Creature — Eldrazi', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: '{2}: You gain 1 life.' };
+  const SEER = { name: 'Test Seer', type_line: 'Creature — Eldrazi', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{2}: You gain 1 life.' };
+  const ROWS = [TEMPLE, SPAWNER, DRONE, GOLEM, PYLON, SEER];
+  const deck = customDeck({ id: 'd1399', name: 'Temple', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const table = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1399', 1: 'd1399' }, deckSpecs: { d1399: deck.deck }, hands: { 0: ['Test Spawner', 'Test Drone', 'Test Golem'] },
+    battlefield: { 0: ['Test Temple', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castable = (s: GameState, name: string): boolean => {
+    const id = find(s, 0, 'hand', name);
+    return legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === id);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const words of ['to cast colorless spells', 'to cast a multicolored spell', 'to cast a colorless spell or to activate an ability', 'to cast a colorless spell or activate an ability of a colorless permanent']) {
+      expect(spendRestriction(words), words).not.toBeNull();
+    }
+  });
+
+  it('the colour words test the colours as given, and refuse without them', () => {
+    const colorless = spendRestriction('to cast colorless spells')!;
+    const t = parseTypeLine('Artifact');
+    expect(colorless.allows({ spell: t, spellColors: [] })).toBe(true);
+    expect(colorless.allows({ spell: t, spellColors: ['G'] })).toBe(false);
+    expect(colorless.allows({ spell: t })).toBe(false);
+    const multi = spendRestriction('to cast a multicolored spell')!;
+    expect(multi.allows({ spell: t, spellColors: ['W', 'U'] })).toBe(true);
+    expect(multi.allows({ spell: t, spellColors: ['W'] })).toBe(false);
+    const ability = spendRestriction('to cast a colorless spell or activate an ability of a colorless permanent')!;
+    expect(ability.allows({ abilityOf: t, abilityColors: [] })).toBe(true);
+    expect(ability.allows({ abilityOf: t, abilityColors: ['R'] })).toBe(false);
+  });
+
+  it('the Temple and two Forests cast a colorless Eldrazi for four', () => {
+    let s = table();
+    expect(castable(s, 'Test Spawner')).toBe(true);
+    const spawner = find(s, 0, 'hand', 'Test Spawner');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: spawner } as Action)), 20);
+    expect(s.instances[spawner]!.zone).toBe('battlefield');
+  });
+
+  it("an ability of a colorless Eldrazi is paid by the Temple alone, a blue Eldrazi's is not", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1399', 1: 'd1399' }, deckSpecs: { d1399: deck.deck },
+      battlefield: { 0: ['Test Temple', 'Test Pylon', 'Test Seer'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const pylon = find(s, 0, 'battlefield', 'Test Pylon');
+    const seer = find(s, 0, 'battlefield', 'Test Seer');
+    const plays = legalActions(s, 0).plays.filter((p) => p.kind === 'activate');
+    expect(plays.some((p) => p.card === seer)).toBe(false);
+    const play = plays.find((p) => p.card === pylon);
+    expect(play).toBeDefined();
+    const before = life(s, 0);
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: pylon, abilityIndex: play!.abilityIndex ?? 0 } as Action), 10);
+    expect(life(s, 0)).toBe(before + 1);
+  });
+
+  it('but not a green Eldrazi, nor a colorless Golem: the Temple gives them one', () => {
+    const s = table();
+    expect(castable(s, 'Test Drone')).toBe(false);
+    expect(castable(s, 'Test Golem')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -85890,7 +85963,8 @@ describe('restricted mana: "Spend this mana only to …" (D595)', () => {
     expect(workshop.ok && workshop.script?.abilities?.[0]).toMatchObject({
       produces: ['C', 'C', 'C'], spendOnly: { words: 'to cast artifact spells' },
     });
-    const multicoloured = compileCard({ ...ZIGGURAT, oracle_text: '{T}: Add one mana of any color. Spend this mana only to cast a multicolored spell.' } as never);
+    // "A multicolored spell" is read since D1399; the colour of the mana made is not.
+    const multicoloured = compileCard({ ...ZIGGURAT, oracle_text: '{T}: Add one mana of any color. Spend this mana only to cast monocolored spells of that color.' } as never);
     expect(multicoloured.ok && multicoloured.unread.length).toBe(1);
   });
 

@@ -43,17 +43,25 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
   */
   const chosenType = / of the chosen type\b/i.test(printed);
   const text = printed.replace(/ of the chosen type\b/gi, '');
-  const words = (run: string): ((t: TypeLine) => boolean) | null => {
+  type Test = (t: TypeLine, colours: readonly string[] | undefined) => boolean;
+  const words = (run: string): Test | null => {
     const parts = run.trim().split(/\s+(?:and\/or|or|and)\s+|,\s*(?:or\s+)?/).map((p) => p.trim()).filter((p) => p !== '');
-    const alternatives: ((t: TypeLine) => boolean)[] = [];
+    const alternatives: Test[] = [];
     for (const part of parts) {
-      const tests: ((t: TypeLine) => boolean)[] = [];
+      const tests: Test[] = [];
       for (const raw of part.split(/\s+/)) {
+        // The colour words (D1399), read before the plural is taken off "colorless".
+        const colourWord = raw.toLowerCase();
+        if (colourWord === 'colorless') { tests.push((_t, c) => c !== undefined && c.length === 0); continue; }
+        if (colourWord === 'multicolored') { tests.push((_t, c) => c !== undefined && c.length >= 2); continue; }
+        if (colourWord === 'monocolored') { tests.push((_t, c) => c !== undefined && c.length === 1); continue; }
         const word = raw.replace(/s$/, '');
         const lower = word.toLowerCase();
         // "a creature **card** of the chosen type" (Secluded Courtyard): the card in another zone,
         // whose type line is the same question.
         if (lower === 'card') continue;
+        // "an ability of a colorless permanent" (D1399): the source is one.
+        if (lower === 'permanent') continue;
         if (lower === 'noncreature') { tests.push((t) => !hasType(t, 'creature')); continue; }
         if (lower === 'legendary') { tests.push((t) => t.supertypes.some((s) => s.toLowerCase() === 'legendary')); continue; }
         if (/^[a-z]/.test(word)) {
@@ -65,18 +73,18 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
         tests.push((t) => hasSubtype(t, lower));
       }
       if (tests.length === 0) return null;
-      alternatives.push((t) => tests.every((test) => test(t)));
+      alternatives.push((t, c) => tests.every((test) => test(t, c)));
     }
-    return alternatives.length === 0 ? null : (t) => alternatives.some((test) => test(t));
+    return alternatives.length === 0 ? null : (t, c) => alternatives.some((test) => test(t, c));
   };
   /** "cast X spells" / "cast a X spell" / "cast spells", as a test of the spell's type line. */
-  const castPart = (run: string): ((t: TypeLine) => boolean) | null => {
+  const castPart = (run: string): Test | null => {
     const m = /^cast (?:an? )?(.*?)\s*spells?$/i.exec(run.trim());
     if (m === null) return null;
     return m[1]!.trim() === '' ? () => true : words(m[1]!);
   };
   /** "activate abilities [of Xs]" / "activate an ability [of an X source]". */
-  const activatePart = (run: string): ((t: TypeLine) => boolean) | null => {
+  const activatePart = (run: string): Test | null => {
     const m = /^activate (?:abilities|an ability)(?: of (?:an? )?(.+?)(?: sources?)?)?$/i.exec(run.trim());
     if (m === null) return null;
     return m[1] === undefined ? () => true : words(m[1]);
@@ -86,8 +94,8 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
   // One half, or both joined by "or" — either order, "to" repeated or not.
   const halves = body.split(/\s+or\s+(?:to\s+)?(?=cast\b|activate\b)/i);
   if (halves.length > 2) return null;
-  let spells: ((t: TypeLine) => boolean) | undefined;
-  let abilities: ((t: TypeLine) => boolean) | undefined;
+  let spells: Test | undefined;
+  let abilities: Test | undefined;
   for (const half of halves) {
     if (/^cast\b/i.test(half)) {
       if (spells !== undefined) return null;
@@ -106,8 +114,8 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
   return {
     words: printed,
     ...(chosenType ? { chosenType: true as const } : {}),
-    allows: (paying) => (paying.spell !== undefined && spells !== undefined && spells(paying.spell))
-      || (paying.abilityOf !== undefined && abilities !== undefined && abilities(paying.abilityOf)),
+    allows: (paying) => (paying.spell !== undefined && spells !== undefined && spells(paying.spell, paying.spellColors))
+      || (paying.abilityOf !== undefined && abilities !== undefined && abilities(paying.abilityOf, paying.abilityColors)),
   };
 }
 

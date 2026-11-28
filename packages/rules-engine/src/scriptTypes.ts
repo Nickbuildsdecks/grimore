@@ -3018,6 +3018,12 @@ export interface PaymentFor {
   readonly abilityOf?: TypeLine;
   /** Whether the spell is the caster's commander (D697): Jeweled Lotus's "only to cast your commander". */
   readonly commander?: boolean;
+  /**
+   * The spell's colours, and the ability's source's, as they are now (D1399): "colorless Eldrazi
+   * spells", "a multicolored spell". Absent, a restriction that names colours refuses.
+   */
+  readonly spellColors?: readonly string[];
+  readonly abilityColors?: readonly string[];
 }
 
 /** "Spend this mana only to …", as a test of a payment, and the words, for the table. */

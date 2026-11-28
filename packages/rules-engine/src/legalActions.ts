@@ -747,7 +747,12 @@ export function abilityLifeCost(state: GameState, seat: SeatIndex, cost: Ability
 
 /** What a spell's mana is being spent on, for a restricted source (D595, D697). */
 function payingFor(state: GameState, id: string, def: CardDef | undefined): PaymentFor {
-  return { spell: parseTypeLine(def?.typeLine), commander: state.instances[id]?.isCommander === true };
+  const inst = state.instances[id];
+  return {
+    spell: parseTypeLine(def?.typeLine), commander: inst?.isCommander === true,
+    // Its colours as they are now (D1399), for "colorless Eldrazi spells".
+    ...(inst === undefined ? {} : { spellColors: characteristicsOf(state, inst).colors }),
+  };
 }
 
 /**
@@ -3279,7 +3284,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       const manaNow = abilityManaText(state, seat, ability, id);
       if (manaNow
         && !canAfford(poolOf(state, seat), parseManaCost(manaNow), restrictedMana
-          ? manaSources(state, seat, { abilityOf: ch.typeLine })
+          ? manaSources(state, seat, { abilityOf: ch.typeLine, abilityColors: ch.colors })
           : sources, 0, phyrexianLife(state, seat))) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
       // a Mana Confluence stops making mana at one life and a City of Brass does not.
@@ -3346,7 +3351,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       let fodder = victims;
       if (manaNow) {
         const cost = parseManaCost(manaNow);
-        const all = restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources;
+        const all = restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine, abilityColors: ch.colors }) : sources;
         const spent = new Set<string>([...(ability.cost.tap ? [id] : []), ...(crew ?? []), ...(tapped ?? [])]);
         const affords = (also?: string) => canAfford(poolOf(state, seat), cost,
           all.filter((source) => !spent.has(source.key) && source.key !== also), 0, phyrexianLife(state, seat));
@@ -3373,7 +3378,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         // How high its X may go (D789), with what the rest of the cost spends kept out of the mana.
         ...(manaNow && parseManaCost(manaNow).x ? {
           xMax: Math.min(maxAffordableX(poolOf(state, seat), parseManaCost(manaNow),
-            (restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources)
+            (restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine, abilityColors: ch.colors }) : sources)
               .filter((source) => !(ability.cost.tap === true && source.key === id) && !(crew ?? []).includes(source.key) && !(tapped ?? []).includes(source.key))),
           // And no more than the counters an X of them removes (D1307): Talon of Pain.
           ability.cost.removeXCounters === undefined ? Infinity : inst.counters[ability.cost.removeXCounters] ?? 0),

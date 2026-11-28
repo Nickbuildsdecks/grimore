@@ -8556,12 +8556,12 @@ describe('a mana ability that is a choice of colours', () => {
     */
     /*
       Ancient Ziggurat was here and is read (D595): a restriction made of type words is checked as
-      the mana is spent (`AbilityDef.spendOnly`). One the engine cannot check — a multicolored
-      spell, Pillar of the Paruns — is still refused, and reading it would make the land tap for
-      any spell.
+      the mana is spent (`AbilityDef.spendOnly`). One the engine cannot check — monocolored spells
+      of the colour made — is still refused, and reading it would make the land tap for any spell.
+      Pillar of the Paruns's multicolored spell is read since D1399.
     */
-    ['Pillar of the Paruns', 'Land',
-      '{T}: Add one mana of any color. Spend this mana only to cast a multicolored spell.'],
+    ['Monocolour Thing', 'Land',
+      '{T}: Add one mana of any color. Spend this mana only to cast monocolored spells of that color.'],
     // 20 legal lines, and there is no chosen colour until an "As ~ enters, choose a colour" reader
     // exists to make one.
     ['Colour Thing', 'Land', '{T}: Add one mana of the chosen color.'],
@@ -11456,8 +11456,9 @@ describe('a mana ability that deals you damage (D497)', () => {
       activation condition. Reading any of them as nothing at all would be a land that does strictly
       more than it prints.
     */
-    // A spend restriction made of type words is read since D595; one that is not stays refused.
-    ['spend-only restriction', '{T}: Add {C}. Spend this mana only to cast a multicolored spell.'],
+    // A spend restriction made of type words is read since D595, and colour words since D1399; one
+    // that is neither stays refused.
+    ['spend-only restriction', '{T}: Add {C}. Spend this mana only to cast monocolored spells of that color.'],
     // "Probe Land doesn't untap during your next untap step" is read since D920; about another, not.
     ["somebody else doesn't untap", "{T}: Add {U} or {B}. Target land doesn't untap during your next untap step."],
     ['a depletion counter', '{T}: Add {W} or {U}. Put a depletion counter on Probe Land.'],

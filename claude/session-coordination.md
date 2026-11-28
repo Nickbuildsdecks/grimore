@@ -314,3 +314,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1395 pushed in fc76e6d. D1396 Read ahead: scriptTypes, effects (READ_AHEAD_CHAPTERS), scripts.ts, automation.
 - D1396 pushed in cfc8437. D1397 restricted floating mana (GameState.boundMana): turnTypes, effects, legalActions (manaSources, pressedForMana), automation (tapSources, payFrom, emptyPools), autoActions, view, scripts.ts (worded runs), web ArenaBar and arena.ts, pins in compile.test.ts and scripts.test.ts.
 - D1397 pushed in b3e3d54. D1398 Exile a creature you control as a cost (AbilityCost.exileInsteadOfSacrifice) and producesPerSacrificedPlus: scriptTypes, scripts.ts, autoActions.
+- D1398 pushed in 5fd32f6. D1399 colour words in spending restrictions (PaymentFor.spellColors/abilityColors): scriptTypes, spending, legalActions, autoActions, pins in compile.test.ts and scripts.test.ts.
