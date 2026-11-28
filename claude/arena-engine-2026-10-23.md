@@ -52263,3 +52263,42 @@ Faults injected by hand: 4, of which 3 caught.
 The scripts tests, compile tests and pins: 6736 of 6736 pass. Test typecheck clean.
 
 Coverage: 17,867 of 31,900 cards (+8 over D1406's 17,859), 41,148 of 59,888 lines (+8).
+
+## D1408 — Cast as though it had flash while a condition holds: Hungering Yeti
+
+"As long as you control a green or blue permanent, you may cast Hungering Yeti as though it had
+flash." D727's `castAsThoughFlash` is Necromancy's unconditional permission, with its sacrifice at
+cleanup. Nothing read a permission with a condition on it.
+
+**The field.** `CardScript.flashWhile`:
+- It holds a static's condition, read by `staticCondition` from three wordings: "you may cast ~ (or
+  this spell) as though it had flash if …" or "… as long as …", and "If (or As long as) …, you may
+  cast ~ as though it had flash".
+- Both timing checks ask it: the offer in `legalActions` and the cast in `autoActions`. The card is
+  then castable whenever its controller could cast an instant, while the condition holds, asked
+  with the card as source and the caster as controller.
+- It's a permission, not the keyword, so "creatures with flash" don't see it.
+- A condition `staticCondition` doesn't read leaves the line unread.
+
+Read whole now: Hungering Yeti and Illusion Spinners. Serpent of the Pass ("three or more Lesson
+cards in your graveyard") and Dragon Grip ("a creature with power 4 or greater") need conditions
+`staticCondition` doesn't read yet.
+
+"Has a card behind every mechanic it declares" exempts the field, naming this entry's runtime test.
+
+**Tests.** 4 engine tests:
+- The fixtures read whole.
+- Beside a green creature, the Yeti is offered at the beginning of combat and resolves.
+- Beside a red creature, it isn't offered then, and casting it is refused.
+- "If you control a Faerie": with one, the Spinner is offered at combat, and with none, not.
+
+Faults injected by hand: 5, all caught.
+- The offer not asking: caught.
+- The cast not asking: caught.
+- The condition not asked: caught.
+- The condition dropped by the reader: caught.
+- The condition-first wording not read: caught.
+
+The scripts tests, compile tests and pins: 6740 of 6740 pass. Test typecheck clean.
+
+Coverage: 17,869 of 31,900 cards (+2 over D1407's 17,867), 41,151 of 59,888 lines (+3).
